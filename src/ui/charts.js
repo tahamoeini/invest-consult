@@ -56,7 +56,8 @@ export function lineChartMarkup({
   })).filter((item) => item.points.some((point) => finite(point.value) !== null));
   const allValues = normalized.flatMap((item) => item.points.map((point) => finite(point.value)).filter((value) => value !== null));
   const pointCount = normalized.length ? Math.max(...normalized.map((item) => item.points.length)) : 0;
-  if (allValues.length < 2 || pointCount < 2) return `<div class="empty-state chart-empty">${escapeHTML(emptyLabel)}</div>`;
+  const observedPointCount = normalized.length ? Math.max(...normalized.map((item) => item.points.filter((point) => finite(point.value) !== null).length)) : 0;
+  if (allValues.length < 2 || pointCount < 2 || observedPointCount < 2) return `<div class="empty-state chart-empty">${escapeHTML(emptyLabel)}</div>`;
 
   const width = 760;
   const padding = { top: 18, right: 14, bottom: 34, left: 112 };

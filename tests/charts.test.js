@@ -21,6 +21,7 @@ test("chart markup has explicit empty states and accessible SVG output", () => {
   assert.match(markup, /chart-axis-label/);
   assert.match(markup, /<title>سبد<\/title>/);
   assert.match(lineChartMarkup({ series: [{ points: [{ value: 10 }] }, { points: [{ value: 12 }] }] }), /داده کافی/);
+  assert.match(lineChartMarkup({ series: [{ points: [{ value: 10 }, { value: null }] }, { points: [{ value: 12 }, { value: null }] }] }), /داده کافی/);
   assert.match(donutChartMarkup({ segments: [{ name: "طلا", value: 100, color: "#c18a2c" }] }), /donut-chart/);
   assert.match(donutChartMarkup({ segments: [] }), /هنوز دارایی/);
 });
