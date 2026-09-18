@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f172a" />
-    <meta name="description" content="برنامه‌ریزی ماهانه و محافظه‌کارانه سرمایه‌گذاری بر اساس درصدی از حقوق" />
+    <meta name="description" content="برنامه‌ریزی ماهانه و محافظه‌کارانه سرمایه‌گذاری بر اساس داده‌های زنده و تاریخچه" />
     <title>برنامه سرمایه‌گذاری ماهانه</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,9 +31,9 @@
         <div class="hero-copy">
           <span class="eyebrow">برای تصمیم آرام‌تر، نه هیجانی‌تر</span>
           <h1>هر ماه با حقوقت، یک قدم قابل‌دوام بردار.</h1>
-          <p>حقوق ماه را وارد کن؛ برنامه با یک پروفایل محافظه‌کارانه می‌گوید چه مقدار کنار بگذاری و بین درآمد ثابت، طلا، ارز و نقره چطور پخش کنی.</p>
+          <p>حقوق ماه را وارد کن؛ برنامه با داده‌های زنده و سابقه‌ای که روی همین دستگاه ذخیره می‌شود می‌گوید چه مقدار کنار بگذاری و بین درآمد ثابت، طلا، ارز و نقره چطور پخش کنی.</p>
           <div class="hero-points">
-            <span>بدون نیاز به ورود اطلاعات نرخ‌ها</span>
+            <span>میانهٔ چند منبع عمومی</span>
             <span>بدون ذخیره حقوق روی سرور</span>
             <span>مناسب سرمایه‌گذاری پله‌ای</span>
           </div>
@@ -45,7 +45,7 @@
           <p>از حقوق، با نقطه شروع ۲۰٪</p>
           <div class="hero-divider"></div>
           <div class="hero-card-row"><span>ریسک هدف</span><strong>محافظه‌کارانه</strong></div>
-          <div class="hero-card-row"><span>تمرکز اصلی</span><strong>نقدشوندگی و حفظ ارزش</strong></div>
+          <div class="hero-card-row"><span>منطق تصمیم</span><strong>قیمت امروز + روند گذشته</strong></div>
         </div>
       </section>
 
@@ -82,11 +82,20 @@
               <div class="summary-block summary-secondary"><span>درصد از حقوق</span><strong id="total-rate">—</strong><small>کف ۱۵٪ · سقف ۲۵٪</small></div>
             </div>
             <div id="allocation-list" class="allocation-list"></div>
-            <div class="model-note"><span class="note-icon">i</span><p id="model-note-text">وزن‌ها با داده‌های بازار کمی تنظیم می‌شوند، اما به‌خاطر ریسک‌گریز بودن پروفایل، تغییراتشان محدود است.</p></div>
+            <div class="model-note"><span class="note-icon">i</span><p id="model-note-text">وزن‌ها با داده‌های بازار و سابقهٔ ثبت‌شده کمی تنظیم می‌شوند، اما تغییراتشان محدود است.</p></div>
           </section>
 
           <section class="panel history-panel">
-            <div class="panel-heading"><div><span class="section-kicker">تاریخچه</span><h2>ماه‌های قبلی</h2></div><button id="clear-history" class="text-button" type="button">پاک کردن</button></div>
+            <div class="panel-heading"><div><span class="section-kicker">تاریخچه و ارزش‌گذاری</span><h2>اگر همین برنامه را ادامه بدهی</h2></div><button id="clear-history" class="text-button" type="button">پاک کردن</button></div>
+            <div id="history-summary" class="history-stat-grid"></div>
+            <div class="history-chart-wrap">
+              <div class="subsection-heading"><strong>روند سرمایه‌گذاری ثبت‌شده</strong><span id="history-chart-label">—</span></div>
+              <div id="history-chart" class="history-chart"><div class="empty-state">هنوز داده‌ای برای نمودار نیست.</div></div>
+            </div>
+            <div class="subsection-heading breakdown-heading"><strong>ارزش فعلی هر دسته</strong><span>برآورد بر اساس قیمت‌های ذخیره‌شده</span></div>
+            <div id="portfolio-breakdown" class="portfolio-breakdown"><div class="empty-state">با ثبت اولین پیشنهاد، ارزش هر دسته اینجا محاسبه می‌شود.</div></div>
+            <div id="history-disclaimer" class="history-disclaimer">این ارزش‌گذاری فرض می‌کند مبلغ پیشنهادی هر ماه اجرا شده است؛ کارمزد، اختلاف خرید و فروش و تغییر ابزار واقعی در آن لحاظ نشده است.</div>
+            <div class="subsection-heading timeline-heading"><strong>جزئیات ماه‌ها</strong><span id="history-count">—</span></div>
             <div id="history-list" class="history-list"><div class="empty-state">هنوز پیشنهادی ثبت نشده. اولین ماه را از بالا شروع کن.</div></div>
           </section>
         </div>
@@ -94,9 +103,9 @@
         <aside class="side-column">
           <section class="panel live-panel">
             <div class="panel-heading"><div><span class="section-kicker">داده زنده</span><h2>بازار الان چه می‌گوید؟</h2></div><button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی داده‌های بازار">↻</button></div>
-            <p class="panel-intro">اعداد زیر از منابع عمومی زنده خوانده می‌شوند و فقط برای تنظیم جزئی وزن‌ها هستند؛ قرار نیست با هر نوسان کوچک، سبدت را زیرورو کنند.</p>
+            <p class="panel-intro">قیمت‌ها از چند منبع عمومی خوانده می‌شوند؛ مقدار نمایش‌داده‌شده میانهٔ منابع پاسخ‌گوست. داده برای تنظیم محدود وزن‌هاست، نه برای معاملهٔ لحظه‌ای.</p>
             <div id="market-data" class="market-data"><div class="loading-lines"><span></span><span></span><span></span><span></span></div></div>
-            <div class="data-footer"><span id="market-updated">در حال دریافت…</span><span class="source-badge">منبع‌محور</span></div>
+            <div class="data-footer"><span id="market-updated">در حال دریافت…</span><span id="market-source-note" class="source-badge">چندمنبعی</span></div>
           </section>
 
           <section class="panel rule-panel">
