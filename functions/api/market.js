@@ -46,14 +46,8 @@ function parseTGJU(html, key) {
   };
 }
 
-function extractNextData(html) {
-  const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!match) return null;
-  try { return JSON.parse(match[1]); } catch { return null; }
-}
-
 function findAnnualReturn(value) {
-  const text = JSON.stringify(value || {});
+  const text = String(value || "");
   const patterns = [
     /(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)[^۰-۹٠-٩\d]{0,80}([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*(?:درصد|%|٪)/g,
     /([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*(?:درصد|%|٪)[^]{0,20}(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)/g,
@@ -78,11 +72,9 @@ async function getAsset(key) {
 
 async function getFund(category, url) {
   const html = await fetchText(url);
-  const nextData = extractNextData(html);
-  const fundData = nextData && nextData.pageProps ? nextData.pageProps.fundData : null;
   return {
     category,
-    effectiveAnnualReturn: findAnnualReturn(fundData || html),
+    effectiveAnnualReturn: findAnnualReturn(html),
     source: "صفحه رسمی ارائه‌دهنده",
     sourceUrl: url,
   };
