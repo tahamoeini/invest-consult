@@ -35,6 +35,7 @@ const MARKET_CACHE_KEY = "investment-plan-market-cache-v3";
 const PROFILE_KEY = "investment-plan-profile-v1";
 const PORTFOLIO_KEY = "invest-consult-portfolio-v1";
 const HISTORY_LIMIT = 60;
+const MARKET_REQUEST_TIMEOUT_MS = 12000;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -138,6 +139,16 @@ function writeJson(key, value) {
   }
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = MARKET_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function readHistory() {
   const current = readJson(HISTORY_KEY, []);
   const old = readJson("investment-plan-history-v3", []);
@@ -153,8 +164,9 @@ function writePortfolio(portfolio) {
 }
 
 function getProfile() {
+  const ageInput = $("#age").value.trim();
   return {
-    age: numberFromInput($("#age").value),
+    age: ageInput ? numberFromInput(ageInput) : undefined,
     horizonYears: numberFromInput($("#horizon").value),
     goal: $("#goal").value,
     riskTolerance: $("#risk-tolerance").value,
@@ -352,12 +364,13 @@ function renderPortfolio() {
   $("#portfolio-version-count").textContent = `${portfolio.versions.length} ${text("portfolio.versionCount")}`;
   $("#portfolio-audit-count").textContent = `${version.audit.length} ${text("portfolio.auditCount")}`;
 
-  const allocationRows = assetIds().map((assetId) => {
+  const heldAssetIds = assetIds().filter((assetId) => Math.abs(result.values[assetId].quantity) > 1e-7);
+  const allocationRows = heldAssetIds.map((assetId) => {
     const meta = assetMeta(assetId);
     const item = result.values[assetId];
     return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(text(`portfolio.units.${assetId}`, item.unit))}</small></div></div><div class="allocation-numbers"><strong>${item.value === null ? escapeHTML(text("portfolio.unavailable")) : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></div></div>`;
   }).join("");
-  portfolioAllocationEl.innerHTML = allocationRows;
+  portfolioAllocationEl.innerHTML = allocationRows || `<div class="empty-state">${escapeHTML(text("portfolio.empty"))}</div>`;
 
   const quality = $("#portfolio-data-quality");
   if (!hasTransactions) quality.textContent = text("portfolio.empty");
@@ -691,7 +704,7 @@ function runBacktest() {
 async function loadMarket() {
   setStatus(text("status.loading", fallbackCopy.status.loading), "loading");
   try {
-    const response = await fetch("/api/market", { cache: "no-store" });
+    const response = await fetchWithTimeout("/api/market", { cache: "default" });
     if (!response.ok) throw new Error("Market request failed");
     liveMarket = await response.json();
     writeJson(MARKET_CACHE_KEY, liveMarket);
@@ -704,7 +717,7 @@ async function loadMarket() {
     renderMarket(liveMarket);
     renderHistory();
     renderPortfolio();
-    setStatus(liveMarket ? text("status.cached", fallbackCopy.status.cached) : text("status.unavailable", fallbackCopy.status.unavailable), "warning");
+    setStatus(liveMarket ? text("status.cached", fallbackCopy.status.cached) : text("status.timeout", fallbackCopy.status.unavailable), "warning");
   }
 }
 

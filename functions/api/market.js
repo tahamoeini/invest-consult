@@ -4,6 +4,7 @@ const NAVASAN_RAW_BASE = "https://raw.githubusercontent.com/HosseinOdd/Navasan-A
 const CHART_GOLD_URL = "https://www.chartgoldprice.com/api/data?history=both";
 const sourcePages = { dollar: "price_dollar_rl", gold: "geram18", silver: "silver_999" };
 const fundPages = { fixedIncome: "https://charisma.ir/funds/fixedincomefund" };
+const UPSTREAM_TIMEOUT_MS = 5000;
 const headers = {
   "User-Agent": "invest-consult/2.0 (+https://github.com/tahamoeini/invest-consult)",
   "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
@@ -39,21 +40,25 @@ function quote(asset, price, source, metadata = {}) {
   return { asset, price: Number(price), source, ...metadata };
 }
 
-async function fetchText(url, options = {}) {
+async function fetchResponse(url, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
+    return await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: { ...headers, ...(options.headers || {}) },
-      cf: { cacheTtl: 300, cacheEverything: true },
+      cf: { cacheTtl: 300, cacheEverything: true, ...(options.cf || {}) },
     });
-    if (!response.ok) throw new Error(`Source returned ${response.status}`);
-    return await response.text();
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchText(url, options = {}) {
+  const response = await fetchResponse(url, options);
+  if (!response.ok) throw new Error(`Source returned ${response.status}`);
+  return await response.text();
 }
 
 async function fetchJson(url, options = {}) {
@@ -76,13 +81,13 @@ async function providerA() {
 }
 
 async function providerB() {
-  const landing = await fetch(BONBAST_BASE + "/", { headers, cf: { cacheTtl: 60, cacheEverything: true } });
+  const landing = await fetchResponse(BONBAST_BASE + "/", { cf: { cacheTtl: 60, cacheEverything: true } });
   if (!landing.ok) throw new Error(`Landing page returned ${landing.status}`);
   const html = await landing.text();
   const tokenMatch = html.match(/\$\.post\('\/json',\s*\{param:\s*"([^"]+)"/);
   if (!tokenMatch) throw new Error("Request token not found");
   const cookie = landing.headers.get("set-cookie") || "";
-  const response = await fetch(BONBAST_BASE + "/json", {
+  const response = await fetchResponse(BONBAST_BASE + "/json", {
     method: "POST",
     headers: { ...headers, "content-type": "application/x-www-form-urlencoded; charset=UTF-8", "x-requested-with": "XMLHttpRequest", referer: BONBAST_BASE + "/", ...(cookie ? { cookie } : {}) },
     body: "param=" + encodeURIComponent(tokenMatch[1]),
@@ -193,15 +198,16 @@ function settledValues(results) {
 
 export async function onRequestGet() {
   const now = new Date().toISOString();
-  const providerResults = await Promise.allSettled(providers.map((provider) => provider.run().then((quotes) => ({ id: provider.id, quotes }))));
+  const providerResultsPromise = Promise.allSettled(providers.map((provider) => provider.run().then((quotes) => ({ id: provider.id, quotes }))));
+  const auxiliaryPromise = getAuxiliaryMetalData().catch(() => null);
+  const fixedIncomePromise = getFixedIncomeMetric().catch(() => null);
+  const [providerResults, auxiliary, fixedIncome] = await Promise.all([providerResultsPromise, auxiliaryPromise, fixedIncomePromise]);
   const quoteSets = settledValues(providerResults);
   const providerDiagnostics = Object.fromEntries(providers.map((provider, index) => {
     const result = providerResults[index];
     return [provider.id, { status: result.status, quoteCount: result.status === "fulfilled" ? result.value.quotes.length : 0 }];
   }));
   const quotes = quoteSets.flatMap((set) => set.quotes);
-  let auxiliary = null;
-  try { auxiliary = await getAuxiliaryMetalData(); } catch { auxiliary = null; }
   const dollar = aggregate("dollar", quotes);
   const goldQuotes = quotes.filter((item) => item.asset === "gold");
   const silverQuotes = quotes.filter((item) => item.asset === "silver");
@@ -224,8 +230,6 @@ export async function onRequestGet() {
     });
   }
 
-  let fixedIncome = null;
-  try { fixedIncome = await getFixedIncomeMetric(); } catch { fixedIncome = null; }
   const funds = fixedIncome ? { fixedIncome } : {};
   const diagnostics = {
     providers: providerDiagnostics,
