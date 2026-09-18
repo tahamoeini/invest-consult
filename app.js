@@ -135,8 +135,13 @@ function readCachedMarket() {
 
 function readHistory() {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem("investment-plan-history-v2") || "[]");
-    return Array.isArray(value) ? value.filter((item) => item && Number(item.total) > 0) : [];
+    const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const legacy = JSON.parse(localStorage.getItem("investment-plan-history-v2") || "[]");
+    const currentItems = Array.isArray(current) ? current : [];
+    const legacyItems = Array.isArray(legacy) ? legacy : [];
+    const knownDates = new Set(currentItems.map((item) => item && item.createdAt).filter(Boolean));
+    const merged = currentItems.concat(legacyItems.filter((item) => item && item.createdAt && !knownDates.has(item.createdAt)));
+    return merged.filter((item) => item && Number(item.total) > 0).slice(0, HISTORY_LIMIT);
   } catch {
     return [];
   }
