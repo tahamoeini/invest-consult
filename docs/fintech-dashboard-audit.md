@@ -29,6 +29,7 @@ Branch: `feat/final-financial-dashboard`
 - [x] Historical interpretation changes remain confirmation-gated by the existing flow.
 - [x] Asset detail inspection is available without leaving the portfolio workspace.
 - [x] Export/import, local cache controls, assumptions visibility, and full local reset are available in Settings.
+- [x] Settings export/import reports success and validation feedback in the Settings view itself; full reset also clears the visible form state.
 - [x] Runtime and asynchronous errors have a visible, non-destructive error state.
 - [x] Reusable SVG line and donut chart components are dependency-free and tested.
 - [x] Existing calculation engine modules were not rewritten.
