@@ -1,60 +1,62 @@
 # invest-consult
 
-برنامه ساده و محافظه‌کارانه برای پیشنهاد سرمایه‌گذاری ماهانه بر اساس درصدی از حقوق.
+A conservative monthly investment planner based on a percentage of monthly salary.
 
-## چه چیزی داخل پروژه است؟
+## Project overview
 
-- رابط فارسی و راست‌چین با فونت Vazirmatn
-- محاسبه پیشنهاد در مرورگر کاربر؛ حقوق و تاریخچه به سرور ارسال نمی‌شوند
-- درصد سرمایه‌گذاری قابل تنظیم بین ۱۵٪ تا ۲۵٪، با نقطه شروع ۲۰٪
-- نمایش پیشنهاد با نام نوع دارایی، نه نام صندوق‌هایی که ممکن است تغییر کنند
-- خواندن داده‌های زنده از دو منبع عمومی:
-  - قیمت ارز، طلا و نقره از صفحات بازار TGJU
-  - اطلاعات بازده منتشرشده صندوق‌های مرتبط از صفحات رسمی Charisma
-- یک Pages Function در مسیر functions/api/market.js برای خواندن منابع بدون درگیر کردن مرورگر با CORS
-- اگر منبع زنده در دسترس نباشد، برنامه عدد ساختگی تولید نمی‌کند؛ از آخرین داده ذخیره‌شده در همان مرورگر استفاده می‌کند یا پیشنهاد پایه را نشان می‌دهد
+- Persian, right-to-left user interface using the Vazirmatn font
+- Client-side calculation; salary and history are not sent to the server
+- Configurable monthly contribution between 15% and 25%, starting at 20%
+- Generic asset categories instead of provider or fund names that may change
+- Live market data from public sources:
+  - Currency, gold, and silver prices from TGJU market pages
+  - Published fund information from official Charisma pages
+- A Cloudflare Pages Function at functions/api/market.js that reads live sources server-side and avoids browser CORS issues
+- If a source is temporarily unavailable, the application does not invent a value; it uses the browser's last cached response or falls back to the base model
 
-## اجرای محلی
+## Local development
 
-این پروژه برای حالت استاتیک هم کار می‌کند، اما برای تست داده زنده باید Pages Function را هم اجرا کنی.
+The static interface can be opened directly, but the live-data endpoint requires the Pages Function runtime.
 
 ~~~~bash
 npx wrangler pages dev . --compatibility-date=2026-09-18
 ~~~~
 
-بعد آدرس محلی‌ای که Wrangler می‌دهد را باز کن.
+Open the local URL printed by Wrangler.
 
-## انتشار با Cloudflare Pages و GitHub
+## Deploy with Cloudflare Pages and GitHub
 
-1. وارد Cloudflare شو و از بخش Workers & Pages گزینه Create application و سپس Pages را انتخاب کن.
-2. مخزن tahamoeini/invest-consult را وصل کن.
-3. شاخه production را main بگذار.
-4. چون پروژه فایل‌های استاتیک و Pages Function دارد:
+1. In Cloudflare, open **Workers & Pages**, choose **Create application**, and select **Pages**.
+2. Connect the tahamoeini/invest-consult repository.
+3. Set the production branch to main.
+4. Use the following build settings:
    - Framework preset: None
-   - Root directory: خالی
-   - Build command: خالی بگذار؛ اگر پنل اجباری کرد، exit 0
+   - Root directory: leave empty
+   - Build command: leave empty; if the dashboard requires a command, use exit 0
    - Build output directory: .
-5. Deploy را بزن. Cloudflare فایل functions/api/market.js را به مسیر /api/market تبدیل می‌کند.
-6. بعد از انتشار، اول این آدرس را تست کن:
+5. Deploy the project. Cloudflare Pages automatically detects functions/api/market.js and exposes it at /api/market.
+6. After deployment, test:
 
 ~~~~text
 https://YOUR-PAGES-DOMAIN.pages.dev/api/market
 ~~~~
 
-باید JSON شامل updatedAt، assets و funds برگردد. اگر یک منبع پاسخ ندهد، ممکن است فقط همان بخش از JSON غایب باشد.
+The endpoint should return JSON containing updatedAt, assets, and funds. A temporary source failure may cause only the affected object to be absent.
 
-برای دامنه اختصاصی از مسیر Pages → Custom domains دامنه را اضافه کن. نیازی به قرار دادن API key یا Secret در این پروژه نیست.
+To add a custom domain, use Pages → Custom domains. This project does not require an API key or secret.
 
-## انتشار دستی اختیاری
+## Optional manual deployment
 
-اگر به جای اتصال GitHub خواستی از سیستم خودت منتشر کنی، دستور انتشار را بیرون از build command اجرا کن:
+If you prefer a manual deployment instead of the GitHub integration, run the deployment command outside the Cloudflare build command:
 
 ~~~~bash
 npx wrangler pages deploy . --project-name invest-consult
 ~~~~
 
-دستور wrangler pages deploy را داخل Build command نگذار؛ Cloudflare در آن حالت ممکن است با احراز هویت یا انتشار تو در تو خطا بدهد.
+Do not put wrangler pages deploy inside the Pages build command. That can cause nested deployment or authentication failures.
 
-## نکته درباره داده و مدل
+## Data and model notes
 
-داده بازار ممکن است به‌خاطر محدودیت، تغییر ساختار سایت منبع یا قطعی سرویس موقتا در دسترس نباشد. پیشنهاد سرمایه‌گذاری هم پیش‌بینی قطعی نیست. وزن‌ها عمدا محدود نگه داشته شده‌اند تا یک نوسان روزانه، تصمیم ماهانه را افراطی نکند. پیش از خرید هر ابزار، کارمزد، نقدشوندگی، ریسک، مقررات و شرایط روز آن را جداگانه بررسی کن.
+Public market pages can be unavailable, rate-limited, or change their HTML structure. The application treats missing data as missing data and does not replace it with fabricated numbers. The allocation weights are intentionally bounded so that a single daily price movement does not cause an extreme monthly decision.
+
+This is an educational planning tool, not financial advice. Review fees, liquidity, risk, regulations, and current conditions before using any investment product.
