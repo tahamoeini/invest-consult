@@ -6,6 +6,7 @@
 - `npm test` — passed
 - `git diff --check` — passed
 - Direct browser smoke test on the corrected Cloudflare preview — passed for all seven view transitions, plan generation, Monte Carlo output, backtest output, history comparison, portfolio registration, stock entry, allocation drawer open/close, and market snapshot rendering.
+- Settings transfer status is rendered in the Settings view, so export/import results are visible without navigating to History.
 
 ## Scenario matrix
 
