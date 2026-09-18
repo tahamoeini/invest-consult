@@ -32,6 +32,7 @@ Branch: `feat/final-financial-dashboard`
 - [x] Runtime and asynchronous errors have a visible, non-destructive error state.
 - [x] Reusable SVG line and donut chart components are dependency-free and tested.
 - [x] Existing calculation engine modules were not rewritten.
+- [x] Direct browser verification found and fixed a missing closing section that had nested every view after Plan inside the Plan view.
 
 ## Important product decisions
 
@@ -45,4 +46,5 @@ Branch: `feat/final-financial-dashboard`
 
 - The market API remains dependent on public upstream sources and network availability.
 - Fixed-income historical comparison remains unavailable until the market API supplies a historical series.
-- The cloud browser could not reach the local development server in this environment. A desktop empty-state smoke check was captured from the published branch preview; the real PR/deployment preview is still required for live Pages Functions and multi-width verification.
+- The supplied `533748e7.invest-consult.pages.dev` address is an older immutable deployment and still shows the pre-fix nesting. The corrected commit was deployed separately and verified at the commit preview recorded in PR #1.
+- Direct browser verification covered the corrected desktop deployment and the main data-entry paths. A real mobile/tablet viewport pass remains a deployment QA gate because this browser session does not expose viewport emulation.
