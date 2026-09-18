@@ -33,6 +33,7 @@ Branch: `feat/final-financial-dashboard`
 - [x] Reusable SVG line and donut chart components are dependency-free and tested.
 - [x] Existing calculation engine modules were not rewritten.
 - [x] Direct browser verification found and fixed a missing closing section that had nested every view after Plan inside the Plan view.
+- [x] Desktop sidebar stays available while long views scroll; the grid item is explicitly top-aligned and independently scrollable.
 
 ## Important product decisions
 
