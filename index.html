@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="description" content="برنامه‌ریزی ماهانه و محافظه‌کارانه سرمایه‌گذاری بر اساس درصدی از حقوق" />
+    <title>برنامه سرمایه‌گذاری ماهانه</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="صفحه اصلی">
+          <span class="brand-mark">%</span>
+          <span><strong>سبد آرام</strong><small>برنامه سرمایه‌گذاری ماهانه</small></span>
+        </a>
+        <div class="topbar-actions">
+          <span class="privacy-note"><span class="privacy-dot"></span> محاسبه محلی</span>
+          <span id="live-status" class="status-pill status-loading">در حال خواندن داده‌ها…</span>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <span class="eyebrow">برای تصمیم آرام‌تر، نه هیجانی‌تر</span>
+          <h1>هر ماه با حقوقت، یک قدم قابل‌دوام بردار.</h1>
+          <p>حقوق ماه را وارد کن؛ برنامه با یک پروفایل محافظه‌کارانه می‌گوید چه مقدار کنار بگذاری و بین درآمد ثابت، طلا، ارز و نقره چطور پخش کنی.</p>
+          <div class="hero-points">
+            <span>بدون نیاز به ورود اطلاعات نرخ‌ها</span>
+            <span>بدون ذخیره حقوق روی سرور</span>
+            <span>مناسب سرمایه‌گذاری پله‌ای</span>
+          </div>
+        </div>
+        <div class="hero-card">
+          <div class="hero-card-glow"></div>
+          <div class="mini-label">قاعده پایه</div>
+          <div class="hero-number">۱۵٪ تا ۲۵٪</div>
+          <p>از حقوق، با نقطه شروع ۲۰٪</p>
+          <div class="hero-divider"></div>
+          <div class="hero-card-row"><span>ریسک هدف</span><strong>محافظه‌کارانه</strong></div>
+          <div class="hero-card-row"><span>تمرکز اصلی</span><strong>نقدشوندگی و حفظ ارزش</strong></div>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <div class="main-column">
+          <section class="panel input-panel">
+            <div class="panel-heading">
+              <div><span class="section-kicker">۱. ورودی ماه</span><h2>این ماه چقدر حقوق می‌گیری؟</h2></div>
+              <span class="soft-chip">فقط روی همین دستگاه</span>
+            </div>
+            <form id="plan-form">
+              <label class="field-label" for="salary">حقوق خالص ماهانه</label>
+              <div class="money-input">
+                <input id="salary" name="salary" type="text" inputmode="decimal" autocomplete="off" placeholder="مثلا ۸۰٬۰۰۰٬۰۰۰" required />
+                <span>ریال</span>
+              </div>
+              <p class="field-hint">عدد را به ریال وارد کن. مبلغ حقوق و تاریخچه فقط در مرورگر خودت می‌ماند.</p>
+              <div class="range-row">
+                <div><label class="field-label" for="contribution-rate">درصدی که می‌خواهی کنار بگذاری</label><p class="field-hint">اگر مطمئن نیستی، همان ۲۰٪ مناسب شروع است.</p></div>
+                <output id="contribution-output" for="contribution-rate">۲۰٪</output>
+              </div>
+              <input id="contribution-rate" type="range" min="15" max="25" step="1" value="20" />
+              <button class="primary-button" type="submit"><span>پیشنهاد این ماه را بساز</span><span class="button-arrow">←</span></button>
+            </form>
+          </section>
+
+          <section id="result-panel" class="panel result-panel is-hidden" aria-live="polite">
+            <div class="panel-heading">
+              <div><span class="section-kicker">۲. پیشنهاد این ماه</span><h2>پول سرمایه‌گذاری را این‌طور تقسیم کن</h2></div>
+              <span id="recommendation-mood" class="mood-chip">دفاعی و متعادل</span>
+            </div>
+            <div class="result-summary">
+              <div class="summary-block"><span>مبلغ پیشنهادی سرمایه‌گذاری</span><strong id="total-investment">—</strong><small>ریال در این ماه</small></div>
+              <div class="summary-block summary-secondary"><span>درصد از حقوق</span><strong id="total-rate">—</strong><small>کف ۱۵٪ · سقف ۲۵٪</small></div>
+            </div>
+            <div id="allocation-list" class="allocation-list"></div>
+            <div class="model-note"><span class="note-icon">i</span><p id="model-note-text">وزن‌ها با داده‌های بازار کمی تنظیم می‌شوند، اما به‌خاطر ریسک‌گریز بودن پروفایل، تغییراتشان محدود است.</p></div>
+          </section>
+
+          <section class="panel history-panel">
+            <div class="panel-heading"><div><span class="section-kicker">تاریخچه</span><h2>ماه‌های قبلی</h2></div><button id="clear-history" class="text-button" type="button">پاک کردن</button></div>
+            <div id="history-list" class="history-list"><div class="empty-state">هنوز پیشنهادی ثبت نشده. اولین ماه را از بالا شروع کن.</div></div>
+          </section>
+        </div>
+
+        <aside class="side-column">
+          <section class="panel live-panel">
+            <div class="panel-heading"><div><span class="section-kicker">داده زنده</span><h2>بازار الان چه می‌گوید؟</h2></div><button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی داده‌های بازار">↻</button></div>
+            <p class="panel-intro">اعداد زیر از منابع عمومی زنده خوانده می‌شوند و فقط برای تنظیم جزئی وزن‌ها هستند؛ قرار نیست با هر نوسان کوچک، سبدت را زیرورو کنند.</p>
+            <div id="market-data" class="market-data"><div class="loading-lines"><span></span><span></span><span></span><span></span></div></div>
+            <div class="data-footer"><span id="market-updated">در حال دریافت…</span><span class="source-badge">منبع‌محور</span></div>
+          </section>
+
+          <section class="panel rule-panel">
+            <span class="section-kicker">قواعد ساده</span><h2>این برنامه چه کار نمی‌کند؟</h2>
+            <ul class="rule-list">
+              <li>قول سود یا پیش‌بینی قطعی بازار نمی‌دهد.</li>
+              <li>با یک روز رشد یا افت، تصمیم افراطی نمی‌گیرد.</li>
+              <li>نام صندوق را معیار همیشگی فرض نمی‌کند؛ نوع دارایی مهم‌تر است.</li>
+              <li>پول ضروری زندگی را وارد سبد نمی‌کند.</li>
+            </ul>
+            <div class="disclaimer">این ابزار آموزشی است و جایگزین مشاوره مالی، بررسی کارمزد، نقدشوندگی و مقررات هر ابزار نیست.</div>
+          </section>
+        </aside>
+      </section>
+
+      <footer class="footer"><span>سبد آرام · نسخه منبع‌محور</span><span>داده زنده ممکن است به‌دلیل اختلال منبع یا محدودیت سرویس موقتا در دسترس نباشد.</span></footer>
+    </main>
+  </body>
+</html>
