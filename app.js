@@ -31,6 +31,7 @@ import {
   simpleChangeTransactions,
 } from "./src/portfolio.js";
 import { AppShell } from "./src/ui/components.js";
+import { donutChartMarkup, lineChartMarkup, normalizeSeriesIndex } from "./src/ui/charts.js";
 import { createNavigationController } from "./src/ui/navigation.js";
 import { createAppStore } from "./src/ui/state.js";
 
@@ -63,6 +64,7 @@ const backtestEl = $("#backtest-output");
 const portfolioAllocationEl = $("#portfolio-allocation");
 const portfolioLedgerEl = $("#portfolio-ledger");
 const portfolioAuditEl = $("#portfolio-audit");
+const portfolioDonutEl = $("#portfolio-donut");
 const simpleChangePanel = $("#simple-change-panel");
 const portfolioTransferStatusEl = $("#portfolio-transfer-status");
 const appStore = createAppStore();
@@ -74,6 +76,7 @@ let liveMarket = null;
 let lastPlan = null;
 let pendingSimpleBalances = null;
 let pendingSimpleStock = null;
+let dashboardRange = "ALL";
 
 const fallbackCopy = {
   status: { loading: "Reading market data", connected: "Live data connected", cached: "Using cached data", unavailable: "Live data unavailable" },
@@ -366,6 +369,9 @@ function marketSnapshot(market) {
 function renderMarket(data) {
   if (!data || !data.assets) {
     marketDataEl.innerHTML = `<div class="empty-state">${escapeHTML(text("market.empty", "No market data is available."))}</div>`;
+    $("#market-updated").textContent = "—";
+    $("#market-coverage").textContent = "—";
+    renderMarketDiagnostics(null);
     return;
   }
   const labels = text("market.labels", {});
@@ -385,30 +391,222 @@ function renderMarket(data) {
   $("#market-updated").textContent = data.updatedAt ? `${text("market.updated", "Updated")} ${formatDateTime(data.updatedAt)}` : "\u2014";
   const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item.sourceCount) || 0), 0);
   $("#market-coverage").textContent = `${sourceTotal} ${text("market.sourceQuotes", "valid source quotes")}`;
+  renderMarketDiagnostics(data);
+}
+
+function latestPlanSnapshot() {
+  if (lastPlan) return lastPlan;
+  const latest = readHistory()[0];
+  if (!latest) return null;
+  return {
+    inputs: {
+      monthlyContribution: latest.total,
+      contributionRate: latest.contributionRate,
+      profile: latest.profile || { riskTolerance: "conservative", horizonYears: 5, emergencyFund: "partial" },
+    },
+    recommendation: { weights: latest.weights || {} },
+    contribution: { amounts: latest.contributionPlan || {} },
+    monteCarlo: null,
+  };
+}
+
+function readDashboardPortfolio() {
+  const portfolio = readPortfolio();
+  const inflationRate = numberFromInput($("#inflation-rate")?.value) / 100;
+  const result = calculatePortfolio(portfolio, liveMarket || {}, new Date().toISOString(), inflationRate);
+  return { portfolio, result, hasTransactions: result.transactions.length > 0 };
+}
+
+function dashboardCurrency(value) {
+  return Number.isFinite(Number(value)) ? `${formatIRR(value)} ${text("currencyUnit")}` : "—";
+}
+
+function freshnessLabel(value) {
+  const timestamp = new Date(value || 0).getTime();
+  if (!Number.isFinite(timestamp)) return "زمان نامشخص";
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+  if (minutes < 2) return "همین الان";
+  if (minutes < 60) return `${formatIRR(minutes)} دقیقه قبل`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${formatIRR(hours)} ساعت قبل`;
+  return `${formatIRR(Math.round(hours / 24))} روز قبل`;
+}
+
+function confidenceLabel(item) {
+  const count = Number(item?.sourceCount) || 0;
+  if (count >= 3) return { label: "اعتماد بالا", className: "confidence-high" };
+  if (count === 2) return { label: "اعتماد متوسط", className: "confidence-medium" };
+  if (count === 1) return { label: "یک منبع", className: "confidence-low" };
+  return { label: "در دسترس نیست", className: "confidence-none" };
+}
+
+function dashboardPerformancePoints(portfolio, result) {
+  if (!result.trackingStart || !result.transactions.length) return [];
+  const asOf = new Date().toISOString();
+  const inflationRate = numberFromInput($("#inflation-rate")?.value) / 100;
+  return portfolioSeries(portfolio, liveMarket || {}, result.trackingStart, asOf, inflationRate).map((point) => {
+    const state = calculatePortfolio(portfolio, liveMarket || {}, point.date, inflationRate);
+    const complete = state.missingPrices.length === 0;
+    return {
+      date: point.date,
+      label: formatDate(point.date),
+      value: complete ? state.currentValue : null,
+      realValue: complete ? state.realValue : null,
+      invested: state.netInvested,
+    };
+  });
+}
+
+function filterDashboardRange(points) {
+  if (dashboardRange === "ALL" || !points.length) return points;
+  const days = dashboardRange === "1M" ? 31 : dashboardRange === "6M" ? 183 : 365;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const filtered = points.filter((point) => new Date(point.date).getTime() >= cutoff);
+  const prior = points.filter((point) => new Date(point.date).getTime() < cutoff).at(-1);
+  return prior ? [prior, ...filtered] : filtered;
+}
+
+function renderDashboardPerformance() {
+  const container = $("#dashboard-performance-chart");
+  if (!container) return;
+  const { portfolio, result } = readDashboardPortfolio();
+  const points = filterDashboardRange(dashboardPerformancePoints(portfolio, result));
+  container.innerHTML = lineChartMarkup({
+    series: [
+      { name: "سرمایه خالص", color: "#8997a0", points: points.map((point) => ({ value: point.invested, label: point.label })) },
+      { name: "ارزش اسمی", color: "#126b62", points: points.map((point) => ({ value: point.value, label: point.label })) },
+      { name: "ارزش پس از تورم", color: "#c18a2c", points: points.map((point) => ({ value: point.realValue, label: point.label })) },
+    ],
+    ariaLabel: "روند ارزش پرتفوی و سرمایه خالص",
+    emptyLabel: result.transactions.length ? "تاریخچه قیمت کافی برای رسم این روند نیست." : "با ثبت دارایی و دریافت قیمت تاریخی، روند اینجا نمایش داده می‌شود.",
+    valueLabel: dashboardCurrency,
+    height: 280,
+  });
+}
+
+function renderDashboardAllocation(result, plan) {
+  const chart = $("#dashboard-allocation-chart");
+  const list = $("#dashboard-allocation-list");
+  if (!chart || !list) return;
+  const complete = result.transactions.length > 0 && result.missingPrices.length === 0;
+  const actual = ASSET_KEYS.map((assetId) => ({
+    assetId,
+    value: complete ? Number(result.values[assetId]?.value) || 0 : 0,
+    percent: complete ? Number(result.allocation[assetId]) || 0 : 0,
+  })).filter((item) => item.value > 0);
+  chart.innerHTML = donutChartMarkup({
+    segments: actual.map((item) => ({ name: assetMeta(item.assetId).title, value: item.value, color: getAssetColor(item.assetId), percentLabel: formatPercent(item.percent) })),
+    centerLabel: "ارزش سبد",
+    centerValue: complete ? dashboardCurrency(result.currentValue) : "—",
+    emptyLabel: result.transactions.length && result.missingPrices.length ? "برای بعضی دارایی‌ها قیمت در دسترس نیست." : "هنوز تخصیصی برای نمایش نیست.",
+  });
+  const target = plan?.recommendation?.weights || {};
+  const rows = ASSET_KEYS.filter((assetId) => (actual.some((item) => item.assetId === assetId) || Number(target[assetId]) > 0)).map((assetId) => {
+    const actualPercent = Number(result.allocation[assetId]) || 0;
+    const targetPercent = Number(target[assetId]);
+    const hasTarget = Number.isFinite(targetPercent);
+    const delta = hasTarget ? actualPercent - targetPercent : null;
+    const warning = hasTarget && Math.abs(delta) >= 10;
+    return `<div class="allocation-compare-row"><div><span class="asset-dot ${escapeHTML(assetMeta(assetId).dotClass)}"></span><strong>${escapeHTML(assetMeta(assetId).title)}</strong></div><span>${complete ? formatPercent(actualPercent) : "—"}</span><span>${hasTarget ? formatPercent(targetPercent) : "—"}</span><small class="${warning ? "allocation-warning" : ""}">${hasTarget ? `${delta > 0 ? "+" : ""}${formatPercent(delta)} ${warning ? "· نیازمند توجه" : ""}` : "هدف ثبت نشده"}</small></div>`;
+  }).join("");
+  list.innerHTML = rows || `<div class="empty-state">با ثبت پرتفوی یا ساخت برنامه، مقایسه نمایش داده می‌شود.</div>`;
+}
+
+function renderDashboardHealth(result, plan) {
+  const container = $("#dashboard-health-list");
+  if (!container) return;
+  const transactions = result.transactions || [];
+  const months = new Set(transactions.filter((item) => ["OPENING", "BUY", "DEPOSIT"].includes(item.type)).map((item) => String(item.date).slice(0, 7)));
+  const consistency = transactions.length ? (months.size >= 3 ? ["خوب", "ثبت واریز در چند ماه مختلف دیده می‌شود.", "health-good"] : ["اطلاعات کم", "برای قضاوت درباره نظم واریز، چند ماه دیگر سابقه لازم است.", "health-neutral"]) : ["در دسترس نیست", "هنوز تراکنشی برای سنجش نظم واریز ثبت نشده.", "health-neutral"];
+  const held = Object.values(result.values || {}).filter((item) => Number(item.quantity) > 0 && Number(item.value) > 0);
+  const diversification = !held.length ? ["در دسترس نیست", "هنوز دارایی قابل ارزش‌گذاری ثبت نشده.", "health-neutral"] : held.length >= 3 ? ["خوب", `${formatIRR(held.length)} دسته دارایی در سبد ارزش‌گذاری شده است.`, "health-good"] : ["تک‌محور", "تعداد دسته‌های دارایی کم است؛ این هشدار توصیه خرید نیست.", "health-warning"];
+  const emergency = plan?.inputs?.profile?.emergencyFund;
+  const emergencyState = emergency === "complete" ? ["ثبت‌شده", "صندوق اضطراری کامل اعلام شده است.", "health-good"] : emergency === "none" ? ["نیازمند توجه", "قبل از افزایش نرخ سرمایه‌گذاری، صندوق اضطراری را بررسی کن.", "health-warning"] : emergency === "partial" ? ["نسبی", "صندوق اضطراری کامل اعلام نشده است.", "health-warning"] : ["در دسترس نیست", "این گزینه در پروفایل برنامه ثبت نشده.", "health-neutral"];
+  const maxAllocation = Math.max(0, ...held.map((item) => Number(result.allocation[Object.keys(result.values).find((key) => result.values[key] === item)]) || 0));
+  const concentration = !held.length ? ["در دسترس نیست", "برای سنجش تمرکز، ارزش‌گذاری کامل لازم است.", "health-neutral"] : maxAllocation > 75 ? ["بالا", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"] : maxAllocation > 55 ? ["متوسط", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"] : ["قابل قبول", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-good"];
+  const items = [["نظم واریز", consistency], ["تنوع دارایی", diversification], ["صندوق اضطراری", emergencyState], ["ریسک تمرکز", concentration]];
+  container.innerHTML = items.map(([label, [status, detail, className]]) => `<div class="health-item"><span class="health-dot ${className}"></span><div><strong>${escapeHTML(label)}</strong><small>${escapeHTML(detail)}</small></div><b class="${className}">${escapeHTML(status)}</b></div>`).join("");
+}
+
+function getAssetColor(assetId) {
+  return { fixed: "#126b62", gold: "#c18a2c", currency: "#4979a7", silver: "#8997a0", stocks: "#8b5bb7", cash: "#4c9c6d", other: "#c56c4a" }[assetId] || "#126b62";
+}
+
+function renderMarketSnapshot(data) {
+  const container = $("#dashboard-market-snapshot");
+  const status = $("#dashboard-market-status");
+  if (!container || !status) return;
+  if (!data || !data.assets) {
+    status.textContent = text("dashboard.marketUnavailable", "داده بازار در دسترس نیست؛ عدد ساختگی نمایش داده نمی‌شود.");
+    status.className = "data-note data-note-warning";
+    container.innerHTML = `<div class="empty-state">داده بازار در دسترس نیست. از صفحه بازار دوباره تلاش کن.</div>`;
+    return;
+  }
+  const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
+  status.textContent = `${formatIRR(sourceTotal)} quote معتبر · ${freshnessLabel(data.updatedAt)}`;
+  status.className = "data-note";
+  const items = [
+    ["gold", data.assets.gold, "طلا"],
+    ["dollar", data.assets.dollar, "ارز"],
+    ["silver", data.assets.silver, "نقره"],
+  ].map(([key, item, label]) => item ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${label}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(text("currencyUnit"))}</b><span class="${Number(item.changePct) > 0.05 ? "positive" : Number(item.changePct) < -0.05 ? "negative" : "muted"}">${Number.isFinite(Number(item.changePct)) ? `${Number(item.changePct) > 0 ? "+" : ""}${formatPercent(item.changePct)}` : "تغییر روزانه نامشخص"}</span><small>${freshnessLabel(item.asOf || data.updatedAt)} · ${escapeHTML(confidenceLabel(item).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>${label}</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
+  const fixed = data.funds?.fixedIncome;
+  items.push(fixed ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-fixed"></span><strong>درآمد ثابت</strong></div><b>${formatPercent(fixed.effectiveAnnualReturn)}</b><span class="muted">بازده موثر سالانه</span><small>${freshnessLabel(data.updatedAt)} · ${escapeHTML(confidenceLabel(fixed).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>درآمد ثابت</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
+  container.innerHTML = items.join("");
+}
+
+function renderMarketDiagnostics(data) {
+  const container = $("#market-diagnostics");
+  if (!container) return;
+  if (!data?.diagnostics) {
+    container.innerHTML = `<div class="empty-state">تشخیص منبع برای این پاسخ در دسترس نیست.</div>`;
+    return;
+  }
+  const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(id)}</strong><small>${item.status === "fulfilled" ? "پاسخ داده" : "ناموفق"}</small></div><b>${formatIRR(item.quoteCount || 0)} quote</b></div>`).join("");
+  const assets = Object.entries(data.diagnostics.assets || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(id)}</strong><small>${formatIRR(item.successful || 0)} از ${formatIRR(item.attempted || 0)} منبع</small></div><b class="${item.successful ? "positive" : "negative"}">${item.successful ? "قابل استفاده" : "در دسترس نیست"}</b></div>`).join("");
+  container.innerHTML = `<div><span class="kicker">منابع</span>${providers || `<div class="empty-state">موردی نیست.</div>`}</div><div><span class="kicker">پوشش دارایی</span>${assets || `<div class="empty-state">موردی نیست.</div>`}</div>`;
 }
 
 function renderDashboard() {
-  const emptyState = $(".dashboard-plan-empty");
-  const readyState = $(".dashboard-plan-ready");
-  if (!emptyState || !readyState) return;
-  const ready = Boolean(lastPlan);
-  emptyState.classList.toggle("is-hidden", ready);
-  readyState.classList.toggle("is-hidden", !ready);
-  if (ready) {
-    $("#dashboard-plan-amount").textContent = `${formatIRR(lastPlan.inputs.monthlyContribution)} ${text("currencyUnit")}`;
-    const p10 = Number(lastPlan.monteCarlo?.nominal?.p10);
-    const p90 = Number(lastPlan.monteCarlo?.nominal?.p90);
-    $("#dashboard-plan-range").textContent = Number.isFinite(p10) && Number.isFinite(p90) ? `${formatIRR(p10)} تا ${formatIRR(p90)}` : "—";
-    $("#dashboard-plan-profile").textContent = text(`profileLabels.${lastPlan.inputs.profile.riskTolerance}`, text("profileLabels.conservative", "محافظه‌کارانه"));
+  const onboarding = $("#dashboard-onboarding");
+  const summary = $("#dashboard-current-value");
+  if (!onboarding || !summary) return;
+  const plan = latestPlanSnapshot();
+  const { portfolio, result, hasTransactions } = readDashboardPortfolio();
+  const complete = hasTransactions && result.missingPrices.length === 0;
+  const empty = !plan && !hasTransactions;
+  onboarding.classList.toggle("is-hidden", !empty);
+
+  $("#dashboard-current-value").textContent = complete ? dashboardCurrency(result.currentValue) : "—";
+  $("#dashboard-current-value-note").textContent = !hasTransactions ? "هنوز دفتر پرتفوی ثبت نشده" : result.missingPrices.length ? "قیمت بعضی دارایی‌ها در دسترس نیست" : `به‌روزشده ${freshnessLabel(liveMarket?.updatedAt)}`;
+  $("#dashboard-invested").textContent = hasTransactions ? dashboardCurrency(result.netInvested) : "—";
+  $("#dashboard-invested-note").textContent = hasTransactions ? `${formatIRR(result.transactions.length)} رویداد در دفتر` : "از دفتر تراکنش‌ها";
+  const pnlEl = $("#dashboard-profit-loss");
+  pnlEl.textContent = complete ? `${result.profitLoss >= 0 ? "+" : ""}${dashboardCurrency(result.profitLoss)}` : "—";
+  pnlEl.className = complete ? (result.profitLoss >= 0 ? "positive" : "negative") : "";
+  $("#dashboard-profit-loss-note").textContent = complete ? "ارزش فعلی منهای سرمایه خالص" : "وقتی ارزش‌گذاری کامل باشد";
+  const monthly = Number(plan?.inputs?.monthlyContribution);
+  $("#dashboard-monthly-contribution").textContent = Number.isFinite(monthly) ? dashboardCurrency(monthly) : "—";
+  $("#dashboard-monthly-contribution-note").textContent = plan ? `${formatPercent(plan.inputs.contributionRate || 0, 0)} از حقوق ماهانه` : "هنوز برنامه‌ای ذخیره نشده";
+  const topAllocation = complete ? ASSET_KEYS.map((assetId) => ({ id: assetId, value: Number(result.allocation[assetId]) || 0 })).sort((a, b) => b.value - a.value).filter((item) => item.value > 0).slice(0, 2) : [];
+  $("#dashboard-allocation-summary").textContent = topAllocation.length ? topAllocation.map((item) => `${assetMeta(item.id).title} ${formatPercent(item.value)}`).join(" · ") : "—";
+  $("#dashboard-allocation-summary-note").textContent = complete ? (result.missingPrices.length ? "ارزش‌گذاری ناقص" : "از ارزش فعلی دارایی‌ها") : "برای نمایش، موجودی و قیمت لازم است";
+  renderDashboardPerformance();
+  renderDashboardAllocation(result, plan);
+  renderDashboardHealth(result, plan);
+  const actionAmount = $("#dashboard-action-amount");
+  const actionSuggestion = $("#dashboard-action-suggestion");
+  const actionReason = $("#dashboard-action-reason");
+  if (plan) {
+    actionAmount.textContent = dashboardCurrency(monthly);
+    actionSuggestion.textContent = "این مبلغ را طبق وزن‌های برنامه و بدون خرید اجباری بین دسته‌ها پخش کن.";
+    actionReason.textContent = plan.inputs.profile?.emergencyFund === "none" ? "صندوق اضطراری کامل نیست؛ نرخ و مبلغ را قبل از ثبت نهایی بازبینی کن." : "پیشنهاد از هدف، افق و تحمل ریسک ثبت‌شده ساخته شده است.";
+  } else {
+    actionAmount.textContent = "—";
+    actionSuggestion.textContent = "برای دیدن مبلغ و تخصیص پیشنهادی، برنامه ماهانه بساز.";
+    actionReason.textContent = "بدون ورودی کافی، عددی حدس زده نمی‌شود.";
   }
-  const marketStatus = $("#dashboard-market-status");
-  if (!marketStatus) return;
-  if (!liveMarket || !liveMarket.assets) {
-    marketStatus.textContent = text("dashboard.marketUnavailable", "Market data is not available yet; no fabricated value is used.");
-    return;
-  }
-  const sourceTotal = Object.values(liveMarket.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
-  marketStatus.textContent = `${sourceTotal} ${text("dashboard.validQuotes", "valid quotes")} · ${liveMarket.updatedAt ? formatDateTime(liveMarket.updatedAt) : text("dashboard.unknownTime", "Unknown time")}`;
+  renderMarketSnapshot(liveMarket);
 }
 
 function assetMeta(key) {
@@ -455,19 +653,20 @@ function renderContributionPlan(plan) {
 }
 
 function renderLineChart(container, points, valueKey = "nominal", label = "") {
-  if (!points || points.length < 2) {
-    container.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.chartEmpty", "Not enough data for a chart."))}</div>`;
-    return;
-  }
-  const values = points.map((point) => Number(point[valueKey]) || 0);
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const bars = values.map((value, index) => {
-    const height = Math.max(3, ((value - min) / Math.max(max - min, 1)) * 100);
-    const title = `${label} ${index + 1}: ${formatIRR(value)} ${text("currencyUnit")}`;
-    return `<span class="chart-bar" style="height:${height}%" title="${escapeHTML(title)}"></span>`;
-  }).join("");
-  container.innerHTML = `<div class="bar-chart" aria-label="${escapeHTML(label)}">${bars}</div>`;
+  if (!container) return;
+  container.innerHTML = lineChartMarkup({
+    series: [{
+      name: label,
+      color: "#126b62",
+      points: (Array.isArray(points) ? points : []).map((point) => ({
+        value: point && point[valueKey],
+        label: point?.date ? formatDate(point.date) : "",
+      })),
+    }],
+    ariaLabel: label || text("analysis.chart", "روند ارزش"),
+    emptyLabel: text("analysis.chartEmpty", "داده کافی برای رسم نمودار وجود ندارد."),
+    valueLabel: (value) => `${formatIRR(value)} ${text("currencyUnit")}`,
+  });
 }
 
 function formatPortfolioQuantity(assetId, quantity) {
@@ -541,12 +740,13 @@ function renderPortfolio() {
   appStore.setState({ portfolio: result });
   const version = activePortfolioVersion(portfolio);
   const hasTransactions = result.transactions.length > 0;
-  $("#portfolio-current-value").textContent = portfolioValueLabel(result.currentValue);
+  const completeValuation = hasTransactions && result.missingPrices.length === 0;
+  $("#portfolio-current-value").textContent = completeValuation ? portfolioValueLabel(result.currentValue) : hasTransactions ? text("portfolio.unavailable", "در دسترس نیست") : "—";
   $("#portfolio-net-invested").textContent = portfolioValueLabel(result.netInvested);
-  $("#portfolio-profit-loss").textContent = portfolioValueLabel(result.profitLoss);
-  $("#portfolio-profit-loss").className = result.profitLoss >= 0 ? "positive" : "negative";
-  $("#portfolio-cagr").textContent = result.cagr === null ? text("portfolio.unavailable") : formatPercent(result.cagr * 100);
-  $("#portfolio-real-return").textContent = result.inflationAdjustedReturn === null ? text("portfolio.unavailable") : formatPercent(result.inflationAdjustedReturn * 100);
+  $("#portfolio-profit-loss").textContent = completeValuation ? portfolioValueLabel(result.profitLoss) : text("portfolio.unavailable", "در دسترس نیست");
+  $("#portfolio-profit-loss").className = completeValuation ? (result.profitLoss >= 0 ? "positive" : "negative") : "muted";
+  $("#portfolio-cagr").textContent = !completeValuation || result.cagr === null ? text("portfolio.unavailable") : formatPercent(result.cagr * 100);
+  $("#portfolio-real-return").textContent = !completeValuation || result.inflationAdjustedReturn === null ? text("portfolio.unavailable") : formatPercent(result.inflationAdjustedReturn * 100);
   $("#portfolio-start-date").textContent = result.trackingStart ? formatDate(result.trackingStart) : text("portfolio.notStarted");
   const versionLabel = version.label === "Initial portfolio" ? text("portfolio.initialLabel") : version.label;
   $("#portfolio-version-label").textContent = versionLabel;
@@ -557,9 +757,17 @@ function renderPortfolio() {
   const allocationRows = heldAssetIds.map((assetId) => {
     const meta = portfolioAssetMeta(assetId, portfolio);
     const item = result.values[assetId];
-    return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</small></div></div><div class="allocation-numbers"><strong>${item.value === null ? escapeHTML(text("portfolio.unavailable")) : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></div></div>`;
+    return `<button type="button" class="allocation-row allocation-row-button" data-portfolio-asset="${escapeHTML(assetId)}"><span class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><span><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</small></span></span><span class="allocation-numbers"><strong>${item.value === null ? escapeHTML(text("portfolio.unavailable")) : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></span></button>`;
   }).join("");
   portfolioAllocationEl.innerHTML = allocationRows || `<div class="empty-state">${escapeHTML(text("portfolio.empty"))}</div>`;
+  if (portfolioDonutEl) {
+    portfolioDonutEl.innerHTML = donutChartMarkup({
+      segments: heldAssetIds.map((assetId) => ({ name: portfolioAssetMeta(assetId, portfolio).title, value: Number(result.values[assetId].value) || 0, color: getAssetColor(assetId), percentLabel: formatPercent(result.allocation[assetId] || 0) })),
+      centerLabel: "ارزش فعلی",
+      centerValue: result.missingPrices.length ? "—" : portfolioValueLabel(result.currentValue),
+      emptyLabel: result.missingPrices.length ? text("portfolio.missingPrices") : text("portfolio.empty"),
+    });
+  }
 
   const quality = $("#portfolio-data-quality");
   if (!hasTransactions) quality.textContent = text("portfolio.empty");
@@ -587,6 +795,7 @@ function renderPortfolio() {
 
   portfolioAuditEl.innerHTML = version.audit.length ? version.audit.slice().reverse().slice(0, 12).map((event) => `<div class="audit-row"><div><strong>${escapeHTML(text(`portfolio.auditActions.${event.action}`, event.action))}</strong><small>${escapeHTML(formatDateTime(event.timestamp))}</small></div><span class="audit-${event.affectsHistory ? "history" : "normal"}">${escapeHTML(event.affectsHistory ? text("portfolio.auditHistory") : text("portfolio.auditNormal"))}</span></div>`).join("") : `<div class="empty-state">${escapeHTML(text("portfolio.noAudit"))}</div>`;
   renderStockList(portfolio, result);
+  renderDashboard();
 }
 
 function renderStockList(portfolio, result) {
@@ -598,6 +807,24 @@ function renderStockList(portfolio, result) {
     const value = item && Number.isFinite(item.value) ? portfolioValueLabel(item.value) : text("portfolio.unavailable");
     return `<div class="stock-row"><div><strong>${escapeHTML(asset.title)}</strong><small>${escapeHTML(text("portfolio.stockAccount"))}</small></div><div><strong>${escapeHTML(value)}</strong><small>${escapeHTML(text("portfolio.editByReenter"))}</small></div></div>`;
   }).join("") : `<div class="empty-state">${escapeHTML(text("portfolio.noStocks"))}</div>`;
+}
+
+function openAssetDrawer(assetId) {
+  const drawer = $("#asset-detail-drawer");
+  const content = $("#asset-drawer-content");
+  const title = $("#asset-drawer-title");
+  if (!drawer || !content || !title) return;
+  const portfolio = readPortfolio();
+  const result = calculatePortfolio(portfolio, liveMarket || {}, new Date().toISOString(), numberFromInput($("#inflation-rate")?.value) / 100);
+  const item = result.values[assetId];
+  if (!item) return;
+  const meta = portfolioAssetMeta(assetId, portfolio);
+  title.textContent = meta.title;
+  const transactions = result.transactions.filter((transaction) => transaction.assetId === assetId || transaction.targetAssetId === assetId).length;
+  const price = item.price === null ? "—" : portfolioValueLabel(item.price);
+  content.innerHTML = `<div class="asset-detail-summary"><div><span>مقدار</span><strong>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</strong></div><div><span>قیمت مبنا/بازار</span><strong>${escapeHTML(price)}</strong></div><div><span>ارزش فعلی</span><strong>${escapeHTML(portfolioValueLabel(item.value))}</strong></div><div><span>سهم از سبد</span><strong>${item.value === null ? "—" : escapeHTML(formatPercent(result.allocation[assetId] || 0))}</strong></div></div><div class="data-note ${item.value === null ? "data-note-warning" : ""}">${item.value === null ? "برای این دارایی قیمت معتبر در داده بازار وجود ندارد؛ ارزش ریالی را حدس نمی‌زنیم." : `در دفتر فعال ${formatIRR(transactions)} رویداد مرتبط ثبت شده است.`}</div><button type="button" class="secondary-button" data-go-view="portfolio">ویرایش موجودی و تراکنش‌ها</button>`;
+  if (typeof drawer.showModal === "function") drawer.showModal();
+  else drawer.setAttribute("open", "");
 }
 
 function renderSimulation(simulation, monteCarlo) {
@@ -616,6 +843,11 @@ function renderSimulation(simulation, monteCarlo) {
   const p10 = Number(monteCarlo.nominal.p10);
   const p90 = Number(monteCarlo.nominal.p90);
   $("#monthly-range").textContent = Number.isFinite(p10) && Number.isFinite(p90) ? `${formatIRR(p10)} تا ${formatIRR(p90)}` : "—";
+  const scenarioEl = $("#scenario-comparison");
+  if (scenarioEl) {
+    const scenarios = [["محتاطانه", monteCarlo.nominal.p10, "نتیجه صدک ۱۰ مدل", "scenario-cautious"], ["میانه", monteCarlo.nominal.p50, "نتیجه صدک ۵۰ مدل", "scenario-base"], ["خوش‌بینانه", monteCarlo.nominal.p90, "نتیجه صدک ۹۰ مدل", "scenario-positive"]];
+    scenarioEl.innerHTML = scenarios.map(([name, value, detail, className]) => `<div class="scenario-card ${className}"><span>${escapeHTML(name)}</span><strong>${formatIRR(value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
+  }
 }
 
 function renderBacktest(result) {
@@ -648,6 +880,57 @@ function renderHistory() {
   const chartPoints = chronological.map((entry, index) => ({ nominal: portfolioFromHistory(chronological.slice(0, index + 1), liveMarket).currentValue }));
   renderLineChart(historyChartEl, chartPoints, "nominal", text("history.chart"));
   historyListEl.innerHTML = history.length ? history.slice(0, 15).map((entry) => `<div class="history-item"><div><strong>${formatDate(entry.createdAt)}</strong><small>${formatPercent(entry.contributionRate)} ${escapeHTML(text("history.separator"))} ${escapeHTML(text("history.monthly"))}</small></div><div><strong>${formatIRR(entry.total)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("history.saved"))}</small></div></div>`).join("") : `<div class="empty-state">${escapeHTML(text("history.empty"))}</div>`;
+  renderHistoricalComparison();
+}
+
+function marketHistoryPoints(assetKey) {
+  const raw = liveMarket?.history?.[assetKey];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((point) => {
+    const date = Array.isArray(point) ? point[0] : point?.date || point?.time || point?.timestamp;
+    const value = Array.isArray(point) ? point[1] : point?.price ?? point?.value ?? point?.close ?? point?.c;
+    return { date, value: Number(value), label: date ? formatDate(date) : "" };
+  }).filter((point) => Number.isFinite(new Date(point.date).getTime()) && Number.isFinite(point.value) && point.value > 0).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+}
+
+function mixedMarketSeries(keys, weights) {
+  const maps = keys.map((key) => new Map(marketHistoryPoints(key).map((point) => [new Date(point.date).toISOString().slice(0, 10), point.value])));
+  if (maps.some((map) => !map.size)) return [];
+  const dates = [...maps[0].keys()].filter((date) => maps.every((map) => map.has(date))).sort();
+  return dates.map((date) => ({ date, label: formatDate(date), value: keys.reduce((sum, key, index) => sum + maps[index].get(date) * weights[index], 0) }));
+}
+
+function renderHistoricalComparison() {
+  const chart = $("#historical-comparison-chart");
+  const list = $("#historical-comparison-list");
+  if (!chart || !list) return;
+  const series = [];
+  const { portfolio, result } = readDashboardPortfolio();
+  const userPoints = result.trackingStart ? portfolioSeries(portfolio, liveMarket || {}, result.trackingStart, new Date().toISOString(), numberFromInput($("#inflation-rate")?.value) / 100).filter((point) => Number.isFinite(point.value)).map((point) => ({ date: point.date, value: point.value, label: formatDate(point.date) })) : [];
+  if (userPoints.length >= 2) series.push({ name: "پرتفوی تو", color: "#126b62", points: normalizeSeriesIndex(userPoints) });
+  const benchmarkDefinitions = [
+    ["gold", "طلا", "#c18a2c"],
+    ["dollar", "ارز", "#4979a7"],
+    ["silver", "نقره", "#8997a0"],
+  ];
+  const availability = [];
+  benchmarkDefinitions.forEach(([key, name, color]) => {
+    const points = marketHistoryPoints(key);
+    availability.push({ name, available: points.length >= 2, detail: points.length >= 2 ? `${formatIRR(points.length)} مشاهده تاریخی` : "تاریخچه کافی در دسترس نیست" });
+    if (points.length >= 2) series.push({ name, color, points: normalizeSeriesIndex(points) });
+  });
+  const mixed = mixedMarketSeries(["gold", "dollar", "silver"], [0.4, 0.3, 0.3]);
+  availability.push({ name: "سبد ساده بازار", available: mixed.length >= 2, detail: mixed.length >= 2 ? "۴۰٪ طلا · ۳۰٪ ارز · ۳۰٪ نقره" : "به سه تاریخچه مشترک نیاز دارد" });
+  if (mixed.length >= 2) series.push({ name: "سبد ساده بازار", color: "#8b5bb7", points: normalizeSeriesIndex(mixed) });
+  availability.push({ name: "درآمد ثابت", available: false, detail: "داده تاریخی صندوق در API فعلی وجود ندارد" });
+  chart.innerHTML = lineChartMarkup({
+    series,
+    ariaLabel: "مقایسه شاخصی پرتفوی و دارایی‌های بازار",
+    emptyLabel: "برای مقایسه، تاریخچه بازار یا دفتر پرتفوی کافی وجود ندارد.",
+    valueLabel: (value) => `${formatIRR(value)} شاخص`,
+    height: 280,
+  });
+  list.innerHTML = availability.map((item) => `<div class="benchmark-item"><span class="health-dot ${item.available ? "health-good" : "health-neutral"}"></span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.detail)}</small></div><b>${item.available ? "قابل مقایسه" : "در دسترس نیست"}</b></div>`).join("");
 }
 
 function renderPlan() {
@@ -927,6 +1210,29 @@ function setTransferStatus(message, type = "neutral") {
   element.className = `transfer-status transfer-${type}`;
 }
 
+function renderSettingsAssumptions() {
+  const container = $("#settings-assumptions");
+  if (!container) return;
+  const values = [
+    ["تورم سالانه", `${formatPercent(numberFromInput($("#inflation-rate")?.value), 0)}`],
+    ["رشد سالانه واریز", `${formatPercent(numberFromInput($("#contribution-growth")?.value), 0)}`],
+    ["تعداد مسیر مونت‌کارلو", formatIRR(numberFromInput($("#simulation-paths")?.value))],
+  ];
+  container.innerHTML = values.map(([label, value]) => `<div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`).join("");
+}
+
+function clearAllLocalData() {
+  [HISTORY_KEY, "investment-plan-history-v3", PORTFOLIO_KEY, PROFILE_KEY, MARKET_CACHE_KEY, CURRENCY_MIGRATION_KEY].forEach((key) => localStorage.removeItem(key));
+  lastPlan = null;
+  liveMarket = null;
+  appStore.setState({ market: null, history: [], portfolio: null, plan: null, monthlyInvestment: 0, error: null });
+  renderHistory();
+  renderPortfolio();
+  renderDashboard();
+  renderMarket(null);
+  setTransferStatus("داده‌های محلی حذف شد.", "success");
+}
+
 function exportHistory() {
   const records = readHistory();
   const portfolio = readPortfolio();
@@ -1011,20 +1317,21 @@ function runBacktest() {
 
 async function loadMarket() {
   setStatus(text("status.loading", fallbackCopy.status.loading), "loading");
+  appStore.setState({ marketStatus: "loading", error: null });
   try {
     const response = await fetchWithTimeout("/api/market", { cache: "default" });
     if (!response.ok) throw new Error("Market request failed");
     liveMarket = await response.json();
-    writeJson(MARKET_CACHE_KEY, liveMarket);
-    appStore.setState({ market: liveMarket });
+    if (!appStore.getState().marketCacheDisabled) writeJson(MARKET_CACHE_KEY, liveMarket);
+    appStore.setState({ market: liveMarket, marketStatus: "connected" });
     renderMarket(liveMarket);
     renderHistory();
     renderPortfolio();
     renderDashboard();
     setStatus(text("status.connected", fallbackCopy.status.connected), "success");
   } catch {
-    liveMarket = readJson(MARKET_CACHE_KEY, null);
-    appStore.setState({ market: liveMarket });
+    liveMarket = appStore.getState().marketCacheDisabled ? null : readJson(MARKET_CACHE_KEY, null);
+    appStore.setState({ market: liveMarket, marketStatus: liveMarket ? "cached" : "unavailable" });
     renderMarket(liveMarket);
     renderHistory();
     renderPortfolio();
@@ -1046,6 +1353,11 @@ async function loadCopy() {
 function bindEvents() {
   form.addEventListener("submit", (event) => { event.preventDefault(); renderPlan(); });
   $$('[data-go-view]').forEach((button) => button.addEventListener("click", () => navigationController.goTo(button.dataset.goView)));
+  $$('[data-dashboard-range]').forEach((button) => button.addEventListener("click", () => {
+    dashboardRange = button.dataset.dashboardRange || "ALL";
+    $$('[data-dashboard-range]').forEach((item) => item.classList.toggle("is-active", item === button));
+    renderDashboardPerformance();
+  }));
   $("#refresh-market").addEventListener("click", loadMarket);
   $("#run-backtest").addEventListener("click", runBacktest);
   $("#export-history").addEventListener("click", exportHistory);
@@ -1066,13 +1378,35 @@ function bindEvents() {
     navigationController.goTo("history");
   };
   $("#clear-history").addEventListener("click", clearSavedHistory);
-  $("#settings-clear-plans").addEventListener("click", clearSavedHistory);
   $("#settings-sidebar-collapsed").addEventListener("change", (event) => {
     appStore.setState({ sidebarCollapsed: event.currentTarget.checked });
+  });
+  $("#settings-market-cache").addEventListener("change", (event) => {
+    const disabled = event.currentTarget.checked;
+    appStore.setState({ marketCacheDisabled: disabled });
+    if (disabled) localStorage.removeItem(MARKET_CACHE_KEY);
+    setStatus(disabled ? "ذخیره بازار خاموش است" : text("status.connected", fallbackCopy.status.connected), disabled ? "warning" : "success");
+  });
+  $("#settings-clear-market-cache").addEventListener("click", () => {
+    localStorage.removeItem(MARKET_CACHE_KEY);
+    setTransferStatus("داده بازار ذخیره‌شده حذف شد.", "success");
+  });
+  $("#settings-export-data").addEventListener("click", exportHistory);
+  $("#settings-import-data").addEventListener("click", () => $("#settings-file").click());
+  $("#settings-file").addEventListener("change", importHistoryFile);
+  $("#settings-reset-all").addEventListener("click", () => {
+    if (window.confirm("همه برنامه‌ها، دفتر پرتفوی، پروفایل و داده بازار از این مرورگر حذف شود؟ این کار قابل بازگشت نیست.")) clearAllLocalData();
+  });
+  $("#asset-drawer-close")?.addEventListener("click", () => $("#asset-detail-drawer")?.close());
+  $("#portfolio-allocation")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-portfolio-asset]");
+    if (button) openAssetDrawer(button.dataset.portfolioAsset);
   });
   appStore.subscribe((state) => {
     const toggle = $("#settings-sidebar-collapsed");
     if (toggle) toggle.checked = state.sidebarCollapsed;
+    const cacheToggle = $("#settings-market-cache");
+    if (cacheToggle) cacheToggle.checked = state.marketCacheDisabled;
   });
   $("#contribution-rate").addEventListener("input", (event) => { $("#contribution-output").textContent = formatPercent(Number(event.target.value), 0); });
   $$('[data-number-input]').forEach((input) => {
@@ -1080,8 +1414,18 @@ function bindEvents() {
     input.addEventListener("input", formatNumberInput);
   });
   $$("#plan-form select, #plan-form input").forEach((element) => {
-    element.addEventListener("change", () => { persistProfile(); syncPlanState(); });
-    element.addEventListener("input", () => { persistProfile(); syncPlanState(); });
+    element.addEventListener("change", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); renderDashboard(); });
+    element.addEventListener("input", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); renderDashboard(); });
+  });
+  window.addEventListener("error", () => {
+    const error = $("#app-error");
+    if (error) { error.hidden = false; error.textContent = "بخشی از رابط کاربری با خطا روبه‌رو شد؛ داده‌های ذخیره‌شده دست‌نخورده باقی مانده‌اند."; }
+    appStore.setState({ error: "runtime" });
+  });
+  window.addEventListener("unhandledrejection", () => {
+    const error = $("#app-error");
+    if (error) { error.hidden = false; error.textContent = "دریافت داده کامل نشد؛ دوباره تلاش کن."; }
+    appStore.setState({ error: "async" });
   });
 }
 
@@ -1094,6 +1438,7 @@ async function init() {
   renderHistory();
   renderPortfolio();
   renderDashboard();
+  renderSettingsAssumptions();
   $("#advanced-date").value = new Date().toISOString().slice(0, 10);
   updateAdvancedTransactionFields();
   await loadMarket();
