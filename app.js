@@ -1205,9 +1205,10 @@ function handleAdvancedTransactionSubmit(event) {
 }
 
 function setTransferStatus(message, type = "neutral") {
-  const element = $("#history-transfer-status");
-  element.textContent = message;
-  element.className = `transfer-status transfer-${type}`;
+  [$("#history-transfer-status"), $("#settings-transfer-status")].filter(Boolean).forEach((element) => {
+    element.textContent = message;
+    element.className = `transfer-status transfer-${type}`;
+  });
 }
 
 function renderSettingsAssumptions() {
@@ -1226,6 +1227,9 @@ function clearAllLocalData() {
   lastPlan = null;
   liveMarket = null;
   appStore.setState({ market: null, history: [], portfolio: null, plan: null, monthlyInvestment: 0, error: null });
+  form.reset();
+  $("#contribution-output").textContent = formatPercent(Number($("#contribution-rate").value), 0);
+  renderSettingsAssumptions();
   renderHistory();
   renderPortfolio();
   renderDashboard();
