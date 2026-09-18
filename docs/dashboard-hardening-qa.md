@@ -35,6 +35,16 @@ Branch: `feat/dashboard-trust-hardening`
 6. Exercise export/import, malformed storage recovery, API failure, and the history-change confirmation path.
 7. Check keyboard focus, drawer close, disclosure panels, and the absence of horizontal scrolling.
 
+## Performance review
+
+- [x] No new runtime dependency or charting bundle was introduced; charts remain dependency-free SVG/CSS markup.
+- [x] Portfolio charts continue to use the existing monthly series rather than rendering one point per transaction.
+- [x] Dashboard range filtering reduces the rendered point set before chart markup is generated.
+- [x] Live plan previews are debounced by 180ms and deliberately skip history writes, preventing a local-storage write per keystroke.
+- [x] Large ledger/audit lists remain bounded to the existing visible-row limits.
+- [ ] Capture browser profiler and mobile paint/scroll evidence on the deployed PR preview before merge.
+
 ## Current limitation
 
 The browser-control session used for this branch repeatedly timed out before opening a tab, so new screenshots and live interaction evidence could not be captured in this work session. The branch is intentionally not marked merge-ready until the manual preview gate above is run against the deployed PR preview.
+{∂ﬂÎó∏·æﬁ€ç¯Âœzwﬁu”m:Ô]<mÁ|}Á¥
