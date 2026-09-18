@@ -1,6 +1,6 @@
 # Invest Consult — fintech dashboard audit
 
-Branch: `feat/final-financial-dashboard`
+Branch: `feat/dashboard-trust-hardening`
 
 ## Audit scope
 
@@ -35,6 +35,16 @@ Branch: `feat/final-financial-dashboard`
 - [x] Existing calculation engine modules were not rewritten.
 - [x] Direct browser verification found and fixed a missing closing section that had nested every view after Plan inside the Plan view.
 - [x] Desktop sidebar stays available while long views scroll; the grid item is explicitly top-aligned and independently scrollable.
+- [x] Dashboard summary includes current value, invested capital, P/L amount, P/L percentage, monthly contribution, and tracking duration.
+- [x] Summary cards expose explicit empty, unavailable, and ready states rather than leaving users to infer missing data.
+- [x] Custom and manually tracked assets remain visible in allocation and target-comparison views.
+- [x] The monthly action center shows the largest suggested contribution destinations and the reason behind the recommendation.
+- [x] Plan editing has a debounced live preview that does not create a history record on every keystroke.
+- [x] Portfolio performance compares net invested capital, nominal value, and inflation-adjusted value using the existing ledger.
+- [x] Line charts expose units, y-axis labels, accessible titles, tooltips, and explicit empty states.
+- [x] Market cards keep unavailable assets visible and show freshness/source coverage when data exists.
+- [x] Malformed or structurally invalid local JSON is surfaced as a visible safe-mode warning.
+- [x] UI input bounds and engine-facing clamps now agree for the planning controls.
 
 ## Important product decisions
 
@@ -50,3 +60,4 @@ Branch: `feat/final-financial-dashboard`
 - Fixed-income historical comparison remains unavailable until the market API supplies a historical series.
 - The supplied `533748e7.invest-consult.pages.dev` address is an older immutable deployment and still shows the pre-fix nesting. The corrected commit was deployed separately and verified at the commit preview recorded in PR #1.
 - Direct browser verification covered the corrected desktop deployment and the main data-entry paths. A real mobile/tablet viewport pass remains a deployment QA gate because this browser session does not expose viewport emulation.
+- This hardening pass was verified locally with the Node test suite, static dashboard contract checks, syntax checks, and diff validation. Live browser interaction in the current work session was unavailable because browser control repeatedly timed out before a tab could be opened; rerun the manual preview checklist against the PR deployment before merge.

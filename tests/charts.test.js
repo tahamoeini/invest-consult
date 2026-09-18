@@ -15,9 +15,12 @@ test("normalized comparison series uses the first observed value as index 100", 
 
 test("chart markup has explicit empty states and accessible SVG output", () => {
   assert.match(lineChartMarkup({ series: [{ name: "سبد", points: [{ value: 10 }] }] }), /داده کافی/);
-  const markup = lineChartMarkup({ series: [{ name: "سبد", points: [{ value: 10, label: "اول" }, { value: 12, label: "دوم" }] }] });
+  const markup = lineChartMarkup({ ariaLabel: "سبد", series: [{ name: "سبد", points: [{ value: 10, label: "اول" }, { value: 12, label: "دوم" }] }] });
   assert.match(markup, /role="img"/);
   assert.match(markup, /chart-line/);
+  assert.match(markup, /chart-axis-label/);
+  assert.match(markup, /<title>سبد<\/title>/);
+  assert.match(lineChartMarkup({ series: [{ points: [{ value: 10 }] }, { points: [{ value: 12 }] }] }), /داده کافی/);
   assert.match(donutChartMarkup({ segments: [{ name: "طلا", value: 100, color: "#c18a2c" }] }), /donut-chart/);
   assert.match(donutChartMarkup({ segments: [] }), /هنوز دارایی/);
 });

@@ -55,11 +55,11 @@ export function lineChartMarkup({
     points: (Array.isArray(item.points) ? item.points : []).map((point, index) => ({ ...point, index })),
   })).filter((item) => item.points.some((point) => finite(point.value) !== null));
   const allValues = normalized.flatMap((item) => item.points.map((point) => finite(point.value)).filter((value) => value !== null));
-  if (allValues.length < 2) return `<div class="empty-state chart-empty">${escapeHTML(emptyLabel)}</div>`;
+  const pointCount = normalized.length ? Math.max(...normalized.map((item) => item.points.length)) : 0;
+  if (allValues.length < 2 || pointCount < 2) return `<div class="empty-state chart-empty">${escapeHTML(emptyLabel)}</div>`;
 
-  const pointCount = Math.max(...normalized.map((item) => item.points.length));
   const width = 760;
-  const padding = { top: 18, right: 14, bottom: 34, left: 14 };
+  const padding = { top: 18, right: 14, bottom: 34, left: 112 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const min = Math.min(...allValues);
@@ -73,13 +73,18 @@ export function lineChartMarkup({
     const lineY = padding.top + plotHeight * ratio;
     return `<line x1="${padding.left}" y1="${lineY.toFixed(2)}" x2="${width - padding.right}" y2="${lineY.toFixed(2)}" class="chart-grid-line" />`;
   }).join("");
+  const axisValues = [domainMax, (domainMax + domainMin) / 2, domainMin];
+  const yAxis = axisValues.map((value, index) => {
+    const lineY = padding.top + plotHeight * (index / (axisValues.length - 1));
+    return `<text x="${padding.left - 9}" y="${(lineY + 4).toFixed(2)}" text-anchor="end" class="chart-axis-label">${escapeHTML(valueLabel(value))}</text>`;
+  }).join("");
   const lines = normalized.map((item) => {
     const segments = lineSegments(item.points);
     const paths = segments.map((segment) => `<path d="${pathFor(segment, x, y)}" class="chart-line" stroke="${escapeHTML(item.color || "#126b62")}" />`).join("");
     const dots = showDots ? item.points.filter((point) => finite(point.value) !== null).map((point) => `<circle cx="${x(point.index).toFixed(2)}" cy="${y(point.value).toFixed(2)}" r="3.2" class="chart-dot" fill="${escapeHTML(item.color || "#126b62")}"><title>${escapeHTML(item.name || "")} ${escapeHTML(point.label || "")}: ${escapeHTML(valueLabel(point.value))}</title></circle>`).join("") : "";
     return paths + dots;
   }).join("");
-  const firstSeries = normalized.find((item) => item.points.length);
+  const firstSeries = normalized.find((item) => item.points.length === pointCount) || normalized.find((item) => item.points.length);
   const labels = [0, Math.floor((pointCount - 1) / 2), pointCount - 1]
     .filter((index, position, array) => index >= 0 && array.indexOf(index) === position)
     .map((index) => {
@@ -87,7 +92,7 @@ export function lineChartMarkup({
       return point ? `<text x="${x(index).toFixed(2)}" y="${height - 8}" text-anchor="${index === 0 ? "start" : index === pointCount - 1 ? "end" : "middle"}" class="chart-axis-label">${escapeHTML(point.label || "")}</text>` : "";
     }).join("");
   const legend = normalized.length > 1 ? `<div class="chart-legend">${normalized.map((item) => `<span><i style="--legend-color:${escapeHTML(item.color || "#126b62")}"></i>${escapeHTML(item.name || "")}</span>`).join("")}</div>` : "";
-  return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHTML(ariaLabel)}" preserveAspectRatio="none"><g>${grid}${lines}${labels}</g></svg>${legend}</div>`;
+  return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHTML(ariaLabel)}" preserveAspectRatio="none"><title>${escapeHTML(ariaLabel)}</title><g>${grid}${yAxis}${lines}${labels}</g></svg>${legend}</div>`;
 }
 
 export function donutChartMarkup({

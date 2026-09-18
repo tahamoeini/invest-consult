@@ -77,6 +77,8 @@ let lastPlan = null;
 let pendingSimpleBalances = null;
 let pendingSimpleStock = null;
 let dashboardRange = "ALL";
+let storageWarning = false;
+let planPreviewTimer = null;
 
 const fallbackCopy = {
   status: { loading: "Reading market data", connected: "Live data connected", cached: "Using cached data", unavailable: "Live data unavailable" },
@@ -156,6 +158,28 @@ function formatDateTime(value) {
   return new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
+function formatTrackingDuration(start, end = new Date()) {
+  const startTime = new Date(start || 0).getTime();
+  const endTime = new Date(end || 0).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return "\u2014";
+  const totalMonths = Math.floor((endTime - startTime) / (365.25 * 24 * 60 * 60 * 1000 / 12));
+  if (totalMonths < 1) return "کمتر از یک ماه";
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  const parts = [];
+  if (years) parts.push(`${formatIRR(years)} سال`);
+  if (months) parts.push(`${formatIRR(months)} ماه`);
+  return parts.join(" و ") || "کمتر از یک ماه";
+}
+
+function showStorageWarning() {
+  if (!storageWarning) return;
+  const error = $("#app-error");
+  if (!error) return;
+  error.hidden = false;
+  error.textContent = "بخشی از داده‌های محلی قابل خواندن یا ذخیره نبود؛ برنامه با حالت امن و بدون حدس‌زدن عددها ادامه داد. اگر این داده‌ها مهم‌اند، فایل پشتیبان قبلی را وارد کن.";
+}
+
 function setStatus(label, type = "loading") {
   statusEl.textContent = label;
   statusEl.className = `status-pill status-${type}`;
@@ -166,6 +190,7 @@ function readJson(key, fallback) {
     const value = JSON.parse(localStorage.getItem(key) || "null");
     return value ?? fallback;
   } catch {
+    storageWarning = true;
     return fallback;
   }
 }
@@ -175,6 +200,8 @@ function writeJson(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
+    storageWarning = true;
+    showStorageWarning();
     return false;
   }
 }
@@ -270,11 +297,24 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = MARKET_REQUEST_TI
 function readHistory() {
   const current = readJson(HISTORY_KEY, []);
   const old = readJson("investment-plan-history-v3", []);
+  try {
+    if (localStorage.getItem(HISTORY_KEY) !== null && !Array.isArray(current)) storageWarning = true;
+    if (localStorage.getItem("investment-plan-history-v3") !== null && !Array.isArray(old)) storageWarning = true;
+  } catch {
+    storageWarning = true;
+  }
   return mergeHistory(current, old, HISTORY_LIMIT);
 }
 
 function readPortfolio() {
-  return normalizePortfolio(readJson(PORTFOLIO_KEY, null));
+  const raw = readJson(PORTFOLIO_KEY, null);
+  try {
+    const exists = localStorage.getItem(PORTFOLIO_KEY) !== null;
+    if (exists && (!raw || typeof raw !== "object" || raw.schema !== "invest-consult-portfolio" || !Array.isArray(raw.versions))) storageWarning = true;
+  } catch {
+    storageWarning = true;
+  }
+  return normalizePortfolio(raw);
 }
 
 function writePortfolio(portfolio) {
@@ -295,11 +335,11 @@ function getProfile() {
 
 function getPlanInputs() {
   const salary = numberFromInput($("#salary").value);
-  const contributionRate = clamp(numberFromInput($("#contribution-rate").value), 5, 50);
+  const contributionRate = clamp(numberFromInput($("#contribution-rate").value), 5, 40);
   const profile = getProfile();
-  const initialInvestment = numberFromInput($("#initial-investment").value);
-  const contributionGrowth = numberFromInput($("#contribution-growth").value) / 100;
-  const inflationRate = numberFromInput($("#inflation-rate").value) / 100;
+  const initialInvestment = Math.max(0, numberFromInput($("#initial-investment").value));
+  const contributionGrowth = clamp(numberFromInput($("#contribution-growth").value), -50, 200) / 100;
+  const inflationRate = clamp(numberFromInput($("#inflation-rate").value), -20, 300) / 100;
   const paths = clamp(numberFromInput($("#simulation-paths").value), 1000, 10000);
   return {
     salary,
@@ -346,10 +386,10 @@ function restoreProfile() {
     if (element && profile[key]) element.value = profile[key];
   });
   if (Number.isFinite(Number(profile.salary)) && Number(profile.salary) > 0) $("#salary").value = profile.salary;
-  if (Number.isFinite(Number(profile.contributionRate))) $("#contribution-rate").value = clamp(profile.contributionRate, 5, 50);
-  if (Number.isFinite(Number(profile.initialInvestment))) $("#initial-investment").value = profile.initialInvestment;
-  if (Number.isFinite(Number(profile.contributionGrowth))) $("#contribution-growth").value = profile.contributionGrowth;
-  if (Number.isFinite(Number(profile.inflationRate))) $("#inflation-rate").value = profile.inflationRate;
+  if (Number.isFinite(Number(profile.contributionRate))) $("#contribution-rate").value = clamp(profile.contributionRate, 5, 40);
+  if (Number.isFinite(Number(profile.initialInvestment))) $("#initial-investment").value = Math.max(0, profile.initialInvestment);
+  if (Number.isFinite(Number(profile.contributionGrowth))) $("#contribution-growth").value = clamp(profile.contributionGrowth, -50, 200);
+  if (Number.isFinite(Number(profile.inflationRate))) $("#inflation-rate").value = clamp(profile.inflationRate, -20, 300);
   if (Number.isFinite(Number(profile.paths))) $("#simulation-paths").value = clamp(profile.paths, 1000, 10000);
   if (typeof profile.rebalance === "boolean") $("#rebalancing").checked = profile.rebalance;
 }
@@ -377,16 +417,17 @@ function renderMarket(data) {
   const labels = text("market.labels", {});
   const cards = Object.entries(labels).map(([key, label]) => {
     const item = data.assets[key];
-    if (!item || !Number.isFinite(Number(item.price))) return "";
+    if (!item || !Number.isFinite(Number(item.price))) return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>داده در دسترس نیست</small></div></div>`;
     const change = Number(item.changePct);
     const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange", "\u2014");
     const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
-    return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(text("currencyUnit"))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))}</small></div></div>`;
+    const freshness = item.asOf || data.updatedAt;
+    return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(text("currencyUnit"))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))} · ${escapeHTML(freshnessLabel(freshness))}</small></div></div>`;
   }).join("");
   const fixed = data.funds && data.funds.fixedIncome;
   const fixedCard = fixed && Number.isFinite(Number(fixed.effectiveAnnualReturn))
-    ? `<div class="market-row"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>${formatPercent(fixed.effectiveAnnualReturn)}</strong><small>${escapeHTML(text("market.annual"))}</small></div></div>`
-    : "";
+    ? `<div class="market-row"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>${formatPercent(fixed.effectiveAnnualReturn)}</strong><small>${escapeHTML(text("market.annual"))} · ${escapeHTML(String(fixed.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))} · ${escapeHTML(freshnessLabel(fixed.asOf || data.updatedAt))}</small></div></div>`
+    : `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>—</strong><small>داده در دسترس نیست</small></div></div>`;
   marketDataEl.innerHTML = cards + fixedCard || `<div class="empty-state">${escapeHTML(text("market.empty", "No market data is available."))}</div>`;
   $("#market-updated").textContent = data.updatedAt ? `${text("market.updated", "Updated")} ${formatDateTime(data.updatedAt)}` : "\u2014";
   const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item.sourceCount) || 0), 0);
@@ -419,6 +460,21 @@ function readDashboardPortfolio() {
 
 function dashboardCurrency(value) {
   return Number.isFinite(Number(value)) ? `${formatIRR(value)} ${text("currencyUnit")}` : "—";
+}
+
+function setDashboardMetric(valueId, noteId, value, note, state = "ready") {
+  const valueElement = $(`#${valueId}`);
+  const noteElement = $(`#${noteId}`);
+  if (valueElement) {
+    valueElement.textContent = value;
+    valueElement.classList.remove("positive", "negative", "muted");
+  }
+  if (noteElement) noteElement.textContent = note;
+  const card = valueElement?.closest(".summary-card");
+  if (card) {
+    card.dataset.state = state;
+    card.setAttribute("aria-busy", state === "loading" ? "true" : "false");
+  }
 }
 
 function freshnessLabel(value) {
@@ -470,6 +526,11 @@ function renderDashboardPerformance() {
   const container = $("#dashboard-performance-chart");
   if (!container) return;
   const { portfolio, result } = readDashboardPortfolio();
+  const marketLoading = result.transactions.length > 0 && result.missingPrices.length > 0 && appStore.getState().marketStatus === "loading";
+  if (marketLoading) {
+    container.innerHTML = `<div class="chart-loading" aria-busy="true">در حال دریافت قیمت‌های لازم برای ارزش‌گذاری…</div>`;
+    return;
+  }
   const points = filterDashboardRange(dashboardPerformancePoints(portfolio, result));
   container.innerHTML = lineChartMarkup({
     series: [
@@ -484,30 +545,39 @@ function renderDashboardPerformance() {
   });
 }
 
-function renderDashboardAllocation(result, plan) {
+function renderDashboardAllocation(result, plan, portfolio) {
   const chart = $("#dashboard-allocation-chart");
   const list = $("#dashboard-allocation-list");
   if (!chart || !list) return;
+  const marketLoading = result.transactions.length > 0 && result.missingPrices.length > 0 && appStore.getState().marketStatus === "loading";
+  if (marketLoading) {
+    chart.innerHTML = `<div class="chart-loading" aria-busy="true">در حال دریافت قیمت‌های لازم…</div>`;
+    list.innerHTML = `<div class="chart-loading allocation-loading" aria-busy="true">مقایسه فعلی و هدف بعد از به‌روزرسانی قیمت‌ها نمایش داده می‌شود.</div>`;
+    return;
+  }
   const complete = result.transactions.length > 0 && result.missingPrices.length === 0;
-  const actual = ASSET_KEYS.map((assetId) => ({
+  const availableAssetIds = Object.keys(result.assets || {});
+  const actual = availableAssetIds.map((assetId) => ({
     assetId,
     value: complete ? Number(result.values[assetId]?.value) || 0 : 0,
     percent: complete ? Number(result.allocation[assetId]) || 0 : 0,
   })).filter((item) => item.value > 0);
   chart.innerHTML = donutChartMarkup({
-    segments: actual.map((item) => ({ name: assetMeta(item.assetId).title, value: item.value, color: getAssetColor(item.assetId), percentLabel: formatPercent(item.percent) })),
+    segments: actual.map((item) => ({ name: portfolioAssetMeta(item.assetId, portfolio).title, value: item.value, color: getAssetColor(item.assetId), percentLabel: formatPercent(item.percent) })),
     centerLabel: "ارزش سبد",
     centerValue: complete ? dashboardCurrency(result.currentValue) : "—",
     emptyLabel: result.transactions.length && result.missingPrices.length ? "برای بعضی دارایی‌ها قیمت در دسترس نیست." : "هنوز تخصیصی برای نمایش نیست.",
   });
   const target = plan?.recommendation?.weights || {};
-  const rows = ASSET_KEYS.filter((assetId) => (actual.some((item) => item.assetId === assetId) || Number(target[assetId]) > 0)).map((assetId) => {
+  const rowAssetIds = [...new Set([...ASSET_KEYS, ...actual.map((item) => item.assetId)])];
+  const rows = rowAssetIds.filter((assetId) => (actual.some((item) => item.assetId === assetId) || Number(target[assetId]) > 0)).map((assetId) => {
     const actualPercent = Number(result.allocation[assetId]) || 0;
     const targetPercent = Number(target[assetId]);
     const hasTarget = Number.isFinite(targetPercent);
     const delta = hasTarget ? actualPercent - targetPercent : null;
     const warning = hasTarget && Math.abs(delta) >= 10;
-    return `<div class="allocation-compare-row"><div><span class="asset-dot ${escapeHTML(assetMeta(assetId).dotClass)}"></span><strong>${escapeHTML(assetMeta(assetId).title)}</strong></div><span>${complete ? formatPercent(actualPercent) : "—"}</span><span>${hasTarget ? formatPercent(targetPercent) : "—"}</span><small class="${warning ? "allocation-warning" : ""}">${hasTarget ? `${delta > 0 ? "+" : ""}${formatPercent(delta)} ${warning ? "· نیازمند توجه" : ""}` : "هدف ثبت نشده"}</small></div>`;
+    const meta = portfolioAssetMeta(assetId, portfolio);
+    return `<div class="allocation-compare-row"><div><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><strong>${escapeHTML(meta.title)}</strong></div><span>${complete ? formatPercent(actualPercent) : "—"}</span><span>${hasTarget ? formatPercent(targetPercent) : "—"}</span><small class="${warning ? "allocation-warning" : ""}">${hasTarget ? `${delta > 0 ? "+" : ""}${formatPercent(delta)} ${warning ? "· نیازمند توجه" : ""}` : "هدف ثبت نشده"}</small></div>`;
   }).join("");
   list.innerHTML = rows || `<div class="empty-state">با ثبت پرتفوی یا ساخت برنامه، مقایسه نمایش داده می‌شود.</div>`;
 }
@@ -524,7 +594,8 @@ function renderDashboardHealth(result, plan) {
   const emergencyState = emergency === "complete" ? ["ثبت‌شده", "صندوق اضطراری کامل اعلام شده است.", "health-good"] : emergency === "none" ? ["نیازمند توجه", "قبل از افزایش نرخ سرمایه‌گذاری، صندوق اضطراری را بررسی کن.", "health-warning"] : emergency === "partial" ? ["نسبی", "صندوق اضطراری کامل اعلام نشده است.", "health-warning"] : ["در دسترس نیست", "این گزینه در پروفایل برنامه ثبت نشده.", "health-neutral"];
   const maxAllocation = Math.max(0, ...held.map((item) => Number(result.allocation[Object.keys(result.values).find((key) => result.values[key] === item)]) || 0));
   const concentration = !held.length ? ["در دسترس نیست", "برای سنجش تمرکز، ارزش‌گذاری کامل لازم است.", "health-neutral"] : maxAllocation > 75 ? ["بالا", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"] : maxAllocation > 55 ? ["متوسط", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"] : ["قابل قبول", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-good"];
-  const items = [["نظم واریز", consistency], ["تنوع دارایی", diversification], ["صندوق اضطراری", emergencyState], ["ریسک تمرکز", concentration]];
+  const tracking = !transactions.length ? ["در دسترس نیست", "برای سنجش کامل بودن ردیابی، حداقل یک رویداد و قیمت معتبر لازم است.", "health-neutral"] : result.missingPrices.length ? ["ناقص", `برای ${formatIRR(result.missingPrices.length)} دارایی قیمت معتبر ثبت نشده است.`, "health-warning"] : ["کامل", "همه دارایی‌های دارای موجودی، قیمت قابل استفاده دارند.", "health-good"];
+  const items = [["نظم واریز", consistency], ["تنوع دارایی", diversification], ["صندوق اضطراری", emergencyState], ["ریسک تمرکز", concentration], ["کامل بودن ردیابی", tracking]];
   container.innerHTML = items.map(([label, [status, detail, className]]) => `<div class="health-item"><span class="health-dot ${className}"></span><div><strong>${escapeHTML(label)}</strong><small>${escapeHTML(detail)}</small></div><b class="${className}">${escapeHTML(status)}</b></div>`).join("");
 }
 
@@ -564,7 +635,7 @@ function renderMarketDiagnostics(data) {
   }
   const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(id)}</strong><small>${item.status === "fulfilled" ? "پاسخ داده" : "ناموفق"}</small></div><b>${formatIRR(item.quoteCount || 0)} quote</b></div>`).join("");
   const assets = Object.entries(data.diagnostics.assets || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(id)}</strong><small>${formatIRR(item.successful || 0)} از ${formatIRR(item.attempted || 0)} منبع</small></div><b class="${item.successful ? "positive" : "negative"}">${item.successful ? "قابل استفاده" : "در دسترس نیست"}</b></div>`).join("");
-  container.innerHTML = `<div><span class="kicker">منابع</span>${providers || `<div class="empty-state">موردی نیست.</div>`}</div><div><span class="kicker">پوشش دارایی</span>${assets || `<div class="empty-state">موردی نیست.</div>`}</div>`;
+  container.innerHTML = `<div><span class="kicker">منابع</span>${providers || `<div class="empty-state">موردی نیست.</div>`}</div><div><span class="kicker">پوشش دارایی</span>${assets || `<div class="empty-state">موردی نیست.</div>`}</div><div class="diagnostic-method"><span class="kicker">روش تجمیع</span><p>قیمت هر دارایی از میانه quoteهای معتبر منابع پاسخ‌گو ساخته می‌شود؛ منبع ناموفق حذف می‌شود و داده قدیمی یا ساختگی جایگزین نمی‌شود.</p></div>`;
 }
 
 function renderDashboard() {
@@ -574,36 +645,44 @@ function renderDashboard() {
   const plan = latestPlanSnapshot();
   const { portfolio, result, hasTransactions } = readDashboardPortfolio();
   const complete = hasTransactions && result.missingPrices.length === 0;
+  const marketLoading = hasTransactions && result.missingPrices.length > 0 && appStore.getState().marketStatus === "loading";
+  const valuationState = !hasTransactions ? "empty" : marketLoading ? "loading" : complete ? "ready" : "unavailable";
   const empty = !plan && !hasTransactions;
   onboarding.classList.toggle("is-hidden", !empty);
 
-  $("#dashboard-current-value").textContent = complete ? dashboardCurrency(result.currentValue) : "—";
-  $("#dashboard-current-value-note").textContent = !hasTransactions ? "هنوز دفتر پرتفوی ثبت نشده" : result.missingPrices.length ? "قیمت بعضی دارایی‌ها در دسترس نیست" : `به‌روزشده ${freshnessLabel(liveMarket?.updatedAt)}`;
-  $("#dashboard-invested").textContent = hasTransactions ? dashboardCurrency(result.netInvested) : "—";
-  $("#dashboard-invested-note").textContent = hasTransactions ? `${formatIRR(result.transactions.length)} رویداد در دفتر` : "از دفتر تراکنش‌ها";
+  setDashboardMetric("dashboard-current-value", "dashboard-current-value-note", complete ? dashboardCurrency(result.currentValue) : "—", !hasTransactions ? "هنوز دفتر پرتفوی ثبت نشده" : marketLoading ? "در حال دریافت قیمت‌های بازار" : result.missingPrices.length ? "قیمت بعضی دارایی‌ها در دسترس نیست" : `به‌روزشده ${freshnessLabel(liveMarket?.updatedAt)}`, valuationState);
+  setDashboardMetric("dashboard-invested", "dashboard-invested-note", hasTransactions ? dashboardCurrency(result.netInvested) : "—", hasTransactions ? `${formatIRR(result.transactions.length)} رویداد در دفتر` : "از دفتر تراکنش‌ها", hasTransactions ? "ready" : "empty");
+  const pnlValue = complete ? `${result.profitLoss >= 0 ? "+" : ""}${dashboardCurrency(result.profitLoss)}` : "—";
+  setDashboardMetric("dashboard-profit-loss", "dashboard-profit-loss-note", pnlValue, complete ? "ارزش فعلی منهای سرمایه خالص" : marketLoading ? "در حال دریافت قیمت‌های بازار" : "وقتی ارزش‌گذاری کامل باشد", valuationState);
   const pnlEl = $("#dashboard-profit-loss");
-  pnlEl.textContent = complete ? `${result.profitLoss >= 0 ? "+" : ""}${dashboardCurrency(result.profitLoss)}` : "—";
-  pnlEl.className = complete ? (result.profitLoss >= 0 ? "positive" : "negative") : "";
-  $("#dashboard-profit-loss-note").textContent = complete ? "ارزش فعلی منهای سرمایه خالص" : "وقتی ارزش‌گذاری کامل باشد";
+  if (complete) pnlEl.classList.add(result.profitLoss >= 0 ? "positive" : "negative");
+  const profitLossPercent = complete && result.netInvested > 0 ? result.profitLoss / result.netInvested * 100 : null;
+  setDashboardMetric("dashboard-profit-loss-percent", "dashboard-profit-loss-percent-note", profitLossPercent === null ? "—" : `${profitLossPercent >= 0 ? "+" : ""}${formatPercent(profitLossPercent)}`, profitLossPercent === null ? (!hasTransactions ? "نسبت به سرمایه خالص" : marketLoading ? "در حال دریافت قیمت‌های بازار" : "وقتی ارزش‌گذاری کامل و سرمایه خالص مشخص باشد") : "سود یا زیان تقسیم بر سرمایه خالص", profitLossPercent === null ? valuationState : "ready");
+  const pnlPercentEl = $("#dashboard-profit-loss-percent");
+  if (pnlPercentEl && profitLossPercent !== null) pnlPercentEl.classList.add(profitLossPercent >= 0 ? "positive" : "negative");
   const monthly = Number(plan?.inputs?.monthlyContribution);
-  $("#dashboard-monthly-contribution").textContent = Number.isFinite(monthly) ? dashboardCurrency(monthly) : "—";
-  $("#dashboard-monthly-contribution-note").textContent = plan ? `${formatPercent(plan.inputs.contributionRate || 0, 0)} از حقوق ماهانه` : "هنوز برنامه‌ای ذخیره نشده";
-  const topAllocation = complete ? ASSET_KEYS.map((assetId) => ({ id: assetId, value: Number(result.allocation[assetId]) || 0 })).sort((a, b) => b.value - a.value).filter((item) => item.value > 0).slice(0, 2) : [];
-  $("#dashboard-allocation-summary").textContent = topAllocation.length ? topAllocation.map((item) => `${assetMeta(item.id).title} ${formatPercent(item.value)}`).join(" · ") : "—";
-  $("#dashboard-allocation-summary-note").textContent = complete ? (result.missingPrices.length ? "ارزش‌گذاری ناقص" : "از ارزش فعلی دارایی‌ها") : "برای نمایش، موجودی و قیمت لازم است";
+  setDashboardMetric("dashboard-monthly-contribution", "dashboard-monthly-contribution-note", Number.isFinite(monthly) ? dashboardCurrency(monthly) : "—", plan ? `${formatPercent(plan.inputs.contributionRate || 0, 0)} از حقوق ماهانه` : "هنوز برنامه‌ای ذخیره نشده", plan ? "ready" : "empty");
+  setDashboardMetric("dashboard-tracking-duration", "dashboard-tracking-duration-note", result.trackingStart ? formatTrackingDuration(result.trackingStart) : "—", result.trackingStart ? `از ${formatDate(result.trackingStart)}` : "از شروع دفتر پرتفوی", result.trackingStart ? "ready" : "empty");
+  const topAllocation = complete ? Object.keys(result.assets || {}).map((assetId) => ({ id: assetId, value: Number(result.allocation[assetId]) || 0 })).sort((a, b) => b.value - a.value).filter((item) => item.value > 0).slice(0, 2) : [];
+  setDashboardMetric("dashboard-allocation-summary", "dashboard-allocation-summary-note", topAllocation.length ? topAllocation.map((item) => `${portfolioAssetMeta(item.id, portfolio).title} ${formatPercent(item.value)}`).join(" · ") : "—", complete ? "از ارزش فعلی دارایی‌ها" : marketLoading ? "در حال دریافت قیمت‌های بازار" : "برای نمایش، موجودی و قیمت لازم است", valuationState);
   renderDashboardPerformance();
-  renderDashboardAllocation(result, plan);
+  renderDashboardAllocation(result, plan, portfolio);
   renderDashboardHealth(result, plan);
   const actionAmount = $("#dashboard-action-amount");
   const actionSuggestion = $("#dashboard-action-suggestion");
+  const actionAllocation = $("#dashboard-action-allocation");
   const actionReason = $("#dashboard-action-reason");
   if (plan) {
     actionAmount.textContent = dashboardCurrency(monthly);
     actionSuggestion.textContent = "این مبلغ را طبق وزن‌های برنامه و بدون خرید اجباری بین دسته‌ها پخش کن.";
+    const amounts = plan.contribution?.amounts || {};
+    const allocationItems = Object.entries(amounts).filter(([, amount]) => Number(amount) > 0).sort((left, right) => Number(right[1]) - Number(left[1])).slice(0, 3);
+    if (actionAllocation) actionAllocation.innerHTML = allocationItems.map(([assetId, amount]) => `<span><i class="asset-dot ${escapeHTML(assetMeta(assetId).dotClass)}"></i>${escapeHTML(assetMeta(assetId).title)} ${formatIRR(amount)} ${escapeHTML(text("currencyUnit"))}</span>`).join("");
     actionReason.textContent = plan.inputs.profile?.emergencyFund === "none" ? "صندوق اضطراری کامل نیست؛ نرخ و مبلغ را قبل از ثبت نهایی بازبینی کن." : "پیشنهاد از هدف، افق و تحمل ریسک ثبت‌شده ساخته شده است.";
   } else {
     actionAmount.textContent = "—";
     actionSuggestion.textContent = "برای دیدن مبلغ و تخصیص پیشنهادی، برنامه ماهانه بساز.";
+    if (actionAllocation) actionAllocation.innerHTML = "";
     actionReason.textContent = "بدون ورودی کافی، عددی حدس زده نمی‌شود.";
   }
   renderMarketSnapshot(liveMarket);
@@ -678,25 +757,33 @@ function portfolioValueLabel(value) {
   return value === null || value === undefined ? text("portfolio.unavailable", "Unavailable") : `${formatIRR(value)} ${text("currencyUnit")}`;
 }
 
-function renderPortfolioChart(series) {
+function renderPortfolioChart(series, portfolio, inflationRate) {
   const chart = $("#portfolio-chart");
-  if (!series.length) {
-    chart.innerHTML = `<div class="empty-state">${escapeHTML(text("portfolio.empty"))}</div>`;
+  if (!series.length || series.length < 2) {
+    chart.innerHTML = `<div class="empty-state">${escapeHTML(series.length ? "برای رسم روند حداقل دو نقطه زمانی لازم است." : text("portfolio.empty"))}</div>`;
     return;
   }
-  const values = series.map((point) => point.value).filter((value) => Number.isFinite(value));
-  if (!values.length) {
-    chart.innerHTML = `<div class="empty-state">${escapeHTML(text("portfolio.missingPrices"))}</div>`;
-    return;
-  }
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const bars = series.map((point) => {
-    if (!Number.isFinite(point.value)) return `<span class="chart-gap" title="${escapeHTML(text("portfolio.missingPrices"))}"></span>`;
-    const height = Math.max(3, ((point.value - min) / Math.max(max - min, 1)) * 100);
-    return `<span class="chart-bar" style="height:${height}%" title="${escapeHTML(formatDate(point.date))}: ${escapeHTML(portfolioValueLabel(point.value))}"></span>`;
-  }).join("");
-  chart.innerHTML = `<div class="bar-chart" aria-label="${escapeHTML(text("portfolio.chart"))}">${bars}</div>`;
+  const points = series.map((point) => {
+    const state = calculatePortfolio(portfolio, liveMarket || {}, point.date, inflationRate);
+    return {
+      date: point.date,
+      label: formatDate(point.date),
+      invested: state.netInvested,
+      value: point.value,
+      realValue: point.realValue,
+    };
+  });
+  chart.innerHTML = lineChartMarkup({
+    series: [
+      { name: "سرمایه خالص", color: "#8997a0", points: points.map((point) => ({ value: point.invested, label: point.label })) },
+      { name: "ارزش اسمی", color: "#126b62", points: points.map((point) => ({ value: point.value, label: point.label })) },
+      { name: "ارزش پس از تورم", color: "#c18a2c", points: points.map((point) => ({ value: point.realValue, label: point.label })) },
+    ],
+    ariaLabel: text("portfolio.chart"),
+    emptyLabel: text("portfolio.missingPrices"),
+    valueLabel: portfolioValueLabel,
+    height: 260,
+  });
 }
 
 function readSimpleBalances() {
@@ -771,13 +858,13 @@ function renderPortfolio() {
 
   const quality = $("#portfolio-data-quality");
   if (!hasTransactions) quality.textContent = text("portfolio.empty");
-  else if (result.missingPrices.length) quality.textContent = `${text("portfolio.missingPrices")} ${result.missingPrices.map((assetId) => assetMeta(assetId).title).join(", ")}`;
+  else if (result.missingPrices.length) quality.textContent = `${text("portfolio.missingPrices")} ${result.missingPrices.map((assetId) => portfolioAssetMeta(assetId, portfolio).title).join(", ")}`;
   else quality.textContent = text("portfolio.complete");
   quality.className = `data-note ${result.missingPrices.length ? "data-note-warning" : ""}`;
 
   populateSimpleBalances(result.holdings);
   const series = result.trackingStart ? portfolioSeries(portfolio, liveMarket || {}, result.trackingStart, asOf, inflationRate) : [];
-  renderPortfolioChart(series);
+  renderPortfolioChart(series, portfolio, inflationRate);
   if (hasTransactions && result.trackingStart && new Date(result.trackingStart).toDateString() === new Date(asOf).toDateString()) {
     $("#portfolio-chart-note").textContent = text("portfolio.startsToday");
   } else {
@@ -933,16 +1020,7 @@ function renderHistoricalComparison() {
   list.innerHTML = availability.map((item) => `<div class="benchmark-item"><span class="health-dot ${item.available ? "health-good" : "health-neutral"}"></span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.detail)}</small></div><b>${item.available ? "قابل مقایسه" : "در دسترس نیست"}</b></div>`).join("");
 }
 
-function renderPlan() {
-  const inputs = getPlanInputs();
-  if (!(inputs.salary > 0)) {
-    $("#salary").focus();
-    $("#salary").setCustomValidity(text("errors.salary", fallbackCopy.errors.salary));
-    $("#salary").reportValidity();
-    return;
-  }
-  $("#salary").setCustomValidity("");
-  persistProfile();
+function calculatePlan(inputs) {
   const recommendation = recommendAllocation(inputs.profile);
   const history = readHistory();
   const portfolio = portfolioFromHistory(history, liveMarket);
@@ -951,8 +1029,11 @@ function renderPlan() {
   const modelResult = estimateReturnModel(liveMarket || {}, DEFAULT_ASSUMPTIONS);
   const simulation = simulatePlan({ ...inputs, allocation: recommendation.weights, annualReturns: modelResult.model });
   const monteCarlo = runMonteCarlo({ ...inputs, allocation: recommendation.weights, returnModel: modelResult.model, historical: modelResult.historical });
-  lastPlan = { inputs, recommendation, contribution, simulation, monteCarlo, portfolio, modelResult };
+  return { inputs, recommendation, contribution, simulation, monteCarlo, portfolio, modelResult };
+}
 
+function renderPlanOutput(plan) {
+  const { inputs, recommendation, contribution, simulation, monteCarlo, portfolio } = plan;
   $("#monthly-investment").textContent = formatIRR(inputs.monthlyContribution);
   $("#monthly-rate").textContent = formatPercent(inputs.contributionRate);
   $("#profile-label").textContent = text(`profileLabels.${inputs.profile.riskTolerance}`, text("profileLabels.conservative"));
@@ -960,12 +1041,36 @@ function renderPlan() {
   renderContributionPlan(contribution);
   renderReasons(inputs.profile, portfolio);
   renderSimulation(simulation, monteCarlo);
+}
+
+function renderPlan({ saveHistoryRecord = true, scrollIntoView = true, validate = true } = {}) {
+  const inputs = getPlanInputs();
+  if (!(inputs.salary > 0)) {
+    if (validate) {
+      $("#salary").focus();
+      $("#salary").setCustomValidity(text("errors.salary", fallbackCopy.errors.salary));
+      $("#salary").reportValidity();
+    }
+    return false;
+  }
+  $("#salary").setCustomValidity("");
+  persistProfile();
+  lastPlan = calculatePlan(inputs);
+  renderPlanOutput(lastPlan);
   appStore.setState({ profile: inputs.profile, monthlyInvestment: inputs.monthlyContribution, plan: lastPlan });
   resultPanel.classList.remove("is-hidden");
-  saveHistory(inputs, recommendation, contribution);
-  renderHistory();
+  const previewStatus = $("#plan-preview-status");
+  if (previewStatus) {
+    previewStatus.textContent = saveHistoryRecord ? "این برنامه در تاریخچه همین دستگاه ذخیره شد." : "پیش‌نمایش زنده است؛ برای ثبت این نسخه در تاریخچه، برنامه را بساز.";
+    previewStatus.className = `transfer-status ${saveHistoryRecord ? "transfer-success" : "transfer-neutral"}`;
+  }
+  if (saveHistoryRecord) {
+    saveHistory(inputs, lastPlan.recommendation, lastPlan.contribution);
+    renderHistory();
+  }
   renderDashboard();
-  resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (scrollIntoView) resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  return true;
 }
 
 function saveHistory(inputs, recommendation, contribution) {
@@ -1211,13 +1316,34 @@ function setTransferStatus(message, type = "neutral") {
   });
 }
 
+function previewPlanIfVisible() {
+  if (resultPanel?.classList.contains("is-hidden")) return;
+  if (numberFromInput($("#salary")?.value) <= 0) {
+    window.clearTimeout(planPreviewTimer);
+    resultPanel.classList.add("is-hidden");
+    lastPlan = null;
+    appStore.setState({ plan: null, monthlyInvestment: 0 });
+    const previewStatus = $("#plan-preview-status");
+    if (previewStatus) {
+      previewStatus.textContent = "برای نمایش پیش‌نمایش، حقوق ماهانه معتبر را وارد کن.";
+      previewStatus.className = "transfer-status transfer-warning";
+    }
+    return;
+  }
+  window.clearTimeout(planPreviewTimer);
+  planPreviewTimer = window.setTimeout(() => {
+    renderPlan({ saveHistoryRecord: false, scrollIntoView: false, validate: false });
+  }, 180);
+}
+
 function renderSettingsAssumptions() {
   const container = $("#settings-assumptions");
   if (!container) return;
+  const inputs = getPlanInputs();
   const values = [
-    ["تورم سالانه", `${formatPercent(numberFromInput($("#inflation-rate")?.value), 0)}`],
-    ["رشد سالانه واریز", `${formatPercent(numberFromInput($("#contribution-growth")?.value), 0)}`],
-    ["تعداد مسیر مونت‌کارلو", formatIRR(numberFromInput($("#simulation-paths")?.value))],
+    ["تورم سالانه", `${formatPercent(inputs.inflationRate * 100, 0)}`],
+    ["رشد سالانه واریز", `${formatPercent(inputs.contributionGrowth * 100, 0)}`],
+    ["تعداد مسیر مونت‌کارلو", formatIRR(inputs.paths)],
   ];
   container.innerHTML = values.map(([label, value]) => `<div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`).join("");
 }
@@ -1225,7 +1351,12 @@ function renderSettingsAssumptions() {
 function clearAllLocalData() {
   [HISTORY_KEY, "investment-plan-history-v3", PORTFOLIO_KEY, PROFILE_KEY, MARKET_CACHE_KEY, CURRENCY_MIGRATION_KEY].forEach((key) => localStorage.removeItem(key));
   lastPlan = null;
+  window.clearTimeout(planPreviewTimer);
   liveMarket = null;
+  storageWarning = false;
+  pendingSimpleBalances = null;
+  pendingSimpleStock = null;
+  simpleChangePanel.classList.add("is-hidden");
   appStore.setState({ market: null, history: [], portfolio: null, plan: null, monthlyInvestment: 0, error: null });
   form.reset();
   $("#contribution-output").textContent = formatPercent(Number($("#contribution-rate").value), 0);
@@ -1418,8 +1549,8 @@ function bindEvents() {
     input.addEventListener("input", formatNumberInput);
   });
   $$("#plan-form select, #plan-form input").forEach((element) => {
-    element.addEventListener("change", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); renderDashboard(); });
-    element.addEventListener("input", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); renderDashboard(); });
+    element.addEventListener("change", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); previewPlanIfVisible(); renderDashboard(); });
+    element.addEventListener("input", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); previewPlanIfVisible(); renderDashboard(); });
   });
   window.addEventListener("error", () => {
     const error = $("#app-error");
@@ -1446,6 +1577,7 @@ async function init() {
   $("#advanced-date").value = new Date().toISOString().slice(0, 10);
   updateAdvancedTransactionFields();
   await loadMarket();
+  showStorageWarning();
 }
 
 init();
