@@ -75,7 +75,7 @@ async function getFund(category, url) {
   return {
     category,
     effectiveAnnualReturn: findAnnualReturn(html),
-    source: "صفحه رسمی ارائه‌دهنده",
+    source: "Official provider page",
     sourceUrl: url,
   };
 }
@@ -98,7 +98,7 @@ export async function onRequestGet() {
     assets: settledObject(assetResults),
     funds: settledObject(fundResults),
     sources: { market: "https://www.tgju.org/", funds: "https://charisma.ir/" },
-    note: "داده‌ها از منابع عمومی خوانده شده‌اند؛ در صورت اختلال منبع، مقدار ساختگی تولید نمی‌شود.",
+    note: "Data is read from public sources; unavailable sources are omitted without synthetic values.",
   });
 
   return new Response(body, {
