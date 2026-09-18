@@ -17,7 +17,7 @@ function normalizeDigits(value) {
 }
 
 function parseNumber(value) {
-  const normalized = normalizeDigits(value).replace(/[٬،,\s]/g, "").replace(/%/g, "").replace(/٫/g, ".");
+  const normalized = normalizeDigits(value).replace(/[٬،,\s]/g, "").replace(/%/g, "").replace(/٪/g, "").replace(/٫/g, ".");
   const match = normalized.match(/-?\d+(?:\.\d+)?/);
   return match ? Number(match[0]) : null;
 }
@@ -25,9 +25,9 @@ function parseNumber(value) {
 function firstNumberAfter(html, marker, windowSize) {
   const start = html.indexOf(marker);
   if (start < 0) return null;
-  const sample = html.slice(start, start + (windowSize || 800));
-  const match = sample.match(/>([-+۰-۹٠-٩\d][^<]{0,30})</);
-  return match ? parseNumber(match[1]) : null;
+  const sample = html.slice(start + marker.length, start + (windowSize || 800)).replace(/<[^>]*>/g, " ");
+  const match = sample.match(/[-+]?[۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?/);
+  return match ? parseNumber(match[0]) : null;
 }
 
 function parseTGJU(html, key) {
@@ -55,8 +55,8 @@ function extractNextData(html) {
 function findAnnualReturn(value) {
   const text = JSON.stringify(value || {});
   const patterns = [
-    /(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)[^۰-۹٠-٩\d]{0,80}([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*درصد/g,
-    /([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*درصد[^]{0,20}(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)/g,
+    /(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)[^۰-۹٠-٩\d]{0,80}([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*(?:درصد|%|٪)/g,
+    /([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*(?:درصد|%|٪)[^]{0,20}(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)/g,
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(text);
