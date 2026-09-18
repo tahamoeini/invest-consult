@@ -45,4 +45,4 @@ Branch: `feat/final-financial-dashboard`
 
 - The market API remains dependent on public upstream sources and network availability.
 - Fixed-income historical comparison remains unavailable until the market API supplies a historical series.
-- The cloud browser could not reach the local development server in this environment, so screenshot-based smoke testing of this unpushed branch must be completed from the PR preview/deployment environment.
+- The cloud browser could not reach the local development server in this environment. A desktop empty-state smoke check was captured from the published branch preview; the real PR/deployment preview is still required for live Pages Functions and multi-width verification.
