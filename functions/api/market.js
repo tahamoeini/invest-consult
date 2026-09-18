@@ -12,12 +12,16 @@ const headers = {
 
 function normalizeDigits(value) {
   return String(value || "")
-    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
-    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+    .replace(/[\u06f0-\u06f9]/g, (digit) => String("\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9".indexOf(digit)))
+    .replace(/[\u0660-\u0669]/g, (digit) => String("\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(digit)));
 }
 
 function parseNumber(value) {
-  const normalized = normalizeDigits(value).replace(/[٬،,\s]/g, "").replace(/%/g, "").replace(/٪/g, "").replace(/٫/g, ".");
+  const normalized = normalizeDigits(value)
+    .replace(/[\u066c\u060c,\s]/g, "")
+    .replace(/%/g, "")
+    .replace(/\u066a/g, "")
+    .replace(/\u066b/g, ".");
   const match = normalized.match(/-?\d+(?:\.\d+)?/);
   return match ? Number(match[0]) : null;
 }
@@ -26,7 +30,7 @@ function firstNumberAfter(html, marker, windowSize) {
   const start = html.indexOf(marker);
   if (start < 0) return null;
   const sample = html.slice(start + marker.length, start + (windowSize || 800)).replace(/<[^>]*>/g, " ");
-  const match = sample.match(/[-+]?[۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?/);
+  const match = sample.match(/[-+]?[0-9\u06f0-\u06f9\u0660-\u0669]+(?:[.,\u066b][0-9\u06f0-\u06f9\u0660-\u0669]+)?/);
   return match ? parseNumber(match[0]) : null;
 }
 
@@ -49,8 +53,8 @@ function parseTGJU(html, key) {
 function findAnnualReturn(value) {
   const text = String(value || "");
   const patterns = [
-    /(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)[^۰-۹٠-٩\d]{0,80}([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*(?:درصد|%|٪)/g,
-    /([۰-۹٠-٩\d]+(?:[.,٫][۰-۹٠-٩\d]+)?)\s*(?:درصد|%|٪)[^]{0,20}(?:بازده(?:ی)?\s*مؤثر\s*سالانه|سود\s*مؤثر\s*سالانه)/g,
+    /(?:\u0628\u0627\u0632\u062f\u0647(?:\u06cc)?\s*\u0645\u0624\u062b\u0631\s*\u0633\u0627\u0644\u0627\u0646\u0647|\u0633\u0648\u062f\s*\u0645\u0624\u062b\u0631\s*\u0633\u0627\u0644\u0627\u0646\u0647)[^\u06f0-\u06f9\u0660-\u0669\d]{0,80}([\u06f0-\u06f9\u0660-\u0669\d]+(?:[.,\u066b][\u06f0-\u06f9\u0660-\u0669\d]+)?)\s*(?:\u062f\u0631\u0635\u062f|%|\u066a)/g,
+    /([\u06f0-\u06f9\u0660-\u0669\d]+(?:[.,\u066b][\u06f0-\u06f9\u0660-\u0669\d]+)?)\s*(?:\u062f\u0631\u0635\u062f|%|\u066a)[^]{0,20}(?:\u0628\u0627\u0632\u062f\u0647(?:\u06cc)?\s*\u0645\u0624\u062b\u0631\s*\u0633\u0627\u0644\u0627\u0646\u0647|\u0633\u0648\u062f\s*\u0645\u0624\u062b\u0631\s*\u0633\u0627\u0644\u0627\u0646\u0647)/g,
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(text);
