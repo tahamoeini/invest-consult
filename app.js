@@ -16,13 +16,15 @@ const marketUpdatedEl = $("#market-updated");
 let copy = null;
 let liveMarket = null;
 
+const assetMetaFallback = {
+  fixed: { title: "Fixed income", description: "The defensive part of the portfolio", dotClass: "asset-fixed" },
+  gold: { title: "Gold", description: "Partial protection against purchasing-power loss", dotClass: "asset-gold" },
+  currency: { title: "Currency", description: "Staged purchases instead of one-time buying", dotClass: "asset-currency" },
+  silver: { title: "Silver", description: "A small, more volatile diversification position", dotClass: "asset-silver" },
+};
+
 const fallbackCopy = {
-  assetMeta: {
-    fixed: { title: "Fixed income", description: "The defensive part of the portfolio", dotClass: "asset-fixed" },
-    gold: { title: "Gold", description: "Partial protection against purchasing-power loss", dotClass: "asset-gold" },
-    currency: { title: "Currency", description: "Staged purchases instead of one-time buying", dotClass: "asset-currency" },
-    silver: { title: "Silver", description: "A small, more volatile diversification position", dotClass: "asset-silver" },
-  },
+  assetMeta: assetMetaFallback,
   marketLabels: {
     dollar: { title: "Currency", detail: "Market reference rate" },
     gold: { title: "Gold", detail: "18-karat gold per gram" },
@@ -30,6 +32,7 @@ const fallbackCopy = {
   },
   market: {
     unknownChange: "Daily change unavailable",
+    dailySuffix: "daily",
     noData: "Live data is currently unavailable; the base model can still be calculated.",
     noSources: "No live source responded.",
     priceUnit: "IRR",
