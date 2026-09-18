@@ -1,0 +1,13 @@
+{
+  "name": "invest-consult",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check app.js && node --check src/engine.js && node --check src/history.js && node --check src/portfolio.js && node --check functions/api/market.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
