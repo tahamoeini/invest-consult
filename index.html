@@ -13,13 +13,43 @@
     <script type="module" src="app.js" defer></script>
   </head>
   <body>
-    <div class="page-shell">
-      <header class="topbar">
-        <a class="brand" href="./"><span class="brand-mark">٪</span><span><strong>سبد آرام</strong><small>برنامه‌ریزی سرمایه‌گذاری ماهانه</small></span></a>
-        <div class="topbar-meta"><span class="privacy"><i></i> محاسبه روی همین دستگاه</span><span id="live-status" class="status-pill status-loading">در حال دریافت داده</span></div>
-      </header>
+    <div id="app-shell" class="app-shell">
+      <aside id="app-sidebar" class="app-sidebar" aria-label="ناوبری برنامه">
+        <div class="sidebar-header">
+          <a class="brand" href="./" aria-label="سبد آرام"><span class="brand-mark">٪</span><span class="brand-copy"><strong>سبد آرام</strong><small>برنامه‌ریزی سرمایه‌گذاری</small></span></a>
+          <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="باز و بسته کردن منو" title="باز و بسته کردن منو"><span>‹</span></button>
+        </div>
+        <nav id="app-navigation" class="app-navigation" aria-label="بخش‌های برنامه">
+          <button type="button" data-nav-view="dashboard"><span class="nav-icon">⌂</span><span class="nav-copy"><strong>داشبورد</strong><small>خلاصه وضعیت و اقدام بعدی</small></span></button>
+          <button type="button" data-nav-view="plan"><span class="nav-icon">↗</span><span class="nav-copy"><strong>برنامه سرمایه‌گذاری</strong><small>ساخت برنامه ماهانه</small></span></button>
+          <button type="button" data-nav-view="portfolio"><span class="nav-icon">◫</span><span class="nav-copy"><strong>پرتفوی من</strong><small>دارایی‌ها و دفتر تراکنش</small></span></button>
+          <button type="button" data-nav-view="simulation"><span class="nav-icon">◌</span><span class="nav-copy"><strong>شبیه‌سازی و بک‌تست</strong><small>سناریو و بررسی گذشته</small></span></button>
+          <button type="button" data-nav-view="history"><span class="nav-icon">◷</span><span class="nav-copy"><strong>تحلیل تاریخی</strong><small>سابقه برنامه‌های تو</small></span></button>
+          <button type="button" data-nav-view="assets"><span class="nav-icon">◇</span><span class="nav-copy"><strong>دارایی‌ها و بازار</strong><small>قیمت‌های چندمنبعی</small></span></button>
+          <button type="button" data-nav-view="settings"><span class="nav-icon">⚙</span><span class="nav-copy"><strong>تنظیمات</strong><small>داده محلی و ظاهر برنامه</small></span></button>
+        </nav>
+        <div class="sidebar-footer"><span class="privacy"><i></i> محاسبه روی همین دستگاه</span><small>نسخه رایگان و شفاف</small></div>
+      </aside>
+      <button id="sidebar-overlay" class="sidebar-overlay" type="button" aria-label="بستن منو" aria-hidden="true"></button>
+      <div class="app-main">
+        <header class="topbar">
+          <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" aria-label="باز کردن منو">☰</button>
+          <div class="topbar-title"><span>سبد آرام</span><h1 id="current-view-title">داشبورد</h1></div>
+          <div class="topbar-meta"><span id="live-status" class="status-pill status-loading">در حال دریافت داده</span></div>
+        </header>
 
-      <main>
+      <main id="app-content" class="app-content">
+        <section data-app-view="dashboard" class="app-view dashboard-view is-active" aria-labelledby="dashboard-title">
+          <div class="dashboard-welcome"><div><span class="eyebrow">تصمیم‌یار ریاضی، نه پیشگوی بازار</span><h2 id="dashboard-title">این ماه با پولت چه کار کنی؟</h2><p>اول خلاصه تصمیم را ببین؛ جزئیات مدل و دفتر دارایی‌ها هر وقت لازم بود در دسترس‌اند.</p></div><span class="dashboard-local-chip"><i></i> محاسبه روی همین دستگاه</span></div>
+          <div id="dashboard-plan-card" class="dashboard-plan-card">
+            <div class="dashboard-plan-empty"><div class="dashboard-icon">↗</div><div><strong>هنوز برنامه‌ای برای این ماه نساخته‌ای</strong><p>حقوق و چند انتخاب ساده را وارد کن تا مبلغ ماهانه و دلیل تخصیص را ببینی.</p></div><button class="primary-button dashboard-action" data-go-view="plan" type="button"><span>ساخت برنامه ماهانه</span><b>←</b></button></div>
+            <div class="dashboard-plan-ready is-hidden"><div><span class="kicker">پیشنهاد این ماه</span><strong id="dashboard-plan-amount">—</strong><small>تومان سرمایه‌گذاری جدید</small></div><div><span class="kicker">دامنه محتمل</span><strong id="dashboard-plan-range">—</strong><small>از محتاطانه تا خوش‌بینانه</small></div><div><span class="kicker">سبک برنامه</span><strong id="dashboard-plan-profile">—</strong><small>بر اساس هدف و تحمل ریسک</small></div><button class="secondary-button dashboard-action" data-go-view="plan" type="button">دیدن جزئیات</button></div>
+          </div>
+          <div class="dashboard-grid"><article class="dashboard-card"><div class="section-heading"><div><span class="kicker">راهنمای شروع</span><h3>سه قدم کوتاه</h3></div><span class="info-chip">ساده</span></div><ol class="dashboard-steps"><li><span>۱</span><div><strong>برنامه ماهانه را بساز</strong><small>حقوق، هدف و افق زمانی</small></div></li><li><span>۲</span><div><strong>پیشنهاد را بررسی کن</strong><small>مبلغ، وزن‌ها و دامنه احتمالی</small></div></li><li><span>۳</span><div><strong>دارایی واقعی‌ات را ثبت کن</strong><small>اختیاری؛ در دفتر شخصی تو</small></div></li></ol></article><article class="dashboard-card dashboard-market-card"><div class="section-heading"><div><span class="kicker">وضعیت بازار</span><h3>آخرین داده چندمنبعی</h3></div><button class="secondary-button" data-go-view="assets" type="button">دیدن بازار</button></div><p>قیمت‌ها از منابع عمومی دریافت و برای هر دسته با میانه‌گیری ترکیب می‌شوند. داده بازار برای تصمیم‌یار است، نه معامله لحظه‌ای.</p><div id="dashboard-market-status" class="data-note">در حال دریافت داده بازار…</div></article></div>
+        </section>
+
+        <section data-app-view="plan" class="app-view" aria-labelledby="plan-view-title">
+          <div class="page-heading"><div><span class="kicker">برنامه‌ریزی</span><h2 id="plan-view-title">برنامه سرمایه‌گذاری ماهانه</h2><p>این صفحه می‌گوید این ماه چقدر کنار بگذاری و پول جدید را چطور پخش کنی.</p></div><span class="page-badge">بدون پیش‌بینی بازار</span></div>
         <section class="hero">
           <div>
             <span class="eyebrow">تصمیم‌یار ریاضی، نه پیشگوی بازار</span>
@@ -29,8 +59,6 @@
           </div>
           <div class="hero-card"><span>قاعده شروع</span><strong>۱۵٪ تا ۲۵٪</strong><small>از حقوق ماهانه، با امکان تغییر بر اساس شرایط واقعی تو</small><div><span>منطق</span><b>داده + سابقه + محدودیت ریسک</b></div><div><span>خروجی</span><b>مبلغ، وزن، دامنه و دلیل</b></div></div>
         </section>
-
-        <nav class="quick-nav" aria-label="دسترسی سریع"><a href="#setup">ساخت برنامه</a><a href="#analysis-section">دیدن نتیجه</a><a href="#portfolio-section">پرتفوی شخصی</a><a href="#history-section">سابقه</a></nav>
 
         <section id="setup" class="setup-grid">
           <form id="plan-form" class="panel setup-panel">
@@ -47,13 +75,6 @@
             <button class="primary-button" type="submit"><span>برنامه این ماه را بساز</span><b>←</b></button>
           </form>
 
-          <aside class="panel market-panel">
-            <div class="section-heading"><div><span class="kicker">داده زنده</span><h2>بازار الان</h2></div><button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی">↻</button></div>
-            <p class="panel-intro">قیمت هر دسته از quoteهای معتبر چند منبع عمومی با میانه‌گیری ساخته می‌شود. این داده برای تنظیم و نمایش است، نه معامله لحظه‌ای.</p>
-            <div id="market-data" class="market-data"><div class="loading-lines"><i></i><i></i><i></i><i></i></div></div>
-            <div class="market-footer"><span id="market-updated">—</span><span id="market-coverage">—</span></div>
-            <div class="data-note">اگر منبعی جواب ندهد، حذف می‌شود؛ عدد ساختگی یا آخرین عدد قدیمی جای آن نمی‌نشیند.</div>
-          </aside>
         </section>
 
         <section id="plan-output" class="panel output-panel is-hidden">
@@ -63,6 +84,11 @@
           <div class="output-columns"><div><h3>دلیل این ترکیب</h3><ul id="reason-list" class="reason-list"></ul></div><div><h3>پیشنهاد خرید همین ماه</h3><div id="contribution-plan" class="contribution-plan"></div></div></div>
         </section>
 
+        </section>
+
+        <section data-app-view="simulation" class="app-view" aria-labelledby="simulation-view-title">
+          <div class="page-heading"><div><span class="kicker">تحلیل سناریو</span><h2 id="simulation-view-title">شبیه‌سازی و بک‌تست</h2><p>نتایج مدل را در سناریوهای آینده و دوره‌های گذشته ببین؛ بدون ادعای پیش‌بینی بازار.</p></div><span class="page-badge">اختیاری</span></div>
+
         <details id="analysis-section" class="panel collapsible-panel analysis-section"><summary class="section-heading collapsible-summary"><div><span class="kicker">۳. بررسی عمیق‌تر</span><h2>مسیر مدل و دامنه احتمالی</h2></div><span class="info-chip">اختیاری</span></summary><div class="collapsible-content"><div class="analysis-grid">
           <article class="panel analysis-panel"><div class="section-heading"><div><span class="kicker">۳. شبیه‌سازی</span><h2>اگر همین برنامه را ادامه بدهی</h2></div><span class="info-chip">فرض مدل</span></div><div id="simulation-summary" class="metric-grid"></div><div id="simulation-chart" class="chart-box"><div class="empty-state">بعد از ساخت برنامه محاسبه می‌شود.</div></div><p class="small-note">عددها سناریوی برنامه‌اند، نه پیش‌بینی قطعی. مقدار واقعی به بازده، تورم، کارمزد و اجرای منظم بستگی دارد.</p></article>
           <article class="panel analysis-panel"><div class="section-heading"><div><span class="kicker">۴. دامنه احتمالی</span><h2>مونت‌کارلو چه می‌گوید؟</h2></div><span class="info-chip">P10 · P50 · P90</span></div><div id="monte-carlo-output" class="range-grid"><div class="empty-state">بعد از ساخت برنامه محاسبه می‌شود.</div></div><p class="small-note">P10 یعنی ۱۰٪ سناریوها پایین‌تر از آن بوده‌اند؛ این عدد تضمین بدترین یا بهترین حالت نیست.</p></article>
@@ -70,8 +96,16 @@
 
         <details id="backtest-section" class="panel collapsible-panel backtest-panel"><summary class="section-heading collapsible-summary"><div><span class="kicker">۴. نگاه به گذشته</span><h2>اگر این برنامه را در دوره‌های قبلی اجرا می‌کردی</h2></div><span class="info-chip">با اجرای دستی</span></summary><div class="collapsible-content"><div class="section-actions"><span class="panel-intro">روی تاریخچه عمومی موجود اجرا می‌شود و بخش‌های ناقص با برچسب فرض مدل نمایش داده می‌شوند.</span><button id="run-backtest" class="secondary-button" type="button">اجرای بک‌تست</button></div><div id="backtest-output"><div class="empty-state">برای شروع برنامه را بساز و بعد بک‌تست را اجرا کن.</div></div></div></details>
 
+        </section>
+
+        <section data-app-view="history" class="app-view" aria-labelledby="history-view-title">
+          <div class="page-heading"><div><span class="kicker">سابقه و روند</span><h2 id="history-view-title">تحلیل تاریخی</h2><p>برنامه‌های ذخیره‌شده، خروجی پشتیبان و روند ارزش تقریبی را در یکجا ببین.</p></div><span class="page-badge">روی همین دستگاه</span></div>
         <details id="history-section" class="panel collapsible-panel history-panel"><summary class="section-heading collapsible-summary"><div><span class="kicker">۵. سابقه شخصی</span><h2>برنامه‌ها و ارزش تقریبی سبد</h2></div><span class="info-chip">روی همین دستگاه</span></summary><div class="collapsible-content"><div class="section-actions"><span class="panel-intro">تاریخچه پیشنهادها و فایل پشتیبان را همین‌جا مدیریت کن.</span><div class="history-actions"><button id="export-history" class="secondary-button" type="button">خروجی</button><button id="import-history" class="secondary-button" type="button">ورود</button><button id="clear-history" class="text-button" type="button">پاک کردن برنامه‌ها</button><input id="history-file" type="file" accept="application/json,.json" hidden /></div></div><div id="history-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">فایل خروجی فقط روی همین دستگاه ساخته می‌شود؛ دفتر پرتفوی جداست.</div><div id="history-summary" class="metric-grid"></div><div id="history-chart" class="chart-box"><div class="empty-state">هنوز سابقه‌ای ثبت نشده.</div></div><div class="subheading"><strong>تفکیک دسته‌ها</strong><span>برآورد با قیمت فعلی و snapshot زمان خرید</span></div><div id="portfolio-breakdown" class="portfolio-breakdown"><div class="empty-state">با ثبت اولین برنامه، اینجا پر می‌شود.</div></div><div class="subheading"><strong>ماه‌های ثبت‌شده</strong><span>حداکثر ۱۵ مورد اخیر</span></div><div id="history-list" class="history-list"><div class="empty-state">هنوز برنامه‌ای ذخیره نشده.</div></div></div></details>
 
+        </section>
+
+        <section data-app-view="portfolio" class="app-view" aria-labelledby="portfolio-view-title">
+          <div class="page-heading"><div><span class="kicker">دفتر شخصی</span><h2 id="portfolio-view-title">پرتفوی من</h2><p>موجودی و تراکنش‌ها را ثبت کن تا ارزش امروز و روند واقعی سبدت شفاف بماند.</p></div><span class="page-badge">دفتر تغییرناپذیر</span></div>
         <details id="portfolio-section" class="panel collapsible-panel portfolio-panel">
           <summary class="section-heading collapsible-summary"><div><span class="kicker">۶. پرتفوی شخصی</span><h2>دارایی‌هایی که واقعا داری</h2></div><span id="portfolio-version-label" class="profile-chip">شروع اولیه</span></summary>
           <div class="collapsible-content">
@@ -136,9 +170,32 @@
           </details>
           </div>
         </details>
+
+        </section>
+
+        <section data-app-view="assets" class="app-view" aria-labelledby="assets-view-title">
+          <div class="page-heading"><div><span class="kicker">داده بازار</span><h2 id="assets-view-title">دارایی‌ها و بازار</h2><p>قیمت‌های عمومی از چند منبع جمع می‌شوند و برای هر دسته با میانه‌گیری نمایش داده می‌شوند.</p></div><span class="page-badge">چندمنبعی</span></div>
+          <aside class="panel market-panel">
+            <div class="section-heading"><div><span class="kicker">داده زنده</span><h2>بازار الان</h2></div><button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی">↻</button></div>
+            <p class="panel-intro">قیمت هر دسته از quoteهای معتبر چند منبع عمومی با میانه‌گیری ساخته می‌شود. این داده برای تنظیم و نمایش است، نه معامله لحظه‌ای.</p>
+            <div id="market-data" class="market-data"><div class="loading-lines"><i></i><i></i><i></i><i></i></div></div>
+            <div class="market-footer"><span id="market-updated">—</span><span id="market-coverage">—</span></div>
+            <div class="data-note">اگر منبعی جواب ندهد، حذف می‌شود؛ عدد ساختگی یا آخرین عدد قدیمی جای آن نمی‌نشیند.</div>
+          </aside>
+          <article class="panel assets-explainer"><div class="section-heading"><div><span class="kicker">چرا چندمنبعی؟</span><h3>یک عدد، با زمینه شفاف</h3></div><span class="info-chip">بدون API پولی</span></div><p>اگر چند منبع معتبر پاسخ بدهند، عدد میانی استفاده می‌شود تا یک منبع منفرد نتیجه را بیش از حد جابه‌جا نکند. در صورت قطع یک منبع، داده جعلی جایگزین نمی‌شود.</p></article>
+        </section>
+
+        <section data-app-view="settings" class="app-view" aria-labelledby="settings-view-title">
+          <div class="page-heading"><div><span class="kicker">کنترل برنامه</span><h2 id="settings-view-title">تنظیمات</h2><p>ظاهر برنامه و داده‌های ذخیره‌شده روی همین مرورگر را مدیریت کن.</p></div><span class="page-badge">محلی و قابل کنترل</span></div>
+          <div class="settings-grid">
+            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">ظاهر</span><h3>نمایش منو</h3></div></div><label class="check-line"><input id="settings-sidebar-collapsed" type="checkbox" /> <span>منوی کناری را به‌صورت جمع‌شده نگه دار</span></label><p class="small-note">این انتخاب فقط در همین مرورگر ذخیره می‌شود.</p></article>
+            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">داده‌ها</span><h3>پشتیبان و پاک‌سازی</h3></div></div><p>تاریخچه برنامه‌ها و دفتر پرتفوی در مرورگر تو نگهداری می‌شوند. قبل از پاک‌کردن، از بخش تحلیل تاریخی خروجی بگیر.</p><button id="settings-clear-plans" class="text-button" type="button">پاک کردن برنامه‌های ذخیره‌شده</button></article>
+          </div>
+        </section>
       </main>
 
       <footer class="footer"><span>این ابزار تصمیم‌یار آموزشی است، نه مشاوره مالی یا تضمین بازده.</span><span>محاسبات و تاریخچه در مرورگر انجام می‌شود.</span></footer>
+      </div>
     </div>
   </body>
 </html>

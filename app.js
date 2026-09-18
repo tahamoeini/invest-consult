@@ -30,6 +30,9 @@ import {
   portfolioSeries,
   simpleChangeTransactions,
 } from "./src/portfolio.js";
+import { AppShell } from "./src/ui/components.js";
+import { createNavigationController } from "./src/ui/navigation.js";
+import { createAppStore } from "./src/ui/state.js";
 
 const HISTORY_KEY = "investment-plan-history-v4";
 const MARKET_CACHE_KEY = "investment-plan-market-cache-v3";
@@ -62,6 +65,9 @@ const portfolioLedgerEl = $("#portfolio-ledger");
 const portfolioAuditEl = $("#portfolio-audit");
 const simpleChangePanel = $("#simple-change-panel");
 const portfolioTransferStatusEl = $("#portfolio-transfer-status");
+const appStore = createAppStore();
+const appShell = AppShell(document);
+const navigationController = createNavigationController(appShell, appStore);
 
 let copy;
 let liveMarket = null;
@@ -305,6 +311,11 @@ function getPlanInputs() {
   };
 }
 
+function syncPlanState() {
+  const inputs = getPlanInputs();
+  appStore.setState({ profile: inputs.profile, monthlyInvestment: inputs.monthlyContribution });
+}
+
 function persistProfile() {
   writeJson(PROFILE_KEY, getProfile());
 }
@@ -357,6 +368,30 @@ function renderMarket(data) {
   $("#market-updated").textContent = data.updatedAt ? `${text("market.updated", "Updated")} ${formatDateTime(data.updatedAt)}` : "\u2014";
   const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item.sourceCount) || 0), 0);
   $("#market-coverage").textContent = `${sourceTotal} ${text("market.sourceQuotes", "valid source quotes")}`;
+}
+
+function renderDashboard() {
+  const emptyState = $(".dashboard-plan-empty");
+  const readyState = $(".dashboard-plan-ready");
+  if (!emptyState || !readyState) return;
+  const ready = Boolean(lastPlan);
+  emptyState.classList.toggle("is-hidden", ready);
+  readyState.classList.toggle("is-hidden", !ready);
+  if (ready) {
+    $("#dashboard-plan-amount").textContent = `${formatIRR(lastPlan.inputs.monthlyContribution)} ${text("currencyUnit")}`;
+    const p10 = Number(lastPlan.monteCarlo?.nominal?.p10);
+    const p90 = Number(lastPlan.monteCarlo?.nominal?.p90);
+    $("#dashboard-plan-range").textContent = Number.isFinite(p10) && Number.isFinite(p90) ? `${formatIRR(p10)} تا ${formatIRR(p90)}` : "—";
+    $("#dashboard-plan-profile").textContent = text(`profileLabels.${lastPlan.inputs.profile.riskTolerance}`, text("profileLabels.conservative", "محافظه‌کارانه"));
+  }
+  const marketStatus = $("#dashboard-market-status");
+  if (!marketStatus) return;
+  if (!liveMarket || !liveMarket.assets) {
+    marketStatus.textContent = text("dashboard.marketUnavailable", "Market data is not available yet; no fabricated value is used.");
+    return;
+  }
+  const sourceTotal = Object.values(liveMarket.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
+  marketStatus.textContent = `${sourceTotal} ${text("dashboard.validQuotes", "valid quotes")} · ${liveMarket.updatedAt ? formatDateTime(liveMarket.updatedAt) : text("dashboard.unknownTime", "Unknown time")}`;
 }
 
 function assetMeta(key) {
@@ -486,6 +521,7 @@ function renderPortfolio() {
   const asOf = new Date().toISOString();
   const inflationRate = numberFromInput($("#inflation-rate").value) / 100;
   const result = calculatePortfolio(portfolio, liveMarket || {}, asOf, inflationRate);
+  appStore.setState({ portfolio: result });
   const version = activePortfolioVersion(portfolio);
   const hasTransactions = result.transactions.length > 0;
   $("#portfolio-current-value").textContent = portfolioValueLabel(result.currentValue);
@@ -576,6 +612,7 @@ function renderBacktest(result) {
 
 function renderHistory() {
   const history = readHistory();
+  appStore.setState({ history });
   const portfolio = portfolioFromHistory(history, liveMarket);
   const categories = ASSET_KEYS.map((key) => {
     const meta = assetMeta(key);
@@ -623,9 +660,11 @@ function renderPlan() {
   renderContributionPlan(contribution);
   renderReasons(inputs.profile, portfolio);
   renderSimulation(simulation, monteCarlo);
+  appStore.setState({ profile: inputs.profile, monthlyInvestment: inputs.monthlyContribution, plan: lastPlan });
   resultPanel.classList.remove("is-hidden");
   saveHistory(inputs, recommendation, contribution);
   renderHistory();
+  renderDashboard();
   resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -926,7 +965,10 @@ async function importHistoryFile(event) {
 }
 
 function runBacktest() {
-  if (!lastPlan) renderPlan();
+  if (!lastPlan) {
+    navigationController.goTo("plan");
+    renderPlan();
+  }
   if (!lastPlan) return;
   const result = backtestHistorical({
     market: liveMarket || {},
@@ -950,15 +992,19 @@ async function loadMarket() {
     if (!response.ok) throw new Error("Market request failed");
     liveMarket = await response.json();
     writeJson(MARKET_CACHE_KEY, liveMarket);
+    appStore.setState({ market: liveMarket });
     renderMarket(liveMarket);
     renderHistory();
     renderPortfolio();
+    renderDashboard();
     setStatus(text("status.connected", fallbackCopy.status.connected), "success");
   } catch {
     liveMarket = readJson(MARKET_CACHE_KEY, null);
+    appStore.setState({ market: liveMarket });
     renderMarket(liveMarket);
     renderHistory();
     renderPortfolio();
+    renderDashboard();
     setStatus(liveMarket ? text("status.cached", fallbackCopy.status.cached) : text("status.timeout", fallbackCopy.status.unavailable), "warning");
   }
 }
@@ -975,6 +1021,7 @@ async function loadCopy() {
 
 function bindEvents() {
   form.addEventListener("submit", (event) => { event.preventDefault(); renderPlan(); });
+  $$('[data-go-view]').forEach((button) => button.addEventListener("click", () => navigationController.goTo(button.dataset.goView)));
   $("#refresh-market").addEventListener("click", loadMarket);
   $("#run-backtest").addEventListener("click", runBacktest);
   $("#export-history").addEventListener("click", exportHistory);
@@ -986,22 +1033,32 @@ function bindEvents() {
   $("#cancel-simple-change").addEventListener("click", cancelSimpleChange);
   $("#advanced-transaction-form").addEventListener("submit", handleAdvancedTransactionSubmit);
   $("#advanced-type").addEventListener("change", updateAdvancedTransactionFields);
-  $$(".quick-nav a").forEach((link) => link.addEventListener("click", () => {
-    const target = $(link.getAttribute("href"));
-    if (target instanceof HTMLDetailsElement) target.open = true;
-  }));
-  $("#clear-history").addEventListener("click", () => {
+  const clearSavedHistory = () => {
+    if (!window.confirm(text("history.transfer.clearConfirm", "Clear saved plans? This does not change the portfolio ledger."))) return;
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem("investment-plan-history-v3");
     renderHistory();
     setTransferStatus(text("history.transfer.cleared"), "neutral");
+    navigationController.goTo("history");
+  };
+  $("#clear-history").addEventListener("click", clearSavedHistory);
+  $("#settings-clear-plans").addEventListener("click", clearSavedHistory);
+  $("#settings-sidebar-collapsed").addEventListener("change", (event) => {
+    appStore.setState({ sidebarCollapsed: event.currentTarget.checked });
+  });
+  appStore.subscribe((state) => {
+    const toggle = $("#settings-sidebar-collapsed");
+    if (toggle) toggle.checked = state.sidebarCollapsed;
   });
   $("#contribution-rate").addEventListener("input", (event) => { $("#contribution-output").textContent = formatPercent(Number(event.target.value), 0); });
   $$('[data-number-input]').forEach((input) => {
     input.value = groupedNumber(input.value);
     input.addEventListener("input", formatNumberInput);
   });
-  $$("#plan-form select, #plan-form input").forEach((element) => element.addEventListener("change", persistProfile));
+  $$("#plan-form select, #plan-form input").forEach((element) => {
+    element.addEventListener("change", () => { persistProfile(); syncPlanState(); });
+    element.addEventListener("input", syncPlanState);
+  });
 }
 
 async function init() {
@@ -1012,6 +1069,7 @@ async function init() {
   bindEvents();
   renderHistory();
   renderPortfolio();
+  renderDashboard();
   $("#advanced-date").value = new Date().toISOString().slice(0, 10);
   updateAdvancedTransactionFields();
   await loadMarket();
