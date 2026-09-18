@@ -5,6 +5,7 @@ A conservative monthly investment planner based on a percentage of monthly salar
 ## Project overview
 
 - Persian, right-to-left user interface using the Vazirmatn font
+- Persian page copy is isolated in content/fa.json
 - Client-side calculation; salary and history are not sent to the server
 - Configurable monthly contribution between 15% and 25%, starting at 20%
 - Generic asset categories instead of provider or fund names that may change
