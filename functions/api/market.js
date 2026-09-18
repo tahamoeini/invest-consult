@@ -2,9 +2,13 @@ const TGJU_BASE = "https://www.tgju.org/profile/";
 const BONBAST_BASE = "https://www.bonbast.com";
 const NAVASAN_RAW_BASE = "https://raw.githubusercontent.com/HosseinOdd/Navasan-API/main/data/";
 const CHART_GOLD_URL = "https://www.chartgoldprice.com/api/data?history=both";
+const TROY_OUNCE_TO_GRAMS = 31.1034768;
 const sourcePages = { dollar: "price_dollar_rl", gold: "geram18", silver: "silver_999" };
 const fundPages = { fixedIncome: "https://charisma.ir/funds/fixedincomefund" };
-const UPSTREAM_TIMEOUT_MS = 5000;
+// Public pages can be slow from Iranian networks. Keep the browser timeout
+// budget (12s) larger than this provider budget so partial fallback data can
+// still reach the client instead of looking like a failed price request.
+const UPSTREAM_TIMEOUT_MS = 7500;
 const headers = {
   "User-Agent": "invest-consult/2.0 (+https://github.com/tahamoeini/invest-consult)",
   "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
@@ -67,7 +71,7 @@ async function fetchJson(url, options = {}) {
 }
 
 async function providerA() {
-  const results = await Promise.all(Object.entries(sourcePages).map(async ([asset, page]) => {
+  const results = await Promise.allSettled(Object.entries(sourcePages).map(async ([asset, page]) => {
     const html = await fetchText(TGJU_BASE + page);
     const price = firstNumberAfter(html, 'data-col="info.last_trade.PDrCotVal"', 500);
     const changePct = firstNumberAfter(html, 'data-col="info.last_trade.last_change_percentage"', 300);
@@ -75,9 +79,14 @@ async function providerA() {
     const serverTime = html.match(/id="server-time"[^>]+data-value="([^"]+)"/);
     const item = quote(asset, price / 10, "Provider A", { changePct, sourceUrl: TGJU_BASE + page, sourceTime: serverTime ? serverTime[1] : null, sourceRevision: revision ? revision[1] : null });
     if (!item) throw new Error(`No normalized quote for ${asset}`);
-    return item;
+    return { item, history: normalizeTgjuHistory(extractTgjuChartData(html)) };
   }));
-  return results;
+  const fulfilled = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+  if (!fulfilled.length) throw new Error("No TGJU quote pages responded");
+  return {
+    quotes: fulfilled.map((result) => result.item),
+    history: Object.fromEntries(fulfilled.map((result) => [result.item.asset, result.history])),
+  };
 }
 
 async function providerB() {
@@ -135,6 +144,57 @@ function normalizeHistorySeries(value) {
   return [];
 }
 
+export function normalizeMetalHistory(value) {
+  return normalizeHistorySeries(value).map((point) => ({ ...point, value: point.value / TROY_OUNCE_TO_GRAMS }));
+}
+
+function readBalancedArray(text, startIndex) {
+  let depth = 0;
+  let quoteChar = null;
+  let escaped = false;
+  for (let index = startIndex; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoteChar) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quoteChar) quoteChar = null;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quoteChar = character;
+      continue;
+    }
+    if (character === "[") depth += 1;
+    if (character === "]") {
+      depth -= 1;
+      if (depth === 0) return text.slice(startIndex, index + 1);
+    }
+  }
+  return null;
+}
+
+export function extractTgjuChartData(html, blockId = "ChartBlock-3") {
+  const markerIndex = String(html || "").indexOf(`#${blockId}").msHighcharts({`);
+  if (markerIndex < 0) return [];
+  const dataIndex = String(html).indexOf("chartData:", markerIndex);
+  if (dataIndex < 0) return [];
+  const arrayStart = String(html).indexOf("[", dataIndex);
+  if (arrayStart < 0) return [];
+  const raw = readBalancedArray(String(html), arrayStart);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function normalizeTgjuHistory(value) {
+  return normalizeHistorySeries(value)
+    .map((point) => ({ ...point, value: point.value / 10 }))
+    .filter((point) => Number.isFinite(point.value) && point.value > 0);
+}
+
 async function getAuxiliaryMetalData() {
   const data = await fetchJson(CHART_GOLD_URL);
   const prices = data && data.prices ? data.prices : {};
@@ -143,8 +203,8 @@ async function getAuxiliaryMetalData() {
     goldUsdPerGram: parseNumber(prices.gold && prices.gold.gram),
     silverUsdPerGram: parseNumber(prices.silver && prices.silver.gram),
     history: {
-      gold: normalizeHistorySeries(history.gold || (history.series && history.series.gold)).slice(-180),
-      silver: normalizeHistorySeries(history.silver || (history.series && history.series.silver)).slice(-180),
+      gold: normalizeMetalHistory(history.gold || (history.series && history.series.gold)).slice(-180),
+      silver: normalizeMetalHistory(history.silver || (history.series && history.series.silver)).slice(-180),
     },
     sourceTime: data && data.meta ? data.meta.updated_at || null : null,
   };
@@ -157,17 +217,27 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function aggregate(asset, quotes) {
+export function aggregate(asset, quotes) {
   const valid = quotes.filter((item) => item && item.asset === asset && Number.isFinite(Number(item.price)) && Number(item.price) > 0);
   if (!valid.length) return null;
-  const changes = valid.map((item) => Number(item.changePct)).filter(Number.isFinite);
+  const changes = valid
+    .map((item) => item.changePct)
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map(Number)
+    .filter(Number.isFinite);
+  const sourceTimes = valid.map((item) => item.sourceTime).filter(Boolean).sort((left, right) => {
+    const leftTime = new Date(left).getTime();
+    const rightTime = new Date(right).getTime();
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
+    return String(left).localeCompare(String(right));
+  });
   return {
     price: Math.round(median(valid.map((item) => item.price))),
     changePct: changes.length ? Number(median(changes).toFixed(3)) : null,
     sourceCount: valid.length,
     sources: valid.map((item) => item.source),
     sourceValues: valid.map((item) => ({ source: item.source, price: Math.round(item.price) })),
-    asOf: valid.map((item) => item.sourceTime).filter(Boolean).sort().pop() || null,
+    asOf: sourceTimes.at(-1) || null,
   };
 }
 
@@ -198,7 +268,14 @@ function settledValues(results) {
 
 export async function onRequestGet() {
   const now = new Date().toISOString();
-  const providerResultsPromise = Promise.allSettled(providers.map((provider) => provider.run().then((quotes) => ({ id: provider.id, quotes }))));
+  const providerResultsPromise = Promise.allSettled(providers.map(async (provider) => {
+    const result = await provider.run();
+    return {
+      id: provider.id,
+      quotes: Array.isArray(result) ? result : result.quotes || [],
+      history: Array.isArray(result) ? {} : result.history || {},
+    };
+  }));
   const auxiliaryPromise = getAuxiliaryMetalData().catch(() => null);
   const fixedIncomePromise = getFixedIncomeMetric().catch(() => null);
   const [providerResults, auxiliary, fixedIncome] = await Promise.all([providerResultsPromise, auxiliaryPromise, fixedIncomePromise]);
@@ -223,12 +300,11 @@ export async function onRequestGet() {
   if (silver) assets.silver = silver;
 
   const history = {};
-  if (auxiliary && dollar) {
-    ["gold", "silver"].forEach((asset) => {
-      const series = auxiliary.history[asset] || [];
-      if (series.length) history[asset] = series.map((point) => ({ date: point.date, price: Math.round(point.value * dollar.price * (asset === "gold" ? 0.75 : 1)), source: "Auxiliary metal source" }));
-    });
-  }
+  const tgjuHistory = quoteSets.find((set) => set.id === "providerA")?.history || {};
+  ["dollar", "gold", "silver"].forEach((asset) => {
+    const series = tgjuHistory[asset] || [];
+    if (series.length) history[asset] = series.map((point) => ({ date: point.date, price: Math.round(point.value), source: "Provider A" }));
+  });
 
   const funds = fixedIncome ? { fixedIncome } : {};
   const diagnostics = {
@@ -254,8 +330,9 @@ export async function onRequestGet() {
         { id: "auxiliary", name: "ChartGoldPrice", url: "https://www.chartgoldprice.com/gold-price-api" },
       ],
       fixedIncome: "https://charisma.ir/",
+      history: "https://www.tgju.org/",
     },
-    note: "Each asset is normalized to Toman and aggregated with the median of valid responsive quotes. Failed providers are omitted without synthetic or stale values.",
+    note: "Each asset is normalized to Toman and aggregated with the median of valid responsive quotes. Historical series use the local TGJU chart when available. Failed providers are omitted without synthetic or stale values.",
   }), {
     headers: {
       "content-type": "application/json; charset=UTF-8",

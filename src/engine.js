@@ -469,9 +469,10 @@ function correlatedDraws(model, covariance, random) {
   const assets = ASSET_KEYS;
   const standard = assets.map(() => gaussian(random));
   const rows = assets.map((asset) => [annualToMonthlyRate(model[asset].annualReturn)]);
+  const hasCovariance = Array.isArray(covariance) && covariance.length >= assets.length;
   const monthlyCovariance = assets.map((row, rowIndex) => assets.map((asset, columnIndex) => {
     const supplied = Number(covariance?.[rowIndex]?.[columnIndex]);
-    if (Number.isFinite(supplied) && (supplied !== 0 || rowIndex !== columnIndex)) return supplied;
+    if (hasCovariance && Number.isFinite(supplied)) return supplied;
     const first = model[assets[rowIndex]].annualVolatility / Math.sqrt(12);
     const second = model[assets[columnIndex]].annualVolatility / Math.sqrt(12);
     return rowIndex === columnIndex ? first * second : 0;

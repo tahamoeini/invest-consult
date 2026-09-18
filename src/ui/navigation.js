@@ -21,6 +21,8 @@ export function createNavigationController(shell, store) {
     const activeItem = NAVIGATION_ITEMS.find((item) => item.id === state.activeView);
     if (navigation.title && activeItem) navigation.title.textContent = activeItem.label;
     if (sidebar.overlay) sidebar.overlay.setAttribute("aria-hidden", state.mobileNavOpen ? "false" : "true");
+    if (sidebar.toggle) sidebar.toggle.setAttribute("aria-expanded", state.sidebarCollapsed ? "false" : "true");
+    if (sidebar.mobileToggle) sidebar.mobileToggle.setAttribute("aria-expanded", state.mobileNavOpen ? "true" : "false");
   }
 
   function goTo(viewId) {

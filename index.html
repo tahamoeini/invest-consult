@@ -17,7 +17,7 @@
       <aside id="app-sidebar" class="app-sidebar" aria-label="ناوبری برنامه">
         <div class="sidebar-header">
           <a class="brand" href="./" aria-label="سبد آرام"><span class="brand-mark">٪</span><span class="brand-copy"><strong>سبد آرام</strong><small>برنامه‌ریزی سرمایه‌گذاری</small></span></a>
-          <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="باز و بسته کردن منو" title="باز و بسته کردن منو"><span>‹</span></button>
+          <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="باز و بسته کردن منو" aria-controls="app-sidebar" aria-expanded="true" title="باز و بسته کردن منو"><span>‹</span></button>
         </div>
         <nav id="app-navigation" class="app-navigation" aria-label="بخش‌های برنامه">
           <button type="button" data-nav-view="dashboard"><span class="nav-icon">⌂</span><span class="nav-copy"><strong>داشبورد</strong><small>خلاصه وضعیت و اقدام بعدی</small></span></button>
@@ -33,7 +33,7 @@
       <button id="sidebar-overlay" class="sidebar-overlay" type="button" aria-label="بستن منو" aria-hidden="true"></button>
       <div class="app-main">
         <header class="topbar">
-          <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" aria-label="باز کردن منو">☰</button>
+          <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" aria-label="باز کردن منو" aria-controls="app-sidebar" aria-expanded="false">☰</button>
           <div class="topbar-title"><span>سبد آرام</span><h1 id="current-view-title">داشبورد</h1></div>
           <div class="topbar-meta"><span id="live-status" class="status-pill status-loading">در حال دریافت داده</span></div>
         </header>

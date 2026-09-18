@@ -394,18 +394,22 @@ export function createPortfolioVersion(portfolio, openingTransactions, label = "
 }
 
 export function createTransaction(input, market, now = new Date().toISOString(), portfolio = null) {
+  if (!input || typeof input !== "object" || !TRANSACTION_TYPES.includes(input.type)) return null;
   const type = input.type;
   const assets = assetRegistry(portfolio);
-  const assetId = assetDefinition(input.assetId, assets) ? input.assetId : "cash";
+  const suppliedAssetId = input.assetId;
+  const assetId = assetDefinition(suppliedAssetId, assets) ? suppliedAssetId : null;
+  if (!assetId && type !== "DEPOSIT" && type !== "WITHDRAWAL") return null;
+  const effectiveAssetId = assetId || "cash";
   const date = isoDate(input.date || now, now);
-  const definition = assetDefinition(assetId, assets);
-  const unitPrice = finite(input.unitPrice) || (definition.unit === "TOMAN" ? 1 : marketPriceAt(market, assetId, date));
+  const definition = assetDefinition(effectiveAssetId, assets);
+  const unitPrice = finite(input.unitPrice) || (definition.unit === "TOMAN" ? 1 : marketPriceAt(market, effectiveAssetId, date));
   const quantity = finite(input.quantity);
   const amount = finite(input.amount);
   const transaction = {
     id: makeId("tx"),
     type,
-    assetId,
+    assetId: effectiveAssetId,
     targetAssetId: input.targetAssetId,
     targetQuantity: finite(input.targetQuantity),
     quantity,
@@ -459,18 +463,24 @@ export function simpleChangeTransactions(currentHoldings, desiredHoldings, reaso
 }
 
 export function portfolioSeries(portfolio, market, startDate, endDate, inflationRate = 0) {
-  const start = new Date(startDate).getTime();
+  const normalized = normalizePortfolio(portfolio);
+  const version = activePortfolioVersion(normalized);
+  const transactionDates = version.transactions.map((transaction) => new Date(transaction.date).getTime()).filter(Number.isFinite);
+  if (!transactionDates.length) return [];
+  const requestedStart = new Date(startDate).getTime();
   const end = new Date(endDate).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
+  if (!Number.isFinite(requestedStart) || !Number.isFinite(end)) return [];
+  const start = Math.max(requestedStart, Math.min(...transactionDates));
+  if (end < start) return [];
   const points = [];
   for (let time = start; time <= end; time += 30 * 24 * 60 * 60 * 1000) {
     const date = new Date(time).toISOString();
-    const state = calculatePortfolio(portfolio, market, date, inflationRate);
+    const state = calculatePortfolio(normalized, market, date, inflationRate);
     points.push({ date, value: state.missingPrices.length ? null : state.currentValue, realValue: state.missingPrices.length ? null : state.realValue, complete: state.missingPrices.length === 0 });
   }
   const finalDate = new Date(end).toISOString();
   if (!points.length || points[points.length - 1].date.slice(0, 10) !== finalDate.slice(0, 10)) {
-    const state = calculatePortfolio(portfolio, market, finalDate, inflationRate);
+    const state = calculatePortfolio(normalized, market, finalDate, inflationRate);
     points.push({ date: finalDate, value: state.missingPrices.length ? null : state.currentValue, realValue: state.missingPrices.length ? null : state.realValue, complete: state.missingPrices.length === 0 });
   }
   return points;

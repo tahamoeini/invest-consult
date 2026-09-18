@@ -317,7 +317,17 @@ function syncPlanState() {
 }
 
 function persistProfile() {
-  writeJson(PROFILE_KEY, getProfile());
+  const inputs = getPlanInputs();
+  writeJson(PROFILE_KEY, {
+    ...inputs.profile,
+    salary: inputs.salary,
+    contributionRate: inputs.contributionRate,
+    initialInvestment: inputs.initialInvestment,
+    contributionGrowth: inputs.contributionGrowth * 100,
+    inflationRate: inputs.inflationRate * 100,
+    paths: inputs.paths,
+    rebalance: inputs.rebalance,
+  });
 }
 
 function restoreProfile() {
@@ -332,6 +342,13 @@ function restoreProfile() {
     const element = $("#" + (aliases[key] || key));
     if (element && profile[key]) element.value = profile[key];
   });
+  if (Number.isFinite(Number(profile.salary)) && Number(profile.salary) > 0) $("#salary").value = profile.salary;
+  if (Number.isFinite(Number(profile.contributionRate))) $("#contribution-rate").value = clamp(profile.contributionRate, 5, 50);
+  if (Number.isFinite(Number(profile.initialInvestment))) $("#initial-investment").value = profile.initialInvestment;
+  if (Number.isFinite(Number(profile.contributionGrowth))) $("#contribution-growth").value = profile.contributionGrowth;
+  if (Number.isFinite(Number(profile.inflationRate))) $("#inflation-rate").value = profile.inflationRate;
+  if (Number.isFinite(Number(profile.paths))) $("#simulation-paths").value = clamp(profile.paths, 1000, 10000);
+  if (typeof profile.rebalance === "boolean") $("#rebalancing").checked = profile.rebalance;
 }
 
 function marketSnapshot(market) {
@@ -762,8 +779,15 @@ function applySimpleChange() {
   if (affectsHistory && !window.confirm(text("portfolio.confirmHistoryChange"))) return;
 
   if (reason === "restart-tracking") {
-    const openingTransactions = SIMPLE_ASSET_IDS.map((assetId) => pendingSimpleBalances[assetId] > 0 ? createTransaction({ type: "OPENING", assetId, quantity: pendingSimpleBalances[assetId], source: "simple-restart", note: "Restart tracking baseline" }, liveMarket || {}, now) : null).filter(Boolean);
-    if (openingTransactions.length !== SIMPLE_ASSET_IDS.filter((assetId) => pendingSimpleBalances[assetId] > 0).length) {
+    const restartHoldings = { ...current.holdings, ...pendingSimpleBalances };
+    const openingTransactions = assetIds(portfolio).map((assetId) => {
+      const quantity = Math.max(0, Number(restartHoldings[assetId]) || 0);
+      if (quantity <= 0) return null;
+      const unitPrice = portfolio.assets && portfolio.assets[assetId] ? 1 : undefined;
+      return createTransaction({ type: "OPENING", assetId, quantity, unitPrice, source: "simple-restart", note: "Restart tracking baseline" }, liveMarket || {}, now, portfolio);
+    }).filter(Boolean);
+    const expectedOpeningCount = assetIds(portfolio).filter((assetId) => Math.max(0, Number(restartHoldings[assetId]) || 0) > 0).length;
+    if (openingTransactions.length !== expectedOpeningCount) {
       setPortfolioStatus(text("portfolio.marketUnavailable"), "warning");
       return;
     }
@@ -1057,7 +1081,7 @@ function bindEvents() {
   });
   $$("#plan-form select, #plan-form input").forEach((element) => {
     element.addEventListener("change", () => { persistProfile(); syncPlanState(); });
-    element.addEventListener("input", syncPlanState);
+    element.addEventListener("input", () => { persistProfile(); syncPlanState(); });
   });
 }
 

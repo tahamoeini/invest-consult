@@ -28,7 +28,6 @@ function readPreferences() {
 function persistPreferences(state) {
   try {
     localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify({
-      activeView: state.activeView,
       sidebarCollapsed: state.sidebarCollapsed,
     }));
   } catch {
@@ -41,7 +40,7 @@ export function createAppStore(initial = {}) {
   let state = {
     ...DEFAULT_STATE,
     ...initial,
-    activeView: VIEW_IDS.has(preferences.activeView) ? preferences.activeView : initial.activeView || DEFAULT_STATE.activeView,
+    activeView: VIEW_IDS.has(initial.activeView) ? initial.activeView : DEFAULT_STATE.activeView,
     sidebarCollapsed: typeof preferences.sidebarCollapsed === "boolean" ? preferences.sidebarCollapsed : Boolean(initial.sidebarCollapsed),
   };
   const listeners = new Set();

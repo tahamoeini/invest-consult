@@ -82,6 +82,24 @@ test("Monte Carlo returns ordered percentile outputs", () => {
   assert.ok(result.real.p10 <= result.real.p90);
 });
 
+test("Monte Carlo respects an explicitly supplied zero covariance matrix", () => {
+  const model = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, { annualReturn: 0, annualVolatility: 0.9 }]));
+  const covariance = ASSET_KEYS.map(() => ASSET_KEYS.map(() => 0));
+  const result = runMonteCarlo({
+    allocation: { fixed: 25, gold: 25, currency: 25, silver: 25 },
+    initialInvestment: 100,
+    monthlyContribution: 0,
+    horizonYears: 1,
+    paths: 1000,
+    returnModel: model,
+    covariance,
+    random: () => 0.1,
+  });
+  assert.equal(result.nominal.p10, 100);
+  assert.equal(result.nominal.p50, 100);
+  assert.equal(result.nominal.p90, 100);
+});
+
 test("history export round-trips sanitized records", () => {
   const record = { createdAt: "2026-01-01T00:00:00.000Z", total: 1000, contributionRate: 20, weights: { fixed: 70, gold: 20, currency: 8, silver: 2 }, salary: 5000, marketSnapshot: { capturedAt: "2026-01-01T00:00:00.000Z", assets: { dollar: { price: 500000 } }, funds: { fixedIncome: { effectiveAnnualReturn: 25 } } } };
   const exported = createHistoryExport([record]);
@@ -187,4 +205,42 @@ test("named stock accounts stay separate from a global stock bucket", () => {
   assert.equal(result.holdings[steel.asset.id], 1000000);
   assert.equal(result.holdings[refinery.asset.id], 2000000);
   assert.equal(result.currentValue, 3000000);
+});
+
+test("portfolio series never invents history before tracking starts", () => {
+  const portfolioMarket = { assets: { gold: { price: 120 } }, history: {} };
+  const empty = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
+  assert.deepEqual(portfolioSeries(empty, portfolioMarket, "2025-01-01", "2026-02-01"), []);
+
+  let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
+  const opening = createTransaction({ type: "OPENING", assetId: "gold", quantity: 1, unitPrice: 100, date: "2026-01-15" }, portfolioMarket, "2026-01-15T00:00:00.000Z");
+  portfolio = appendTransactions(portfolio, [opening]).portfolio;
+  const series = portfolioSeries(portfolio, portfolioMarket, "2025-01-01", "2026-02-01");
+  assert.equal(series[0].date.slice(0, 10), "2026-01-15");
+});
+
+test("invalid transaction asset identifiers are rejected instead of becoming cash", () => {
+  const market = { assets: {}, history: {} };
+  assert.equal(createTransaction({ type: "BUY", assetId: "missing", quantity: 1, unitPrice: 1 }, market), null);
+  const deposit = createTransaction({ type: "DEPOSIT", assetId: "missing", amount: 100 }, market);
+  assert.equal(deposit.assetId, "cash");
+});
+
+test("a restarted portfolio baseline can preserve named holdings", () => {
+  const portfolioMarket = { assets: { gold: { price: 100 } }, history: { gold: [{ date: "2026-01-01", value: 100 }] } };
+  let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
+  const created = createPortfolioAsset(portfolio, { title: "فولاد", kind: "stock", unit: "TOMAN" }, "2026-01-01T00:00:00.000Z");
+  portfolio = created.portfolio;
+  const transactions = [
+    createTransaction({ type: "OPENING", assetId: "gold", quantity: 2, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
+    createTransaction({ type: "OPENING", assetId: created.asset.id, quantity: 500000, unitPrice: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
+  ];
+  portfolio = appendTransactions(portfolio, transactions).portfolio;
+  const restart = createPortfolioVersion(portfolio, [
+    createTransaction({ type: "OPENING", assetId: "gold", quantity: 2, date: "2026-02-01" }, portfolioMarket, "2026-02-01T00:00:00.000Z", portfolio),
+    createTransaction({ type: "OPENING", assetId: created.asset.id, quantity: 500000, unitPrice: 1, date: "2026-02-01" }, portfolioMarket, "2026-02-01T00:00:00.000Z", portfolio),
+  ], "Restart", "2026-02-01T00:00:00.000Z");
+  const result = calculatePortfolio(restart.portfolio, portfolioMarket, "2026-02-02T00:00:00.000Z");
+  assert.equal(result.holdings.gold, 2);
+  assert.equal(result.holdings[created.asset.id], 500000);
 });
