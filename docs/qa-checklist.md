@@ -35,4 +35,4 @@
 
 ## Regression note
 
-The original PR preview had a missing closing `</section>` after the Plan workspace. That nested Simulation, History, Portfolio, Assets, and Settings inside the hidden Plan view. The corrected branch closes the Plan view before its sibling sections; the new Cloudflare deployment was verified directly in the browser. The older immutable preview URL may continue to show the broken commit.
+The original PR preview had a missing closing `</section>` after the Plan workspace. That nested Simulation, History, Portfolio, Assets, and Settings inside the hidden Plan view. The corrected branch closes the Plan view before its sibling sections; the new Cloudflare deployment was verified directly in the browser. The desktop shell also explicitly keeps the sidebar aligned and scrollable during long views. The older immutable preview URL may continue to show the broken commit.
