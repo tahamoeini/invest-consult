@@ -23,6 +23,7 @@ import {
   appendTransactions,
   assetIds,
   calculatePortfolio,
+  createPortfolioAsset,
   createPortfolioVersion,
   createTransaction,
   normalizePortfolio,
@@ -36,6 +37,7 @@ const PROFILE_KEY = "investment-plan-profile-v1";
 const PORTFOLIO_KEY = "invest-consult-portfolio-v1";
 const HISTORY_LIMIT = 60;
 const MARKET_REQUEST_TIMEOUT_MS = 12000;
+const CURRENCY_MIGRATION_KEY = "invest-consult-currency-toman-v1";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -65,6 +67,7 @@ let copy;
 let liveMarket = null;
 let lastPlan = null;
 let pendingSimpleBalances = null;
+let pendingSimpleStock = null;
 
 const fallbackCopy = {
   status: { loading: "Reading market data", connected: "Live data connected", cached: "Using cached data", unavailable: "Live data unavailable" },
@@ -88,12 +91,40 @@ function normalizeDigits(value) {
   return String(value || "")
     .replace(/[\u06f0-\u06f9]/g, (digit) => String("\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9".indexOf(digit)))
     .replace(/[\u0660-\u0669]/g, (digit) => String("\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(digit)))
-    .replace(/[\u066c\u060c,\s]/g, "");
+    .replace(/[\u066c\u060c,\s]/g, "")
+    .replace(/\u066b/g, ".");
 }
 
 function numberFromInput(value) {
   const parsed = Number(normalizeDigits(value).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function groupedNumber(value) {
+  const normalized = normalizeDigits(value);
+  const negative = normalized.trim().startsWith("-");
+  const unsigned = normalized.replace(/[^0-9.]/g, "");
+  if (!unsigned) return negative ? "-" : "";
+  const [integerPart = "0", ...fractionParts] = unsigned.split(".");
+  const fraction = fractionParts.join("").replace(/[^0-9]/g, "");
+  const hasDecimal = unsigned.includes(".");
+  const integer = integerPart.replace(/^0+(?=\d)/, "") || "0";
+  const formattedInteger = new Intl.NumberFormat("fa-IR", { useGrouping: true, maximumFractionDigits: 0 }).format(Number(integer));
+  return `${negative ? "-" : ""}${formattedInteger}${hasDecimal ? `٫${fraction}` : ""}`;
+}
+
+function formatNumberInput(event) {
+  const input = event.currentTarget;
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const digitsBeforeCaret = normalizeDigits(before).replace(/\D/g, "").length;
+  input.value = groupedNumber(input.value);
+  let caret = 0;
+  let seenDigits = 0;
+  while (caret < input.value.length && seenDigits < digitsBeforeCaret) {
+    if (/\d/.test(normalizeDigits(input.value[caret]))) seenDigits += 1;
+    caret += 1;
+  }
+  if (typeof input.setSelectionRange === "function") input.setSelectionRange(caret, caret);
 }
 
 function formatIRR(value) {
@@ -137,6 +168,84 @@ function writeJson(key, value) {
   } catch {
     return false;
   }
+}
+
+function divideByTen(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number / 10 : value;
+}
+
+function isQuantityInToman(assetId) {
+  return ["fixed", "stocks", "cash", "other"].includes(assetId) || String(assetId || "").startsWith("custom:");
+}
+
+function migrateHistoryCurrency(records) {
+  return Array.isArray(records) ? records.map((entry) => {
+    const next = { ...entry };
+    ["salary", "total"].forEach((key) => {
+      if (Number.isFinite(Number(next[key]))) next[key] = divideByTen(next[key]);
+    });
+    if (next.contributionPlan && typeof next.contributionPlan === "object") {
+      next.contributionPlan = Object.fromEntries(Object.entries(next.contributionPlan).map(([key, value]) => [key, divideByTen(value)]));
+    }
+    if (next.marketSnapshot && typeof next.marketSnapshot === "object") {
+      next.marketSnapshot = { ...next.marketSnapshot, assets: Object.fromEntries(Object.entries(next.marketSnapshot.assets || {}).map(([key, item]) => [key, item && Number.isFinite(Number(item.price)) ? { ...item, price: divideByTen(item.price) } : item]) ) };
+    }
+    return next;
+  }) : records;
+}
+
+function migratePortfolioCurrency(portfolio) {
+  if (!portfolio || typeof portfolio !== "object" || !Array.isArray(portfolio.versions)) return portfolio;
+  const next = JSON.parse(JSON.stringify(portfolio));
+  next.versions = next.versions.map((version) => ({
+    ...version,
+    transactions: Array.isArray(version.transactions) ? version.transactions.map((transaction) => {
+      const result = { ...transaction };
+      if (result.quantity !== undefined && isQuantityInToman(result.assetId)) result.quantity = divideByTen(result.quantity);
+      if (result.targetQuantity !== undefined && isQuantityInToman(result.targetAssetId)) result.targetQuantity = divideByTen(result.targetQuantity);
+      if (result.amount !== undefined) result.amount = divideByTen(result.amount);
+      if (result.fee !== undefined) result.fee = divideByTen(result.fee);
+      if (result.unitPrice !== undefined && ["gold", "silver", "currency"].includes(result.assetId)) result.unitPrice = divideByTen(result.unitPrice);
+      if (result.targetUnitPrice !== undefined && ["gold", "silver", "currency"].includes(result.targetAssetId)) result.targetUnitPrice = divideByTen(result.targetUnitPrice);
+      if (result.marketQuote && Number.isFinite(Number(result.marketQuote.price))) result.marketQuote = { ...result.marketQuote, price: divideByTen(result.marketQuote.price) };
+      return result;
+    }) : [],
+  }));
+  return next;
+}
+
+function migrateMarketCurrency(market) {
+  if (!market || typeof market !== "object") return market;
+  const next = JSON.parse(JSON.stringify(market));
+  if (next.assets && typeof next.assets === "object") {
+    Object.values(next.assets).forEach((item) => { if (item && Number.isFinite(Number(item.price))) item.price = divideByTen(item.price); });
+  }
+  if (next.history && typeof next.history === "object") {
+    Object.values(next.history).forEach((series) => {
+      if (!Array.isArray(series)) return;
+      series.forEach((point) => {
+        if (Array.isArray(point) && Number.isFinite(Number(point[1]))) point[1] = divideByTen(point[1]);
+        else if (point && typeof point === "object") {
+          ["value", "price", "close", "c"].forEach((key) => { if (Number.isFinite(Number(point[key]))) point[key] = divideByTen(point[key]); });
+        }
+      });
+    });
+  }
+  return next;
+}
+
+function migrateStoredCurrencyToToman() {
+  if (readJson(CURRENCY_MIGRATION_KEY, false)) return;
+  const history = readJson(HISTORY_KEY, null);
+  if (Array.isArray(history)) writeJson(HISTORY_KEY, migrateHistoryCurrency(history));
+  const legacyHistory = readJson("investment-plan-history-v3", null);
+  if (Array.isArray(legacyHistory)) writeJson("investment-plan-history-v3", migrateHistoryCurrency(legacyHistory));
+  const portfolio = readJson(PORTFOLIO_KEY, null);
+  if (portfolio) writeJson(PORTFOLIO_KEY, migratePortfolioCurrency(portfolio));
+  const market = readJson(MARKET_CACHE_KEY, null);
+  if (market) writeJson(MARKET_CACHE_KEY, migrateMarketCurrency(market));
+  writeJson(CURRENCY_MIGRATION_KEY, true);
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = MARKET_REQUEST_TIMEOUT_MS) {
@@ -254,6 +363,18 @@ function assetMeta(key) {
   return text(`assets.${key}`, { title: key, description: "", dotClass: `asset-${key}` });
 }
 
+function portfolioAssetMeta(assetId, portfolio = null) {
+  const custom = portfolio && portfolio.assets && portfolio.assets[assetId];
+  if (custom) return { title: custom.kind === "legacy-stock" ? "سهام ثبت‌شده قدیمی" : custom.title, description: "دارایی سهامی ثبت‌شده توسط تو", dotClass: "asset-stocks", unit: custom.unit };
+  return assetMeta(assetId);
+}
+
+function portfolioUnitLabel(assetId, unit) {
+  if (unit === "gram") return "گرم";
+  if (unit === "TOMAN" || unit === "IRR") return text("currencyUnit");
+  return text(`portfolio.units.${assetId}`, unit || text("currencyUnit"));
+}
+
 function allocationRows(allocation, amounts = null) {
   return ASSET_KEYS.map((key) => {
     const meta = assetMeta(key);
@@ -344,8 +465,23 @@ function setPortfolioStatus(message, type = "neutral") {
   portfolioTransferStatusEl.className = `transfer-status transfer-${type}`;
 }
 
+function populatePortfolioAssetOptions() {
+  const portfolio = readPortfolio();
+  const options = assetIds(portfolio).map((assetId) => {
+    const meta = portfolioAssetMeta(assetId, portfolio);
+    return `<option value="${escapeHTML(assetId)}">${escapeHTML(meta.title)}</option>`;
+  }).join("");
+  [$("#advanced-asset"), $("#advanced-target-asset")].forEach((select) => {
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = options;
+    if (assetIds(portfolio).includes(current)) select.value = current;
+  });
+}
+
 function renderPortfolio() {
   if (!portfolioAllocationEl) return;
+  populatePortfolioAssetOptions();
   const portfolio = readPortfolio();
   const asOf = new Date().toISOString();
   const inflationRate = numberFromInput($("#inflation-rate").value) / 100;
@@ -364,11 +500,11 @@ function renderPortfolio() {
   $("#portfolio-version-count").textContent = `${portfolio.versions.length} ${text("portfolio.versionCount")}`;
   $("#portfolio-audit-count").textContent = `${version.audit.length} ${text("portfolio.auditCount")}`;
 
-  const heldAssetIds = assetIds().filter((assetId) => Math.abs(result.values[assetId].quantity) > 1e-7);
+  const heldAssetIds = assetIds(portfolio).filter((assetId) => Math.abs(result.values[assetId].quantity) > 1e-7);
   const allocationRows = heldAssetIds.map((assetId) => {
-    const meta = assetMeta(assetId);
+    const meta = portfolioAssetMeta(assetId, portfolio);
     const item = result.values[assetId];
-    return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(text(`portfolio.units.${assetId}`, item.unit))}</small></div></div><div class="allocation-numbers"><strong>${item.value === null ? escapeHTML(text("portfolio.unavailable")) : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></div></div>`;
+    return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</small></div></div><div class="allocation-numbers"><strong>${item.value === null ? escapeHTML(text("portfolio.unavailable")) : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></div></div>`;
   }).join("");
   portfolioAllocationEl.innerHTML = allocationRows || `<div class="empty-state">${escapeHTML(text("portfolio.empty"))}</div>`;
 
@@ -389,14 +525,26 @@ function renderPortfolio() {
 
   portfolioLedgerEl.innerHTML = hasTransactions ? result.transactions.slice().reverse().slice(0, 20).map((transaction) => {
     const type = text(`portfolio.transactionTypes.${transaction.type}`, transaction.type);
-    const meta = assetMeta(transaction.assetId);
+    const meta = portfolioAssetMeta(transaction.assetId, portfolio);
     const quantity = transaction.quantity === undefined ? transaction.amount : transaction.quantity;
-    const unit = transaction.quantity === undefined ? text("currencyUnit") : text(`portfolio.units.${transaction.assetId}`, meta.unit);
-    const target = transaction.type === "TRANSFER" ? ` ${text("portfolio.to")} ${escapeHTML(assetMeta(transaction.targetAssetId).title)}` : "";
+    const unit = transaction.quantity === undefined ? text("currencyUnit") : portfolioUnitLabel(transaction.assetId, meta.unit);
+    const target = transaction.type === "TRANSFER" ? ` ${text("portfolio.to")} ${escapeHTML(portfolioAssetMeta(transaction.targetAssetId, portfolio).title)}` : "";
     return `<div class="ledger-row"><div><strong>${escapeHTML(type)}</strong><small>${escapeHTML(formatDate(transaction.date))} ${escapeHTML(text("history.separator"))} ${escapeHTML(meta.title)}${target}</small></div><div><strong>${escapeHTML(formatPortfolioQuantity(transaction.assetId, quantity))}</strong><small>${escapeHTML(unit)}</small></div></div>`;
   }).join("") : `<div class="empty-state">${escapeHTML(text("portfolio.noLedger"))}</div>`;
 
   portfolioAuditEl.innerHTML = version.audit.length ? version.audit.slice().reverse().slice(0, 12).map((event) => `<div class="audit-row"><div><strong>${escapeHTML(text(`portfolio.auditActions.${event.action}`, event.action))}</strong><small>${escapeHTML(formatDateTime(event.timestamp))}</small></div><span class="audit-${event.affectsHistory ? "history" : "normal"}">${escapeHTML(event.affectsHistory ? text("portfolio.auditHistory") : text("portfolio.auditNormal"))}</span></div>`).join("") : `<div class="empty-state">${escapeHTML(text("portfolio.noAudit"))}</div>`;
+  renderStockList(portfolio, result);
+}
+
+function renderStockList(portfolio, result) {
+  const stockList = $("#portfolio-stock-list");
+  if (!stockList) return;
+  const stocks = Object.entries(portfolio.assets || {}).filter(([, asset]) => asset.kind === "stock" || asset.kind === "legacy-stock");
+  stockList.innerHTML = stocks.length ? stocks.map(([assetId, asset]) => {
+    const item = result.values[assetId];
+    const value = item && Number.isFinite(item.value) ? portfolioValueLabel(item.value) : text("portfolio.unavailable");
+    return `<div class="stock-row"><div><strong>${escapeHTML(asset.title)}</strong><small>${escapeHTML(text("portfolio.stockAccount"))}</small></div><div><strong>${escapeHTML(value)}</strong><small>${escapeHTML(text("portfolio.editByReenter"))}</small></div></div>`;
+  }).join("") : `<div class="empty-state">${escapeHTML(text("portfolio.noStocks"))}</div>`;
 }
 
 function renderSimulation(simulation, monteCarlo) {
@@ -412,6 +560,9 @@ function renderSimulation(simulation, monteCarlo) {
     [text("analysis.p50"), monteCarlo.nominal.p50],
     [text("analysis.p90"), monteCarlo.nominal.p90],
   ].map(([label, value]) => `<div class="range-metric"><span>${escapeHTML(label)}</span><strong>${formatIRR(value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("analysis.nominal"))}</small></div>`).join("") + `<p class="data-quality">${escapeHTML(monteCarlo.estimated ? text("analysis.estimated") : text("analysis.observed"))} ${escapeHTML(text("analysis.observations"))}: ${escapeHTML(String(monteCarlo.historicalObservations || 0))}</p>`;
+  const p10 = Number(monteCarlo.nominal.p10);
+  const p90 = Number(monteCarlo.nominal.p90);
+  $("#monthly-range").textContent = Number.isFinite(p10) && Number.isFinite(p90) ? `${formatIRR(p10)} تا ${formatIRR(p90)}` : "—";
 }
 
 function renderBacktest(result) {
@@ -493,6 +644,40 @@ function saveHistory(inputs, recommendation, contribution) {
   writeJson(HISTORY_KEY, mergeHistory([entry], history, HISTORY_LIMIT));
 }
 
+function handleStockEntrySubmit(event) {
+  event.preventDefault();
+  const title = $("#portfolio-stock-name").value.trim();
+  const value = Math.max(0, numberFromInput($("#portfolio-stock-value").value));
+  if (!title || !(value > 0)) {
+    setPortfolioStatus(text("portfolio.invalidStock"), "warning");
+    return;
+  }
+  const now = new Date().toISOString();
+  const portfolio = readPortfolio();
+  const existing = Object.values(portfolio.assets || {}).find((asset) => asset.title.toLocaleLowerCase() === title.toLocaleLowerCase());
+  if (existing) {
+    pendingSimpleStock = { assetId: existing.id, desired: value };
+    simpleChangePanel.classList.remove("is-hidden");
+    simpleChangePanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  const created = createPortfolioAsset(portfolio, { title, kind: "stock", unit: "TOMAN" }, now);
+  if (!created.asset) {
+    setPortfolioStatus(text("portfolio.invalidStock"), "warning");
+    return;
+  }
+  const transaction = createTransaction({ type: "OPENING", assetId: created.asset.id, quantity: value, unitPrice: 1, source: "simple-stock-opening", note: "Simple named stock opening balance", date: now }, liveMarket || {}, now, created.portfolio);
+  const appended = appendTransactions(created.portfolio, [transaction], { action: "create-stock-account", affectsHistory: true, detail: title });
+  if (!appended.validation.valid || !writePortfolio(appended.portfolio)) {
+    setPortfolioStatus(text("portfolio.validation"), "warning");
+    return;
+  }
+  event.target.reset();
+  renderPortfolio();
+  $("#portfolio-section").open = true;
+  setPortfolioStatus(text("portfolio.stockSaved"), "success");
+}
+
 function handleSimplePortfolioSubmit(event) {
   event.preventDefault();
   const desired = readSimpleBalances();
@@ -515,6 +700,7 @@ function handleSimplePortfolioSubmit(event) {
       return;
     }
     renderPortfolio();
+    $("#portfolio-section").open = true;
     setPortfolioStatus(text("portfolio.saved"), "success");
     return;
   }
@@ -524,6 +710,10 @@ function handleSimplePortfolioSubmit(event) {
 }
 
 function applySimpleChange() {
+  if (pendingSimpleStock) {
+    applySimpleStockChange();
+    return;
+  }
   if (!pendingSimpleBalances) return;
   const reason = $("#simple-change-reason").value;
   const now = new Date().toISOString();
@@ -558,13 +748,62 @@ function applySimpleChange() {
   pendingSimpleBalances = null;
   simpleChangePanel.classList.add("is-hidden");
   renderPortfolio();
+  $("#portfolio-section").open = true;
   setPortfolioStatus(reason === "correction" ? text("portfolio.corrected") : text("portfolio.updated"), "success");
 }
 
 function cancelSimpleChange() {
   pendingSimpleBalances = null;
+  pendingSimpleStock = null;
   simpleChangePanel.classList.add("is-hidden");
   setPortfolioStatus(text("portfolio.cancelled"), "neutral");
+}
+
+function applySimpleStockChange() {
+  const pending = pendingSimpleStock;
+  if (!pending) return;
+  const reason = $("#simple-change-reason").value;
+  const now = new Date().toISOString();
+  const portfolio = readPortfolio();
+  const current = calculatePortfolio(portfolio, liveMarket || {}, now);
+  const currentValue = Number(current.holdings[pending.assetId]) || 0;
+  const desired = Math.max(0, Number(pending.desired) || 0);
+  const affectsHistory = reason !== "new-purchase";
+  if (affectsHistory && !window.confirm(text("portfolio.confirmHistoryChange"))) return;
+  let nextPortfolio = portfolio;
+  let transactions = [];
+  if (reason === "restart-tracking") {
+    const holdings = { ...current.holdings, [pending.assetId]: desired };
+    const openingTransactions = assetIds(portfolio).map((assetId) => {
+      const quantity = Math.max(0, Number(holdings[assetId]) || 0);
+      return quantity > 0 ? createTransaction({ type: "OPENING", assetId, quantity, unitPrice: portfolio.assets && portfolio.assets[assetId] ? 1 : undefined, date: now, source: "simple-stock-restart", note: "Restart tracking baseline" }, liveMarket || {}, now, portfolio) : null;
+    }).filter(Boolean);
+    const versioned = createPortfolioVersion(portfolio, openingTransactions, text("portfolio.newVersionLabel"), now);
+    if (!versioned.validation.valid || !writePortfolio(versioned.portfolio)) {
+      setPortfolioStatus(text("portfolio.validation"), "warning");
+      return;
+    }
+    nextPortfolio = versioned.portfolio;
+  } else {
+    const delta = desired - currentValue;
+    if (Math.abs(delta) <= 1e-7) {
+      setPortfolioStatus(text("portfolio.noChange"), "neutral");
+      return;
+    }
+    const date = reason === "new-purchase" ? now : current.trackingStart || now;
+    transactions = [createTransaction({ type: reason === "new-purchase" ? (delta > 0 ? "BUY" : "SELL") : "ADJUSTMENT", assetId: pending.assetId, quantity: Math.abs(delta), unitPrice: 1, date, source: reason === "new-purchase" ? "simple-stock" : "simple-stock-correction", note: "Named stock balance update" }, liveMarket || {}, now, portfolio)].filter(Boolean);
+    const appended = appendTransactions(portfolio, transactions, { action: reason === "correction" ? "correct-stock-balance" : "record-stock-purchase", affectsHistory, detail: pending.assetId });
+    if (!appended.validation.valid || !writePortfolio(appended.portfolio)) {
+      setPortfolioStatus(text("portfolio.validation"), "warning");
+      return;
+    }
+    nextPortfolio = appended.portfolio;
+  }
+  pendingSimpleStock = null;
+  simpleChangePanel.classList.add("is-hidden");
+  renderPortfolio();
+  setPortfolioStatus(reason === "correction" ? text("portfolio.corrected") : text("portfolio.updated"), "success");
+  if (nextPortfolio) $("#portfolio-section").open = true;
 }
 
 function updateAdvancedTransactionFields() {
@@ -600,7 +839,7 @@ function handleAdvancedTransactionSubmit(event) {
     fee: numberFromInput($("#advanced-fee").value),
     note: $("#advanced-note").value,
   };
-  const transaction = createTransaction(input, liveMarket || {}, now);
+  const transaction = createTransaction(input, liveMarket || {}, now, readPortfolio());
   if (!transaction) {
     setPortfolioStatus(text("portfolio.validation"), "warning");
     return;
@@ -658,16 +897,18 @@ async function importHistoryFile(event) {
   }
   try {
     const parsed = parseHistoryExport(JSON.parse(await file.text()));
+    const importedRecords = parsed.currencyUnit === "TOMAN" ? parsed.records : migrateHistoryCurrency(parsed.records);
     const current = readHistory();
-    const merged = mergeHistory(current, parsed.records, HISTORY_LIMIT);
+    const merged = mergeHistory(current, importedRecords, HISTORY_LIMIT);
     if (!writeJson(HISTORY_KEY, merged)) throw new Error("storage-failed");
     let portfolioRestored = false;
     let portfolioSkipped = false;
     if (parsed.portfolio) {
+      const importedPortfolio = parsed.currencyUnit === "TOMAN" ? parsed.portfolio : migratePortfolioCurrency(parsed.portfolio);
       const currentPortfolio = readPortfolio();
       const currentHasPortfolio = activePortfolioVersion(currentPortfolio).transactions.length > 0;
       if (!currentHasPortfolio || window.confirm(text("portfolio.importConfirm"))) {
-        if (!writePortfolio(parsed.portfolio)) throw new Error("storage-failed");
+        if (!writePortfolio(importedPortfolio)) throw new Error("storage-failed");
         portfolioRestored = true;
       } else {
         portfolioSkipped = true;
@@ -698,6 +939,7 @@ function runBacktest() {
     rebalance: lastPlan.inputs.rebalance,
   });
   renderBacktest(result);
+  $("#backtest-section").open = true;
   $("#backtest-section").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -739,10 +981,15 @@ function bindEvents() {
   $("#import-history").addEventListener("click", () => $("#history-file").click());
   $("#history-file").addEventListener("change", importHistoryFile);
   $("#simple-portfolio-form").addEventListener("submit", handleSimplePortfolioSubmit);
+  $("#stock-entry-form").addEventListener("submit", handleStockEntrySubmit);
   $("#apply-simple-change").addEventListener("click", applySimpleChange);
   $("#cancel-simple-change").addEventListener("click", cancelSimpleChange);
   $("#advanced-transaction-form").addEventListener("submit", handleAdvancedTransactionSubmit);
   $("#advanced-type").addEventListener("change", updateAdvancedTransactionFields);
+  $$(".quick-nav a").forEach((link) => link.addEventListener("click", () => {
+    const target = $(link.getAttribute("href"));
+    if (target instanceof HTMLDetailsElement) target.open = true;
+  }));
   $("#clear-history").addEventListener("click", () => {
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem("investment-plan-history-v3");
@@ -750,11 +997,16 @@ function bindEvents() {
     setTransferStatus(text("history.transfer.cleared"), "neutral");
   });
   $("#contribution-rate").addEventListener("input", (event) => { $("#contribution-output").textContent = formatPercent(Number(event.target.value), 0); });
+  $$('[data-number-input]').forEach((input) => {
+    input.value = groupedNumber(input.value);
+    input.addEventListener("input", formatNumberInput);
+  });
   $$("#plan-form select, #plan-form input").forEach((element) => element.addEventListener("change", persistProfile));
 }
 
 async function init() {
   await loadCopy();
+  migrateStoredCurrencyToToman();
   restoreProfile();
   $("#contribution-output").textContent = formatPercent(Number($("#contribution-rate").value), 0);
   bindEvents();

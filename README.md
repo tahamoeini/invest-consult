@@ -8,13 +8,14 @@ It is a mathematical decision-support engine. It does not use an AI model to pre
 
 - Persian right-to-left interface using Vazirmatn.
 - English source code, comments, README, and technical documentation.
-- Generic asset categories: fixed income, gold, currency, silver, stocks, cash, and other assets.
+- Generic planning categories: fixed income, gold, currency, and silver. Personal portfolio tracking keeps cash, other assets, and each named stock as separate user-owned ledger accounts.
+- All Iranian currency inputs, market values, calculations, and exports use تومان. Legacy browser data and legacy exports are converted once on import; gold and silver quantities remain grams.
 - Salary, profile inputs, recommendation snapshots, and history remain in the browser's local storage.
 - History and the personal portfolio ledger can be exported as a versioned JSON file. Imported recommendation records merge by timestamp; an imported portfolio ledger replaces the current one only after confirmation.
 - A personal portfolio tracker supports a simple current-balance entry and an advanced transaction ledger. It never stores only a mutable current amount.
 - Portfolio values are calculated from holdings at a selected date and the best available immutable market-history point. Missing history remains missing rather than being backfilled.
 - Corrections and tracking restarts are versioned and audited. The interface confirms before a change can affect historical portfolio calculations.
-- A monthly recommendation based on salary, age, goal, horizon, risk tolerance, income stability, and emergency-fund status.
+- A monthly recommendation based on salary, an optional age input, goal, horizon, risk tolerance, income stability, and emergency-fund status.
 - New-contribution rebalancing: the tool directs the next contribution toward underweight categories instead of telling the user what to sell.
 - A deterministic plan simulation with contribution growth, inflation adjustment, allocation, and rebalancing.
 - Historical backtesting with total invested, final value, CAGR-style annualized outcome, inflation-adjusted return, maximum drawdown, and best/worst starting periods.
@@ -45,7 +46,7 @@ The personal portfolio has three separate layers:
 
 1. Market data is external, normalized, and treated as immutable input. A transaction can retain the market quote used when it was created, but the live market cache is never rewritten by portfolio edits.
 2. The portfolio ledger stores opening balances, buys, sells, dividends, transfers, adjustments, deposits, and withdrawals. Each record has a date, creation timestamp, source, optional note, and audit reference.
-3. The valuation engine replays the active portfolio version to any date, then calculates quantity multiplied by the market price available on that date. Manual IRR-denominated assets use unit price one because their entered quantity is already a value.
+3. The valuation engine replays the active portfolio version to any date, then calculates quantity multiplied by the market price available on that date. Manual تومان-denominated assets use unit price one because their entered quantity is already a value.
 
 Simple mode creates opening-balance transactions. When an existing simple balance changes, the user chooses a real purchase/sale, a correction, or a new tracking baseline. A correction keeps the original ledger and adds a dated adjustment; a restart closes the current version and creates a new baseline while preserving the previous version for audit.
 
@@ -58,7 +59,7 @@ The Pages Function uses independent public providers:
 - Provider A: TGJU profile pages.
 - Provider B: Bonbast public data request.
 - Provider C: the public Navasan data mirror.
-- Auxiliary metal source: global gold and silver reference prices converted to IRR with the aggregated dollar quote.
+- Auxiliary metal source: global gold and silver reference prices converted to تومان with the aggregated dollar quote.
 
 Each quote is normalized to an asset, price, source, timestamp, and optional daily change. Invalid, unavailable, or failed quotes are dropped. If at least one valid quote remains, the displayed price is the median of the valid quotes. The endpoint returns provider diagnostics, source counts, source values, and provenance for inspection.
 

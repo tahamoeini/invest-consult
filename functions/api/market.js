@@ -73,7 +73,7 @@ async function providerA() {
     const changePct = firstNumberAfter(html, 'data-col="info.last_trade.last_change_percentage"', 300);
     const revision = html.match(/data-revision="([^"]+)"/);
     const serverTime = html.match(/id="server-time"[^>]+data-value="([^"]+)"/);
-    const item = quote(asset, price, "Provider A", { changePct, sourceUrl: TGJU_BASE + page, sourceTime: serverTime ? serverTime[1] : null, sourceRevision: revision ? revision[1] : null });
+    const item = quote(asset, price / 10, "Provider A", { changePct, sourceUrl: TGJU_BASE + page, sourceTime: serverTime ? serverTime[1] : null, sourceRevision: revision ? revision[1] : null });
     if (!item) throw new Error(`No normalized quote for ${asset}`);
     return item;
   }));
@@ -98,8 +98,8 @@ async function providerB() {
   if (data.rest || !data.usd1) throw new Error("Quote response was incomplete");
   const sourceTime = data.last_modified || data.created || null;
   return [
-    quote("dollar", parseNumber(data.usd1) * 10, "Provider B", { sourceUrl: BONBAST_BASE + "/", sourceTime }),
-    quote("gold", parseNumber(data.gol18) * 10, "Provider B", { sourceUrl: BONBAST_BASE + "/", sourceTime }),
+    quote("dollar", parseNumber(data.usd1), "Provider B", { sourceUrl: BONBAST_BASE + "/", sourceTime }),
+    quote("gold", parseNumber(data.gol18), "Provider B", { sourceUrl: BONBAST_BASE + "/", sourceTime }),
   ].filter(Boolean);
 }
 
@@ -110,8 +110,8 @@ async function providerC() {
   const dollarTime = dollar && Number.isFinite(Number(dollar.date)) ? new Date(Number(dollar.date) * 1000).toISOString() : null;
   const goldTime = gold18 && Number.isFinite(Number(gold18.date)) ? new Date(Number(gold18.date) * 1000).toISOString() : null;
   return [
-    quote("dollar", parseNumber(dollar && dollar.value) * 10, "Provider C", { changePct: parseNumber(dollar && dollar.change_pct), sourceUrl: "https://github.com/HosseinOdd/Navasan-API", sourceTime: dollarTime }),
-    quote("gold", parseNumber(gold18 && gold18.value) * 10, "Provider C", { changePct: parseNumber(gold18 && gold18.change_pct), sourceUrl: "https://github.com/HosseinOdd/Navasan-API", sourceTime: goldTime }),
+    quote("dollar", parseNumber(dollar && dollar.value), "Provider C", { changePct: parseNumber(dollar && dollar.change_pct), sourceUrl: "https://github.com/HosseinOdd/Navasan-API", sourceTime: dollarTime }),
+    quote("gold", parseNumber(gold18 && gold18.value), "Provider C", { changePct: parseNumber(gold18 && gold18.change_pct), sourceUrl: "https://github.com/HosseinOdd/Navasan-API", sourceTime: goldTime }),
   ].filter(Boolean);
 }
 
@@ -255,7 +255,7 @@ export async function onRequestGet() {
       ],
       fixedIncome: "https://charisma.ir/",
     },
-    note: "Each asset is normalized to IRR and aggregated with the median of valid responsive quotes. Failed providers are omitted without synthetic or stale values.",
+    note: "Each asset is normalized to Toman and aggregated with the median of valid responsive quotes. Failed providers are omitted without synthetic or stale values.",
   }), {
     headers: {
       "content-type": "application/json; charset=UTF-8",

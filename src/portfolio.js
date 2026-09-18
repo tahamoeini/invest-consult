@@ -8,15 +8,16 @@ export const TRANSACTION_TYPES = ["OPENING", "BUY", "SELL", "DIVIDEND", "TRANSFE
 
 export const PORTFOLIO_ASSETS = Object.freeze({
   gold: { id: "gold", titleKey: "gold", unit: "gram", marketKey: "gold", priced: true },
-  fixed: { id: "fixed", titleKey: "fixed", unit: "IRR", marketKey: null, priced: true },
-  currency: { id: "currency", titleKey: "currency", unit: "IRR", marketKey: "dollar", priced: true },
+  fixed: { id: "fixed", titleKey: "fixed", unit: "TOMAN", marketKey: null, priced: true },
+  currency: { id: "currency", titleKey: "currency", unit: "TOMAN", marketKey: "dollar", priced: true },
   silver: { id: "silver", titleKey: "silver", unit: "gram", marketKey: "silver", priced: true },
-  stocks: { id: "stocks", titleKey: "stocks", unit: "IRR", marketKey: null, priced: true },
-  cash: { id: "cash", titleKey: "cash", unit: "IRR", marketKey: null, priced: true },
-  other: { id: "other", titleKey: "other", unit: "IRR", marketKey: null, priced: true },
+  cash: { id: "cash", titleKey: "cash", unit: "TOMAN", marketKey: null, priced: true },
+  other: { id: "other", titleKey: "other", unit: "TOMAN", marketKey: null, priced: true },
 });
 
-export const SIMPLE_ASSET_IDS = ["gold", "fixed", "stocks", "cash", "other"];
+export const SIMPLE_ASSET_IDS = ["gold", "fixed", "cash", "other"];
+
+const LEGACY_STOCK_ASSET_ID = "custom:legacy-stocks";
 
 const EPSILON = 1e-7;
 
@@ -39,12 +40,16 @@ function makeId(prefix = "id") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function assetDefinition(assetId) {
-  return PORTFOLIO_ASSETS[assetId] || null;
+function assetDefinition(assetId, assets = PORTFOLIO_ASSETS) {
+  return assets && assets[assetId] ? assets[assetId] : null;
 }
 
-function emptyHoldings() {
-  return Object.fromEntries(Object.keys(PORTFOLIO_ASSETS).map((assetId) => [assetId, 0]));
+function assetRegistry(portfolio) {
+  return { ...PORTFOLIO_ASSETS, ...(portfolio && portfolio.assets ? portfolio.assets : {}) };
+}
+
+function emptyHoldings(assets = PORTFOLIO_ASSETS) {
+  return Object.fromEntries(Object.keys(assets).map((assetId) => [assetId, 0]));
 }
 
 function snapshotQuote(market, assetId, date) {
@@ -55,10 +60,10 @@ function snapshotQuote(market, assetId, date) {
   return { assetId, price, source: "market-snapshot", capturedAt: isoDate(date) };
 }
 
-function normalizeTransaction(raw) {
+function normalizeTransaction(raw, assets = PORTFOLIO_ASSETS) {
   if (!raw || typeof raw !== "object" || !TRANSACTION_TYPES.includes(raw.type)) return null;
-  const assetId = assetDefinition(raw.assetId) ? raw.assetId : null;
-  const targetAssetId = assetDefinition(raw.targetAssetId) ? raw.targetAssetId : null;
+  const assetId = assetDefinition(raw.assetId, assets) ? raw.assetId : null;
+  const targetAssetId = assetDefinition(raw.targetAssetId, assets) ? raw.targetAssetId : null;
   const quantity = finite(raw.quantity);
   const unitPrice = finite(raw.unitPrice);
   const amount = finite(raw.amount);
@@ -105,7 +110,23 @@ function normalizeAudit(raw) {
   };
 }
 
-function normalizeVersion(raw) {
+function normalizeAsset(raw, id) {
+  if (!raw || typeof raw !== "object" || !id.startsWith("custom:")) return null;
+  const title = typeof raw.title === "string" ? raw.title.trim().slice(0, 80) : "Personal asset";
+  if (!title) return null;
+  return {
+    id,
+    title,
+    titleKey: "stocks",
+    kind: typeof raw.kind === "string" ? raw.kind.slice(0, 30) : "custom",
+    unit: typeof raw.unit === "string" ? raw.unit.slice(0, 20) : "TOMAN",
+    marketKey: null,
+    priced: true,
+    createdAt: isoDate(raw.createdAt),
+  };
+}
+
+function normalizeVersion(raw, assets = PORTFOLIO_ASSETS) {
   if (!raw || typeof raw !== "object") return null;
   const id = typeof raw.id === "string" && raw.id.length <= 120 ? raw.id : makeId("version");
   return {
@@ -114,7 +135,7 @@ function normalizeVersion(raw) {
     createdAt: isoDate(raw.createdAt),
     startedAt: isoDate(raw.startedAt || raw.createdAt),
     closedAt: raw.closedAt ? isoDate(raw.closedAt) : null,
-    transactions: Array.isArray(raw.transactions) ? raw.transactions.map(normalizeTransaction).filter(Boolean) : [],
+    transactions: Array.isArray(raw.transactions) ? raw.transactions.map((transaction) => normalizeTransaction(transaction, assets)).filter(Boolean) : [],
     audit: Array.isArray(raw.audit) ? raw.audit.map(normalizeAudit).filter(Boolean) : [],
   };
 }
@@ -124,6 +145,7 @@ export function createEmptyPortfolio(now = new Date().toISOString()) {
   return {
     schema: PORTFOLIO_SCHEMA,
     version: PORTFOLIO_VERSION,
+    assets: {},
     activeVersionId: versionId,
     versions: [{ id: versionId, label: "Initial portfolio", createdAt: now, startedAt: now, closedAt: null, transactions: [], audit: [] }],
   };
@@ -131,10 +153,14 @@ export function createEmptyPortfolio(now = new Date().toISOString()) {
 
 export function normalizePortfolio(raw) {
   if (!raw || typeof raw !== "object" || raw.schema !== PORTFOLIO_SCHEMA || Number(raw.version) > PORTFOLIO_VERSION || !Array.isArray(raw.versions)) return createEmptyPortfolio();
-  const versions = raw.versions.map(normalizeVersion).filter(Boolean);
+  const customAssets = Object.fromEntries(Object.entries(raw.assets && typeof raw.assets === "object" ? raw.assets : {}).map(([id, asset]) => [id, normalizeAsset(asset, id)]).filter(([, asset]) => asset));
+  const hasLegacyStocks = raw.versions.some((version) => Array.isArray(version.transactions) && version.transactions.some((transaction) => transaction && (transaction.assetId === "stocks" || transaction.targetAssetId === "stocks")));
+  if (hasLegacyStocks && !customAssets[LEGACY_STOCK_ASSET_ID]) customAssets[LEGACY_STOCK_ASSET_ID] = { id: LEGACY_STOCK_ASSET_ID, title: "Legacy stock holding", titleKey: "stocks", kind: "legacy-stock", unit: "TOMAN", marketKey: null, priced: true, createdAt: new Date().toISOString() };
+  const assets = { ...PORTFOLIO_ASSETS, ...customAssets };
+  const versions = raw.versions.map((version) => normalizeVersion({ ...version, transactions: (version.transactions || []).map((transaction) => ({ ...transaction, assetId: transaction.assetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.assetId, targetAssetId: transaction.targetAssetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.targetAssetId })) }, assets)).filter(Boolean);
   if (!versions.length) return createEmptyPortfolio();
   const activeVersionId = versions.some((version) => version.id === raw.activeVersionId) ? raw.activeVersionId : versions[versions.length - 1].id;
-  return { schema: PORTFOLIO_SCHEMA, version: PORTFOLIO_VERSION, activeVersionId, versions };
+  return { schema: PORTFOLIO_SCHEMA, version: PORTFOLIO_VERSION, assets: customAssets, activeVersionId, versions };
 }
 
 export function activePortfolioVersion(portfolio) {
@@ -157,7 +183,7 @@ function seriesPointValue(point) {
 }
 
 export function marketPriceAt(market, assetId, asOf = new Date().toISOString()) {
-  const definition = assetDefinition(assetId);
+  const definition = assetDefinition(assetId) || (String(assetId).startsWith("custom:") ? { marketKey: null } : null);
   if (!definition) return null;
   if (!definition.marketKey) return 1;
   const timestamp = new Date(asOf).getTime();
@@ -181,8 +207,8 @@ function sortedTransactions(transactions, asOf) {
   return transactions.filter((transaction) => new Date(transaction.date).getTime() <= timestamp).slice().sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime() || new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
 }
 
-export function ledgerState(transactions, asOf = new Date().toISOString()) {
-  const holdings = emptyHoldings();
+export function ledgerState(transactions, asOf = new Date().toISOString(), assets = PORTFOLIO_ASSETS) {
+  const holdings = emptyHoldings(assets);
   let contributed = 0;
   let returned = 0;
   let dividends = 0;
@@ -230,15 +256,15 @@ export function ledgerState(transactions, asOf = new Date().toISOString()) {
   return { holdings, contributed, returned, dividends, netInvested: Math.max(0, contributed - returned), applied };
 }
 
-function valueState(holdings, market, asOf) {
+function valueState(holdings, market, asOf, assets = PORTFOLIO_ASSETS) {
   const values = {};
   const missingPrices = [];
   let totalValue = 0;
-  Object.keys(PORTFOLIO_ASSETS).forEach((assetId) => {
+  Object.keys(assets).forEach((assetId) => {
     const quantity = Number(holdings[assetId]) || 0;
     const price = marketPriceAt(market, assetId, asOf);
     const value = price === null ? null : quantity * price;
-    values[assetId] = { quantity, price, value, unit: PORTFOLIO_ASSETS[assetId].unit };
+    values[assetId] = { quantity, price, value, unit: assets[assetId].unit };
     if (quantity > EPSILON && value === null) missingPrices.push(assetId);
     if (value !== null) totalValue += value;
   });
@@ -297,10 +323,12 @@ function performanceMetrics(transactions, state, totalValue, asOf, inflationRate
 }
 
 export function calculatePortfolio(portfolio, market, asOf = new Date().toISOString(), inflationRate = 0) {
-  const version = activePortfolioVersion(portfolio);
+  const normalized = normalizePortfolio(portfolio);
+  const assets = assetRegistry(normalized);
+  const version = activePortfolioVersion(normalized);
   const transactions = version.transactions;
-  const state = ledgerState(transactions, asOf);
-  const valuation = valueState(state.holdings, market, asOf);
+  const state = ledgerState(transactions, asOf, assets);
+  const valuation = valueState(state.holdings, market, asOf, assets);
   return {
     versionId: version.id,
     versionLabel: version.label,
@@ -309,13 +337,14 @@ export function calculatePortfolio(portfolio, market, asOf = new Date().toISOStr
     values: valuation.values,
     allocation: valuation.allocation,
     missingPrices: valuation.missingPrices,
+    assets,
     audit: version.audit,
     ...performanceMetrics(state.applied, state, valuation.totalValue, asOf, inflationRate),
   };
 }
 
-export function validateLedger(transactions) {
-  const holdings = emptyHoldings();
+export function validateLedger(transactions, assets = PORTFOLIO_ASSETS) {
+  const holdings = emptyHoldings(assets);
   const errors = [];
   sortedTransactions(transactions, new Date(8640000000000000).toISOString()).forEach((transaction) => {
     const required = transaction.type === "SELL" || transaction.type === "WITHDRAWAL" ? transaction.type === "WITHDRAWAL" ? "cash" : transaction.assetId : transaction.type === "TRANSFER" ? transaction.assetId : null;
@@ -334,11 +363,12 @@ export function validateLedger(transactions) {
 }
 
 export function appendTransactions(portfolio, transactions, audit = {}) {
-  const normalized = transactions.map(normalizeTransaction).filter(Boolean);
   const current = normalizePortfolio(portfolio);
+  const assets = assetRegistry(current);
+  const normalized = transactions.map((transaction) => normalizeTransaction(transaction, assets)).filter(Boolean);
   const version = activePortfolioVersion(current);
   const candidate = [...version.transactions, ...normalized];
-  const validation = validateLedger(candidate);
+  const validation = validateLedger(candidate, assets);
   if (!validation.valid) return { portfolio: current, transactions: [], validation };
   const next = clone(current);
   const nextVersion = next.versions.find((item) => item.id === version.id);
@@ -349,11 +379,12 @@ export function appendTransactions(portfolio, transactions, audit = {}) {
 
 export function createPortfolioVersion(portfolio, openingTransactions, label = "New tracking baseline", now = new Date().toISOString()) {
   const current = normalizePortfolio(portfolio);
+  const assets = assetRegistry(current);
   const next = clone(current);
   const oldVersion = next.versions.find((version) => version.id === next.activeVersionId) || next.versions[next.versions.length - 1];
   const versionId = makeId("version");
-  const normalized = openingTransactions.map(normalizeTransaction).filter(Boolean);
-  const validation = validateLedger(normalized);
+  const normalized = openingTransactions.map((transaction) => normalizeTransaction(transaction, assets)).filter(Boolean);
+  const validation = validateLedger(normalized, assets);
   if (!validation.valid) return { portfolio: current, transactions: [], validation };
   oldVersion.closedAt = now;
   oldVersion.audit.push({ id: makeId("audit"), action: "close-version", timestamp: now, versionId: oldVersion.id, transactionIds: [], affectsHistory: true, detail: label });
@@ -362,12 +393,13 @@ export function createPortfolioVersion(portfolio, openingTransactions, label = "
   return { portfolio: next, transactions: normalized, validation: { valid: true, errors: [] } };
 }
 
-export function createTransaction(input, market, now = new Date().toISOString()) {
+export function createTransaction(input, market, now = new Date().toISOString(), portfolio = null) {
   const type = input.type;
-  const assetId = assetDefinition(input.assetId) ? input.assetId : "cash";
+  const assets = assetRegistry(portfolio);
+  const assetId = assetDefinition(input.assetId, assets) ? input.assetId : "cash";
   const date = isoDate(input.date || now, now);
-  const definition = assetDefinition(assetId);
-  const unitPrice = finite(input.unitPrice) || (definition.unit === "IRR" ? 1 : marketPriceAt(market, assetId, date));
+  const definition = assetDefinition(assetId, assets);
+  const unitPrice = finite(input.unitPrice) || (definition.unit === "TOMAN" ? 1 : marketPriceAt(market, assetId, date));
   const quantity = finite(input.quantity);
   const amount = finite(input.amount);
   const transaction = {
@@ -387,7 +419,20 @@ export function createTransaction(input, market, now = new Date().toISOString())
     source: input.source || "advanced",
     marketQuote: snapshotQuote(market, assetId, date),
   };
-  return normalizeTransaction(transaction);
+  return normalizeTransaction(transaction, assets);
+}
+
+export function createPortfolioAsset(portfolio, input, now = new Date().toISOString()) {
+  const current = normalizePortfolio(portfolio);
+  const title = String(input && input.title || "").trim().slice(0, 80);
+  if (!title) return { portfolio: current, asset: null };
+  const existing = Object.values(current.assets).find((asset) => asset.title.toLocaleLowerCase() === title.toLocaleLowerCase());
+  if (existing) return { portfolio: current, asset: existing };
+  const id = makeId("asset").replace(/^/, "custom:");
+  const asset = normalizeAsset({ id, title, kind: input.kind || "custom", unit: input.unit || "TOMAN", createdAt: now }, id);
+  const next = clone(current);
+  next.assets = { ...(next.assets || {}), [id]: asset };
+  return { portfolio: next, asset };
 }
 
 export function simpleBalancesFromPortfolio(portfolio, market, asOf = new Date().toISOString()) {
@@ -431,6 +476,6 @@ export function portfolioSeries(portfolio, market, startDate, endDate, inflation
   return points;
 }
 
-export function assetIds() {
-  return Object.keys(PORTFOLIO_ASSETS);
+export function assetIds(portfolio = null) {
+  return Object.keys(assetRegistry(portfolio));
 }

@@ -132,7 +132,7 @@ function emergencyValue(value) {
  * This is a rule system, not a market forecast.
  */
 export function recommendAllocation(profile = {}) {
-  const age = clamp(profile.age || 35, 18, 90);
+  const age = Number.isFinite(Number(profile.age)) && Number(profile.age) > 0 ? clamp(profile.age, 18, 90) : null;
   const horizon = clamp(profile.horizonYears || 5, 1, 50);
   const goal = GOALS[profile.goal] || GOALS.preservation;
   const risk = riskValue(profile.riskTolerance);
@@ -140,7 +140,7 @@ export function recommendAllocation(profile = {}) {
   const emergency = emergencyValue(profile.emergencyFund);
 
   let fixed = 71 + goal.fixedBias + stability + emergency;
-  fixed += age >= 55 ? 4 : age >= 40 ? 2 : age < 30 ? -2 : 0;
+  if (age !== null) fixed += age >= 55 ? 4 : age >= 40 ? 2 : age < 30 ? -2 : 0;
   fixed += horizon <= 3 ? 6 : horizon <= 7 ? 2 : horizon >= 15 ? -4 : 0;
   fixed -= risk * 6;
   fixed = clamp(fixed, 52, 86);

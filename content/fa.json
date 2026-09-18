@@ -1,12 +1,12 @@
 {
-  "currencyUnit": "ریال",
+  "currencyUnit": "تومان",
   "to": "تا",
   "assets": {
     "fixed": { "title": "درآمد ثابت", "description": "بخش دفاعی سبد برای نوسان کمتر", "dotClass": "asset-fixed" },
     "gold": { "title": "طلا", "description": "پوشش نسبی افت قدرت خرید", "dotClass": "asset-gold" },
     "currency": { "title": "ارز", "description": "خرید پله‌ای به‌جای تصمیم هیجانی", "dotClass": "asset-currency" },
     "silver": { "title": "نقره", "description": "تنوع کوچک‌تر با نوسان بیشتر", "dotClass": "asset-silver" },
-    "stocks": { "title": "سهام", "description": "ارزش ریالی سهام ثبت‌شده", "dotClass": "asset-stocks" },
+    "stocks": { "title": "سهام ثبت‌شده", "description": "دارایی‌های سهامی که خودت نام‌گذاری کرده‌ای", "dotClass": "asset-stocks" },
     "cash": { "title": "نقد", "description": "موجودی نقدی در دسترس", "dotClass": "asset-cash" },
     "other": { "title": "سایر دارایی‌ها", "description": "دارایی‌های دستی ثبت‌شده", "dotClass": "asset-other" }
   },
@@ -104,6 +104,7 @@
     "unavailable": "نامشخص",
     "notStarted": "شروع نشده",
     "initialLabel": "شروع اولیه",
+    "newVersionLabel": "شروع دوباره ردیابی",
     "versionCount": "نسخه",
     "auditCount": "رویداد",
     "exported": "دفتر پرتفوی هم خروجی گرفت",
@@ -116,6 +117,11 @@
     "validation": "این تراکنش با موجودی فعلی سازگار نیست یا اطلاعات آن کامل نیست.",
     "saved": "موجودی اولیه ثبت شد.",
     "updated": "پرتفوی به‌روزرسانی شد.",
+    "stockSaved": "سهام با نام مستقل ثبت شد.",
+    "invalidStock": "نام سهم و ارزش فعلی را کامل وارد کن.",
+    "noStocks": "هنوز سهم مشخصی ثبت نشده.",
+    "stockAccount": "حساب مستقل در دفتر پرتفوی",
+    "editByReenter": "برای تغییر، نام را دوباره وارد کن",
     "corrected": "اصلاح با ثبت در دفتر انجام شد.",
     "noChange": "تغییری نسبت به موجودی فعلی پیدا نشد.",
     "cancelled": "تغییر لغو شد.",
@@ -147,11 +153,11 @@
     "units": {
       "gold": "گرم",
       "silver": "گرم",
-      "fixed": "ریال",
-      "currency": "ریال",
-      "stocks": "ریال",
-      "cash": "ریال",
-      "other": "ریال"
+      "fixed": "تومان",
+      "currency": "تومان",
+      "stocks": "تومان",
+      "cash": "تومان",
+      "other": "تومان"
     }
   },
   "errors": { "salary": "یک حقوق معتبر وارد کن." }

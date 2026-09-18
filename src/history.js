@@ -4,7 +4,7 @@ import { ASSET_KEYS, clamp, normalizeAllocation } from "./engine.js";
 import { PORTFOLIO_SCHEMA, PORTFOLIO_VERSION, normalizePortfolio } from "./portfolio.js";
 
 export const HISTORY_SCHEMA = "invest-consult-history";
-export const HISTORY_VERSION = 1;
+export const HISTORY_VERSION = 2;
 
 const MARKET_ASSETS = ["dollar", "gold", "silver"];
 
@@ -105,6 +105,7 @@ export function createHistoryExport(history, portfolio = null) {
   const result = {
     schema: HISTORY_SCHEMA,
     version: HISTORY_VERSION,
+    currencyUnit: "TOMAN",
     exportedAt: new Date().toISOString(),
     recordCount: records.length,
     history: records,
@@ -125,5 +126,5 @@ export function parseHistoryExport(value) {
     if (!data.portfolio || data.portfolio.schema !== PORTFOLIO_SCHEMA || Number(data.portfolio.version) > PORTFOLIO_VERSION || !Array.isArray(data.portfolio.versions)) throw new Error("invalid-portfolio-format");
     portfolio = normalizePortfolio(data.portfolio);
   }
-  return { records, skipped: data.history.length - records.length, version: Number(data.version) || HISTORY_VERSION, portfolio };
+  return { records, skipped: data.history.length - records.length, version: Number(data.version) || HISTORY_VERSION, currencyUnit: data.currencyUnit === "TOMAN" ? "TOMAN" : "RIAL_LEGACY", portfolio };
 }

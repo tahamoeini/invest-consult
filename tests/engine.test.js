@@ -17,6 +17,7 @@ import {
 import {
   appendTransactions,
   calculatePortfolio,
+  createPortfolioAsset,
   createEmptyPortfolio,
   createPortfolioVersion,
   createTransaction,
@@ -168,4 +169,22 @@ test("history export round-trips the portfolio ledger", () => {
   const parsed = parseHistoryExport(JSON.parse(JSON.stringify(exported)));
   assert.equal(parsed.portfolio.schema, "invest-consult-portfolio");
   assert.equal(parsed.portfolio.versions[0].transactions.length, 1);
+});
+
+test("named stock accounts stay separate from a global stock bucket", () => {
+  const portfolioMarket = { assets: {}, history: {} };
+  let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
+  const steel = createPortfolioAsset(portfolio, { title: "فولاد", kind: "stock", unit: "TOMAN" }, "2026-01-01T00:00:00.000Z");
+  portfolio = steel.portfolio;
+  const refinery = createPortfolioAsset(portfolio, { title: "شپنا", kind: "stock", unit: "TOMAN" }, "2026-01-01T00:00:00.000Z");
+  portfolio = refinery.portfolio;
+  const transactions = [
+    createTransaction({ type: "OPENING", assetId: steel.asset.id, quantity: 1000000, unitPrice: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
+    createTransaction({ type: "OPENING", assetId: refinery.asset.id, quantity: 2000000, unitPrice: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
+  ];
+  portfolio = appendTransactions(portfolio, transactions).portfolio;
+  const result = calculatePortfolio(portfolio, portfolioMarket, "2026-01-02T00:00:00.000Z");
+  assert.equal(result.holdings[steel.asset.id], 1000000);
+  assert.equal(result.holdings[refinery.asset.id], 2000000);
+  assert.equal(result.currentValue, 3000000);
 });
