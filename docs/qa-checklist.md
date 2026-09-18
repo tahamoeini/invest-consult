@@ -5,6 +5,7 @@
 - `npm run check` — passed
 - `npm test` — passed
 - `git diff --check` — passed
+- Direct browser smoke test on the corrected Cloudflare preview — passed for all seven view transitions, plan generation, Monte Carlo output, backtest output, history comparison, portfolio registration, stock entry, allocation drawer open/close, and market snapshot rendering.
 
 ## Scenario matrix
 
@@ -31,3 +32,7 @@
 6. Test import/export with an existing portfolio and confirm the confirmation prompt appears before replacement.
 7. Test desktop, tablet, and mobile widths; verify no horizontal scroll is introduced.
 8. Verify keyboard focus can reach navigation, range buttons, forms, disclosure panels, and drawer close.
+
+## Regression note
+
+The original PR preview had a missing closing `</section>` after the Plan workspace. That nested Simulation, History, Portfolio, Assets, and Settings inside the hidden Plan view. The corrected branch closes the Plan view before its sibling sections; the new Cloudflare deployment was verified directly in the browser. The older immutable preview URL may continue to show the broken commit.
