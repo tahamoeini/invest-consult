@@ -654,3 +654,7 @@ input[type="range"] { padding: 0; border: 0; accent-color: var(--primary); }
   .allocation-compare-row { grid-template-columns: minmax(75px, 1fr) auto auto; }
   .allocation-compare-row small { display: none; }
 }
+
+
+.creator-attribution a { color: var(--primary); font-weight: 700; text-decoration: none; }
+.creator-attribution a:hover { text-decoration: underline; }
