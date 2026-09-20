@@ -5,6 +5,7 @@ const CHART_GOLD_URL = "https://www.chartgoldprice.com/api/data?history=both";
 const COINGECKO_SIMPLE_URL = "https://api.coingecko.com/api/v3/simple/price";
 const BINANCE_TICKER_URL = "https://api.binance.com/api/v3/ticker/24hr";
 const METALS_LIVE_URL = "https://api.metals.live/v1/spot";
+const YAHOO_METAL_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const TSETMC_INDEX_URL = "https://cdn.tsetmc.com/api/Index/GetIndexB1LastDay";
 const TROY_OUNCE_TO_GRAMS = 31.1034768;
 const sourcePages = { dollar: "price_dollar_rl", gold: "geram18", silver: "silver_999" };
@@ -219,6 +220,29 @@ async function providerGlobalMetals(dollarPrice) {
   }).filter(Boolean);
 }
 
+async function providerYahooMetals(dollarPrice) {
+  if (!Number.isFinite(Number(dollarPrice)) || Number(dollarPrice) <= 0) return [];
+  const symbols = {
+    platinum: { symbol: "PL=F", divisor: TROY_OUNCE_TO_GRAMS },
+    palladium: { symbol: "PA=F", divisor: TROY_OUNCE_TO_GRAMS },
+    copper: { symbol: "HG=F", divisor: 453.59237 },
+  };
+  const results = await Promise.allSettled(Object.entries(symbols).map(async ([asset, meta]) => {
+    const url = YAHOO_METAL_CHART_BASE + encodeURIComponent(meta.symbol) + "?range=1d&interval=1d";
+    const data = await fetchJson(url);
+    const quoteValue = data && data.chart && data.chart.result && data.chart.result[0] && data.chart.result[0].meta && data.chart.result[0].meta.regularMarketPrice;
+    const usd = parseNumber(quoteValue);
+    if (!Number.isFinite(usd) || usd <= 0) throw new Error("Yahoo metal price not found");
+    return quote(asset, usd * Number(dollarPrice) / meta.divisor, "Yahoo Finance", {
+      sourceUrl: url,
+      sourceTime: data.chart.result[0].meta.regularMarketTime ? new Date(data.chart.result[0].meta.regularMarketTime * 1000).toISOString() : null,
+      unit: "gram",
+      currency: "TOMAN",
+    });
+  }));
+  return results.filter((result) => result.status === "fulfilled").map((result) => result.value).filter(Boolean);
+}
+
 async function providerTsetmc() {
   const data = await fetchJson(TSETMC_INDEX_URL);
   const current = nestedNumber(data, ["xNivIn", "indexValue", "currentValue", "lastValue", "value"]);
@@ -396,6 +420,7 @@ export async function onRequestGet() {
     { id: "coinGecko", run: () => providerCrypto(baseDollar && baseDollar.price) },
     { id: "binance", run: () => providerCryptoBinance(baseDollar && baseDollar.price) },
     { id: "metalsLive", run: () => providerGlobalMetals(baseDollar && baseDollar.price) },
+    { id: "yahooMetals", run: () => providerYahooMetals(baseDollar && baseDollar.price) },
     { id: "tsetmc", run: providerTsetmc },
   ];
   const extendedResults = await Promise.allSettled(extendedDefinitions.map((provider) => provider.run()));
@@ -440,9 +465,9 @@ export async function onRequestGet() {
       bitcoin: { attempted: 2, successful: assets.bitcoin ? assets.bitcoin.sourceCount : 0 },
       ethereum: { attempted: 2, successful: assets.ethereum ? assets.ethereum.sourceCount : 0 },
       tether: { attempted: 1, successful: assets.tether ? assets.tether.sourceCount : 0 },
-      platinum: { attempted: 1, successful: assets.platinum ? assets.platinum.sourceCount : 0 },
-      palladium: { attempted: 1, successful: assets.palladium ? assets.palladium.sourceCount : 0 },
-      copper: { attempted: 1, successful: assets.copper ? assets.copper.sourceCount : 0 },
+      platinum: { attempted: 2, successful: assets.platinum ? assets.platinum.sourceCount : 0 },
+      palladium: { attempted: 2, successful: assets.palladium ? assets.palladium.sourceCount : 0 },
+      copper: { attempted: 2, successful: assets.copper ? assets.copper.sourceCount : 0 },
       bourseIndex: { attempted: 1, successful: assets.bourseIndex ? assets.bourseIndex.sourceCount : 0 },
     },
   };
@@ -462,6 +487,7 @@ export async function onRequestGet() {
         { id: "coinGecko", name: "CoinGecko", url: COINGECKO_SIMPLE_URL },
         { id: "binance", name: "Binance public ticker", url: BINANCE_TICKER_URL },
         { id: "metalsLive", name: "Metals.live", url: METALS_LIVE_URL },
+        { id: "yahooMetals", name: "Yahoo Finance futures chart", url: YAHOO_METAL_CHART_BASE },
         { id: "tsetmc", name: "TSETMC", url: TSETMC_INDEX_URL },
       ],
       fixedIncome: "https://charisma.ir/",
