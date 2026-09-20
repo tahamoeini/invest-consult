@@ -2,6 +2,10 @@ const TGJU_BASE = "https://www.tgju.org/profile/";
 const BONBAST_BASE = "https://www.bonbast.com";
 const NAVASAN_RAW_BASE = "https://raw.githubusercontent.com/HosseinOdd/Navasan-API/main/data/";
 const CHART_GOLD_URL = "https://www.chartgoldprice.com/api/data?history=both";
+const COINGECKO_SIMPLE_URL = "https://api.coingecko.com/api/v3/simple/price";
+const BINANCE_TICKER_URL = "https://api.binance.com/api/v3/ticker/24hr";
+const METALS_LIVE_URL = "https://api.metals.live/v1/spot";
+const TSETMC_INDEX_URL = "https://cdn.tsetmc.com/api/Index/GetIndexB1LastDay";
 const TROY_OUNCE_TO_GRAMS = 31.1034768;
 const sourcePages = { dollar: "price_dollar_rl", gold: "geram18", silver: "silver_999" };
 const fundPages = { fixedIncome: "https://charisma.ir/funds/fixedincomefund" };
@@ -130,6 +134,106 @@ const providers = [
   { id: "providerC", run: providerC },
 ];
 
+async function providerCrypto(dollarPrice) {
+  if (!Number.isFinite(Number(dollarPrice)) || Number(dollarPrice) <= 0) return [];
+  const url = COINGECKO_SIMPLE_URL + "?ids=bitcoin,ethereum,tether&vs_currencies=usd&include_24hr_change=true";
+  const data = await fetchJson(url);
+  const mapping = { bitcoin: "bitcoin", ethereum: "ethereum", tether: "tether" };
+  return Object.entries(mapping).map(([id, asset]) => {
+    const item = data && data[id];
+    if (!item) return null;
+    const usd = parseNumber(item.usd);
+    return quote(asset, usd * Number(dollarPrice), "CoinGecko", {
+      changePct: parseNumber(item.usd_24h_change),
+      sourceUrl: url,
+      sourceTime: null,
+      unit: "coin",
+      currency: "TOMAN",
+    });
+  }).filter(Boolean);
+}
+
+async function providerCryptoBinance(dollarPrice) {
+  if (!Number.isFinite(Number(dollarPrice)) || Number(dollarPrice) <= 0) return [];
+  const symbols = ["BTCUSDT", "ETHUSDT"];
+  const url = BINANCE_TICKER_URL + "?symbols=" + encodeURIComponent(JSON.stringify(symbols));
+  const data = await fetchJson(url);
+  const mapping = { BTCUSDT: "bitcoin", ETHUSDT: "ethereum" };
+  return (Array.isArray(data) ? data : []).map((item) => {
+    const asset = mapping[item && item.symbol];
+    if (!asset) return null;
+    const usd = parseNumber(item.lastPrice);
+    return quote(asset, usd * Number(dollarPrice), "Binance", {
+      changePct: parseNumber(item.priceChangePercent),
+      sourceUrl: url,
+      sourceTime: null,
+      unit: "coin",
+      currency: "TOMAN",
+    });
+  }).filter(Boolean);
+}
+
+function nestedNumber(value, keys, depth = 0) {
+  if (depth > 4 || value === null || value === undefined) return null;
+  if (Array.isArray(value)) {
+    for (const item of value.slice().reverse()) {
+      const found = nestedNumber(item, keys, depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+  for (const [key, item] of Object.entries(value)) {
+    if (keys.includes(key)) {
+      const found = parseNumber(item);
+      if (Number.isFinite(found) && found > 0) return found;
+    }
+  }
+  for (const item of Object.values(value)) {
+    const found = nestedNumber(item, keys, depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+async function providerGlobalMetals(dollarPrice) {
+  if (!Number.isFinite(Number(dollarPrice)) || Number(dollarPrice) <= 0) return [];
+  const data = await fetchJson(METALS_LIVE_URL);
+  const row = Array.isArray(data) ? data.at(-1) : data;
+  const conversions = {
+    gold: { factor: 0.75, unit: "gram" },
+    silver: { factor: 1, unit: "gram" },
+    platinum: { factor: 1, unit: "gram" },
+    palladium: { factor: 1, unit: "gram" },
+    copper: { factor: 1, unit: "gram" },
+  };
+  return Object.entries(conversions).map(([asset, meta]) => {
+    const ounceUsd = parseNumber(row && row[asset]);
+    if (!Number.isFinite(ounceUsd) || ounceUsd <= 0) return null;
+    return quote(asset, ounceUsd * Number(dollarPrice) * meta.factor / TROY_OUNCE_TO_GRAMS, "Metals.live", {
+      sourceUrl: METALS_LIVE_URL,
+      sourceTime: null,
+      unit: meta.unit,
+      currency: "TOMAN",
+    });
+  }).filter(Boolean);
+}
+
+async function providerTsetmc() {
+  const data = await fetchJson(TSETMC_INDEX_URL);
+  const current = nestedNumber(data, ["xNivIn", "indexValue", "currentValue", "lastValue", "value"]);
+  if (!Number.isFinite(current) || current <= 0) throw new Error("TSETMC index value not found");
+  const previous = nestedNumber(data, ["xNivInPre", "previousValue", "yesterdayValue", "prevValue"]);
+  const changePct = Number.isFinite(previous) && previous > 0 ? (current / previous - 1) * 100 : null;
+  return [quote("bourseIndex", current, "TSETMC", {
+    changePct,
+    sourceUrl: TSETMC_INDEX_URL,
+    sourceTime: new Date().toISOString(),
+    unit: "point",
+    currency: "INDEX",
+  })];
+}
+
 function normalizeHistorySeries(value) {
   if (Array.isArray(value)) {
     return value.map((point) => {
@@ -231,9 +335,11 @@ export function aggregate(asset, quotes) {
     if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
     return String(left).localeCompare(String(right));
   });
+  const defaultUnits = { dollar: "TOMAN", gold: "gram", silver: "gram", bitcoin: "coin", ethereum: "coin", tether: "coin", platinum: "gram", palladium: "gram", copper: "gram", bourseIndex: "point" };
   return {
     price: Math.round(median(valid.map((item) => item.price))),
     changePct: changes.length ? Number(median(changes).toFixed(3)) : null,
+    unit: valid.find((item) => item.unit)?.unit || defaultUnits[asset] || "TOMAN",
     sourceCount: valid.length,
     sources: valid.map((item) => item.source),
     sourceValues: valid.map((item) => ({ source: item.source, price: Math.round(item.price) })),
@@ -284,7 +390,17 @@ export async function onRequestGet() {
     const result = providerResults[index];
     return [provider.id, { status: result.status, quoteCount: result.status === "fulfilled" ? result.value.quotes.length : 0 }];
   }));
-  const quotes = quoteSets.flatMap((set) => set.quotes);
+  const baseQuotes = quoteSets.flatMap((set) => set.quotes);
+  const baseDollar = aggregate("dollar", baseQuotes);
+  const extendedDefinitions = [
+    { id: "coinGecko", run: () => providerCrypto(baseDollar && baseDollar.price) },
+    { id: "binance", run: () => providerCryptoBinance(baseDollar && baseDollar.price) },
+    { id: "metalsLive", run: () => providerGlobalMetals(baseDollar && baseDollar.price) },
+    { id: "tsetmc", run: providerTsetmc },
+  ];
+  const extendedResults = await Promise.allSettled(extendedDefinitions.map((provider) => provider.run()));
+  const extendedQuotes = extendedResults.flatMap((result) => result.status === "fulfilled" && Array.isArray(result.value) ? result.value : []);
+  const quotes = [...baseQuotes, ...extendedQuotes];
   const dollar = aggregate("dollar", quotes);
   const goldQuotes = quotes.filter((item) => item.asset === "gold");
   const silverQuotes = quotes.filter((item) => item.asset === "silver");
@@ -294,10 +410,12 @@ export async function onRequestGet() {
   }
   const assets = {};
   if (dollar) assets.dollar = dollar;
-  const gold = aggregate("gold", goldQuotes);
-  const silver = aggregate("silver", silverQuotes);
-  if (gold) assets.gold = gold;
-  if (silver) assets.silver = silver;
+  const aggregateAssets = ["gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper", "bourseIndex"];
+  aggregateAssets.forEach((asset) => {
+    const assetQuotes = asset === "gold" ? goldQuotes : asset === "silver" ? silverQuotes : quotes;
+    const aggregated = aggregate(asset, assetQuotes);
+    if (aggregated) assets[asset] = aggregated;
+  });
 
   const history = {};
   const tgjuHistory = quoteSets.find((set) => set.id === "providerA")?.history || {};
@@ -308,11 +426,24 @@ export async function onRequestGet() {
 
   const funds = fixedIncome ? { fixedIncome } : {};
   const diagnostics = {
-    providers: providerDiagnostics,
+    providers: {
+      ...providerDiagnostics,
+      ...Object.fromEntries(extendedDefinitions.map((provider, index) => {
+        const result = extendedResults[index];
+        return [provider.id, { status: result.status, quoteCount: result.status === "fulfilled" ? result.value.length : 0 }];
+      })),
+    },
     assets: {
-      dollar: { attempted: providers.length, successful: dollar ? dollar.sourceCount : 0 },
-      gold: { attempted: providers.length + 1, successful: gold ? gold.sourceCount : 0 },
-      silver: { attempted: 2, successful: silver ? silver.sourceCount : 0 },
+      dollar: { attempted: providers.length, successful: assets.dollar ? assets.dollar.sourceCount : 0 },
+      gold: { attempted: providers.length + 2, successful: assets.gold ? assets.gold.sourceCount : 0 },
+      silver: { attempted: providers.length + 2, successful: assets.silver ? assets.silver.sourceCount : 0 },
+      bitcoin: { attempted: 2, successful: assets.bitcoin ? assets.bitcoin.sourceCount : 0 },
+      ethereum: { attempted: 2, successful: assets.ethereum ? assets.ethereum.sourceCount : 0 },
+      tether: { attempted: 1, successful: assets.tether ? assets.tether.sourceCount : 0 },
+      platinum: { attempted: 1, successful: assets.platinum ? assets.platinum.sourceCount : 0 },
+      palladium: { attempted: 1, successful: assets.palladium ? assets.palladium.sourceCount : 0 },
+      copper: { attempted: 1, successful: assets.copper ? assets.copper.sourceCount : 0 },
+      bourseIndex: { attempted: 1, successful: assets.bourseIndex ? assets.bourseIndex.sourceCount : 0 },
     },
   };
 
@@ -328,11 +459,15 @@ export async function onRequestGet() {
         { id: "providerB", name: "Bonbast", url: BONBAST_BASE + "/" },
         { id: "providerC", name: "Navasan public mirror", url: "https://github.com/HosseinOdd/Navasan-API" },
         { id: "auxiliary", name: "ChartGoldPrice", url: "https://www.chartgoldprice.com/gold-price-api" },
+        { id: "coinGecko", name: "CoinGecko", url: COINGECKO_SIMPLE_URL },
+        { id: "binance", name: "Binance public ticker", url: BINANCE_TICKER_URL },
+        { id: "metalsLive", name: "Metals.live", url: METALS_LIVE_URL },
+        { id: "tsetmc", name: "TSETMC", url: TSETMC_INDEX_URL },
       ],
       fixedIncome: "https://charisma.ir/",
       history: "https://www.tgju.org/",
     },
-    note: "Each asset is normalized to Toman and aggregated with the median of valid responsive quotes. Historical series use the local TGJU chart when available. Failed providers are omitted without synthetic or stale values.",
+    note: "Domestic prices are normalized to Toman. Crypto and global metals are converted through the domestic dollar quote and aggregated only when independent public providers respond. Tehran market data remains an index-point reference. Failed providers are omitted without synthetic or stale values; no model forecast is used as a current price.",
   }), {
     headers: {
       "content-type": "application/json; charset=UTF-8",

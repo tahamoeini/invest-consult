@@ -6,7 +6,7 @@ import { PORTFOLIO_SCHEMA, PORTFOLIO_VERSION, normalizePortfolio } from "./portf
 export const HISTORY_SCHEMA = "invest-consult-history";
 export const HISTORY_VERSION = 2;
 
-const MARKET_ASSETS = ["dollar", "gold", "silver"];
+const MARKET_ASSETS = ["dollar", "gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper", "bourseIndex"];
 
 function finite(value) {
   return Number.isFinite(Number(value)) ? Number(value) : null;
@@ -23,7 +23,7 @@ function sanitizeSnapshot(snapshot, fallbackDate) {
   MARKET_ASSETS.forEach((key) => {
     const source = snapshot.assets && snapshot.assets[key];
     const price = finite(source && source.price);
-    if (price !== null && price > 0) result.assets[key] = { price, changePct: finite(source.changePct) };
+    if (price !== null && price > 0) result.assets[key] = { price, changePct: finite(source.changePct), unit: typeof source.unit === "string" ? source.unit.slice(0, 20) : undefined };
   });
   const fixedReturn = finite(snapshot.funds && snapshot.funds.fixedIncome && snapshot.funds.fixedIncome.effectiveAnnualReturn);
   if (fixedReturn !== null) result.funds.fixedIncome = { effectiveAnnualReturn: fixedReturn };
