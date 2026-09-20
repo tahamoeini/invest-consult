@@ -335,9 +335,11 @@ export function aggregate(asset, quotes) {
     if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
     return String(left).localeCompare(String(right));
   });
+  const defaultUnits = { dollar: "TOMAN", gold: "gram", silver: "gram", bitcoin: "coin", ethereum: "coin", tether: "coin", platinum: "gram", palladium: "gram", copper: "gram", bourseIndex: "point" };
   return {
     price: Math.round(median(valid.map((item) => item.price))),
     changePct: changes.length ? Number(median(changes).toFixed(3)) : null,
+    unit: valid.find((item) => item.unit)?.unit || defaultUnits[asset] || "TOMAN",
     sourceCount: valid.length,
     sources: valid.map((item) => item.source),
     sourceValues: valid.map((item) => ({ source: item.source, price: Math.round(item.price) })),
