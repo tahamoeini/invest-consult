@@ -242,8 +242,8 @@ function migratePortfolioCurrency(portfolio) {
       if (result.targetQuantity !== undefined && isQuantityInToman(result.targetAssetId)) result.targetQuantity = divideByTen(result.targetQuantity);
       if (result.amount !== undefined) result.amount = divideByTen(result.amount);
       if (result.fee !== undefined) result.fee = divideByTen(result.fee);
-      if (result.unitPrice !== undefined && ["gold", "silver", "currency"].includes(result.assetId)) result.unitPrice = divideByTen(result.unitPrice);
-      if (result.targetUnitPrice !== undefined && ["gold", "silver", "currency"].includes(result.targetAssetId)) result.targetUnitPrice = divideByTen(result.targetUnitPrice);
+      if (result.unitPrice !== undefined && ["gold", "silver", "currency", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper"].includes(result.assetId)) result.unitPrice = divideByTen(result.unitPrice);
+      if (result.targetUnitPrice !== undefined && ["gold", "silver", "currency", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper"].includes(result.targetAssetId)) result.targetUnitPrice = divideByTen(result.targetUnitPrice);
       if (result.marketQuote && Number.isFinite(Number(result.marketQuote.price))) result.marketQuote = { ...result.marketQuote, price: divideByTen(result.marketQuote.price) };
       return result;
     }) : [],
