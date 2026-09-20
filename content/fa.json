@@ -2,19 +2,119 @@
   "currencyUnit": "تومان",
   "to": "تا",
   "assets": {
-    "fixed": { "title": "درآمد ثابت", "description": "بخش دفاعی سبد برای نوسان کمتر", "dotClass": "asset-fixed" },
-    "gold": { "title": "طلا", "description": "پوشش نسبی افت قدرت خرید", "dotClass": "asset-gold" },
-    "currency": { "title": "ارز", "description": "خرید پله‌ای به‌جای تصمیم هیجانی", "dotClass": "asset-currency" },
-    "silver": { "title": "نقره", "description": "تنوع کوچک‌تر با نوسان بیشتر", "dotClass": "asset-silver" },
-    "stocks": { "title": "سهام ثبت‌شده", "description": "دارایی‌های سهامی که خودت نام‌گذاری کرده‌ای", "dotClass": "asset-stocks" },
-    "cash": { "title": "نقد", "description": "موجودی نقدی در دسترس", "dotClass": "asset-cash" },
-    "other": { "title": "سایر دارایی‌ها", "description": "دارایی‌های دستی ثبت‌شده", "dotClass": "asset-other" }
+    "fixed": {
+      "title": "درآمد ثابت",
+      "description": "بخش دفاعی سبد برای نوسان کمتر",
+      "dotClass": "asset-fixed"
+    },
+    "gold": {
+      "title": "طلا",
+      "description": "پوشش نسبی افت قدرت خرید",
+      "dotClass": "asset-gold"
+    },
+    "currency": {
+      "title": "ارز",
+      "description": "خرید پله‌ای به‌جای تصمیم هیجانی",
+      "dotClass": "asset-currency"
+    },
+    "silver": {
+      "title": "نقره",
+      "description": "تنوع کوچک‌تر با نوسان بیشتر",
+      "dotClass": "asset-silver"
+    },
+    "stocks": {
+      "title": "سهام ثبت‌شده",
+      "description": "دارایی‌های سهامی که خودت نام‌گذاری کرده‌ای",
+      "dotClass": "asset-stocks"
+    },
+    "cash": {
+      "title": "نقد",
+      "description": "موجودی نقدی در دسترس",
+      "dotClass": "asset-cash"
+    },
+    "other": {
+      "title": "سایر دارایی‌ها",
+      "description": "دارایی‌های دستی ثبت‌شده",
+      "dotClass": "asset-other"
+    },
+    "bitcoin": {
+      "title": "بیت‌کوین",
+      "description": "دارایی دیجیتال با نوسان و ریسک بالا",
+      "dotClass": "asset-bitcoin"
+    },
+    "ethereum": {
+      "title": "اتریوم",
+      "description": "دارایی دیجیتال پرنوسان برای ثبت و رصد",
+      "dotClass": "asset-ethereum"
+    },
+    "tether": {
+      "title": "تتر",
+      "description": "دارایی دیجیتال با هدف دنبال‌کردن دلار",
+      "dotClass": "asset-tether"
+    },
+    "platinum": {
+      "title": "پلاتین",
+      "description": "فلز گران‌بهای جهانی",
+      "dotClass": "asset-platinum"
+    },
+    "palladium": {
+      "title": "پالادیوم",
+      "description": "فلز صنعتی و گران‌بهای جهانی",
+      "dotClass": "asset-palladium"
+    },
+    "copper": {
+      "title": "مس",
+      "description": "فلز صنعتی با نوسان چرخه‌ای",
+      "dotClass": "asset-copper"
+    },
+    "bourseIndex": {
+      "title": "شاخص بورس تهران",
+      "description": "شاخص بازار؛ قیمت دارایی قابل معامله نیست",
+      "dotClass": "asset-bourse"
+    }
   },
   "market": {
     "labels": {
-      "dollar": { "title": "ارز", "detail": "نرخ مرجع دلار" },
-      "gold": { "title": "طلا", "detail": "هر گرم طلای ۱۸ عیار" },
-      "silver": { "title": "نقره", "detail": "هر گرم نقره" }
+      "dollar": {
+        "title": "ارز",
+        "detail": "نرخ مرجع دلار"
+      },
+      "gold": {
+        "title": "طلا",
+        "detail": "هر گرم طلای ۱۸ عیار"
+      },
+      "silver": {
+        "title": "نقره",
+        "detail": "هر گرم نقره"
+      },
+      "bitcoin": {
+        "title": "بیت‌کوین",
+        "detail": "هر واحد، تبدیل‌شده به تومان"
+      },
+      "ethereum": {
+        "title": "اتریوم",
+        "detail": "هر واحد، تبدیل‌شده به تومان"
+      },
+      "tether": {
+        "title": "تتر",
+        "detail": "هر واحد، تبدیل‌شده به تومان"
+      },
+      "platinum": {
+        "title": "پلاتین",
+        "detail": "هر گرم، تبدیل‌شده به تومان"
+      },
+      "palladium": {
+        "title": "پالادیوم",
+        "detail": "هر گرم، تبدیل‌شده به تومان"
+      },
+      "copper": {
+        "title": "مس",
+        "detail": "هر گرم، تبدیل‌شده به تومان"
+      },
+      "bourseIndex": {
+        "title": "شاخص بورس تهران",
+        "detail": "نقطه شاخص؛ برای مقایسه بازار"
+      }
     },
     "empty": "داده زنده فعلا در دسترس نیست.",
     "noChange": "تغییر روزانه نامشخص",
@@ -22,7 +122,8 @@
     "sourceQuotes": "quote معتبر",
     "updated": "آخرین خوانش",
     "fixedDetail": "بازده موثر سالانه منتشرشده",
-    "annual": "سالانه"
+    "annual": "سالانه",
+    "multiSourceNote": "قیمت‌های رمزارز و فلزات جهانی با چند منبع عمومی و نرخ دلار داخلی تبدیل می‌شوند. برآورد آینده جدا از قیمت جاری است."
   },
   "status": {
     "loading": "در حال خواندن داده بازار",
@@ -163,8 +264,17 @@
       "currency": "تومان",
       "stocks": "تومان",
       "cash": "تومان",
-      "other": "تومان"
+      "other": "تومان",
+      "bitcoin": "واحد",
+      "ethereum": "واحد",
+      "tether": "واحد",
+      "platinum": "گرم",
+      "palladium": "گرم",
+      "copper": "گرم",
+      "bourseIndex": "نقطه"
     }
   },
-  "errors": { "salary": "یک حقوق معتبر وارد کن." }
+  "errors": {
+    "salary": "یک حقوق معتبر وارد کن."
+  }
 }
