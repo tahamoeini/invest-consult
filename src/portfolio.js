@@ -9,7 +9,7 @@ export const TRANSACTION_TYPES = ["OPENING", "BUY", "SELL", "DIVIDEND", "TRANSFE
 export const PORTFOLIO_ASSETS = Object.freeze({
   gold: { id: "gold", titleKey: "gold", unit: "gram", marketKey: "gold", priced: true },
   fixed: { id: "fixed", titleKey: "fixed", unit: "TOMAN", marketKey: null, priced: true },
-  currency: { id: "currency", titleKey: "currency", unit: "TOMAN", marketKey: "dollar", priced: true },
+  currency: { id: "currency", titleKey: "currency", unit: "USD", marketKey: "dollar", priced: true },
   silver: { id: "silver", titleKey: "silver", unit: "gram", marketKey: "silver", priced: true },
   bitcoin: { id: "bitcoin", titleKey: "bitcoin", unit: "coin", marketKey: "bitcoin", priced: true },
   ethereum: { id: "ethereum", titleKey: "ethereum", unit: "coin", marketKey: "ethereum", priced: true },
