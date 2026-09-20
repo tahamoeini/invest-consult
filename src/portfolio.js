@@ -17,7 +17,6 @@ export const PORTFOLIO_ASSETS = Object.freeze({
   platinum: { id: "platinum", titleKey: "platinum", unit: "gram", marketKey: "platinum", priced: true },
   palladium: { id: "palladium", titleKey: "palladium", unit: "gram", marketKey: "palladium", priced: true },
   copper: { id: "copper", titleKey: "copper", unit: "gram", marketKey: "copper", priced: true },
-  bourseIndex: { id: "bourseIndex", titleKey: "bourseIndex", unit: "point", marketKey: "bourseIndex", priced: true },
   cash: { id: "cash", titleKey: "cash", unit: "TOMAN", marketKey: null, priced: true },
   other: { id: "other", titleKey: "other", unit: "TOMAN", marketKey: null, priced: true },
 });
