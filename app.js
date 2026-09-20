@@ -397,13 +397,24 @@ function restoreProfile() {
 function marketSnapshot(market) {
   if (!market) return null;
   const snapshot = { capturedAt: market.updatedAt || new Date().toISOString(), assets: {}, funds: {} };
-  ["dollar", "gold", "silver"].forEach((key) => {
-    const item = market.assets && market.assets[key];
-    if (item && Number.isFinite(Number(item.price))) snapshot.assets[key] = { price: Number(item.price), changePct: Number(item.changePct) || null };
+  Object.entries(market.assets || {}).forEach(([key, item]) => {
+    if (item && Number.isFinite(Number(item.price))) snapshot.assets[key] = {
+      price: Number(item.price),
+      changePct: Number.isFinite(Number(item.changePct)) ? Number(item.changePct) : null,
+      unit: item.unit || null,
+      sourceCount: Number(item.sourceCount) || 0,
+    };
   });
   const fixed = market.funds && market.funds.fixedIncome;
   if (fixed && Number.isFinite(Number(fixed.effectiveAnnualReturn))) snapshot.funds.fixedIncome = { effectiveAnnualReturn: Number(fixed.effectiveAnnualReturn) };
   return Object.keys(snapshot.assets).length || Object.keys(snapshot.funds).length ? snapshot : null;
+}
+
+function marketValueUnit(item) {
+  if (item?.unit === "point") return "نقطه";
+  if (item?.unit === "gram") return `${text("currencyUnit")}/گرم`;
+  if (item?.unit === "coin") return `${text("currencyUnit")}/واحد`;
+  return text("currencyUnit");
 }
 
 function renderMarket(data) {
@@ -422,7 +433,7 @@ function renderMarket(data) {
     const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange", "\u2014");
     const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
     const freshness = item.asOf || data.updatedAt;
-    return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(text("currencyUnit"))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))} · ${escapeHTML(freshnessLabel(freshness))}</small></div></div>`;
+    return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))} · ${escapeHTML(freshnessLabel(freshness))}</small></div></div>`;
   }).join("");
   const fixed = data.funds && data.funds.fixedIncome;
   const fixedCard = fixed && Number.isFinite(Number(fixed.effectiveAnnualReturn))
@@ -600,7 +611,7 @@ function renderDashboardHealth(result, plan) {
 }
 
 function getAssetColor(assetId) {
-  return { fixed: "#126b62", gold: "#c18a2c", currency: "#4979a7", silver: "#8997a0", stocks: "#8b5bb7", cash: "#4c9c6d", other: "#c56c4a" }[assetId] || "#126b62";
+  return { fixed: "#126b62", gold: "#c18a2c", currency: "#4979a7", silver: "#8997a0", stocks: "#8b5bb7", cash: "#4c9c6d", other: "#c56c4a", bitcoin: "#f7931a", ethereum: "#627eea", tether: "#26a17b", platinum: "#8a9aa8", palladium: "#6d7480", copper: "#b87333", bourseIndex: "#7c5cbf" }[assetId] || "#126b62";
 }
 
 function renderMarketSnapshot(data) {
@@ -616,11 +627,12 @@ function renderMarketSnapshot(data) {
   const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
   status.textContent = `${formatIRR(sourceTotal)} quote معتبر · ${freshnessLabel(data.updatedAt)}`;
   status.className = "data-note";
-  const items = [
-    ["gold", data.assets.gold, "طلا"],
-    ["dollar", data.assets.dollar, "ارز"],
-    ["silver", data.assets.silver, "نقره"],
-  ].map(([key, item, label]) => item ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${label}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(text("currencyUnit"))}</b><span class="${Number(item.changePct) > 0.05 ? "positive" : Number(item.changePct) < -0.05 ? "negative" : "muted"}">${Number.isFinite(Number(item.changePct)) ? `${Number(item.changePct) > 0 ? "+" : ""}${formatPercent(item.changePct)}` : "تغییر روزانه نامشخص"}</span><small>${freshnessLabel(item.asOf || data.updatedAt)} · ${escapeHTML(confidenceLabel(item).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>${label}</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
+  const marketKeys = ["gold", "dollar", "silver", "bitcoin", "ethereum", "bourseIndex"];
+  const items = marketKeys.map((key) => {
+    const item = data.assets[key];
+    const label = text(`market.labels.${key}.title`, text(`assets.${key}.title`, key));
+    return item ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${Number(item.changePct) > 0.05 ? "positive" : Number(item.changePct) < -0.05 ? "negative" : "muted"}">${Number.isFinite(Number(item.changePct)) ? `${Number(item.changePct) > 0 ? "+" : ""}${formatPercent(item.changePct)}` : "تغییر روزانه نامشخص"}</span><small>${freshnessLabel(item.asOf || data.updatedAt)} · ${escapeHTML(confidenceLabel(item).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>داده در دسترس نیست</small></article>`;
+  });
   const fixed = data.funds?.fixedIncome;
   items.push(fixed ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-fixed"></span><strong>درآمد ثابت</strong></div><b>${formatPercent(fixed.effectiveAnnualReturn)}</b><span class="muted">بازده موثر سالانه</span><small>${freshnessLabel(data.updatedAt)} · ${escapeHTML(confidenceLabel(fixed).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>درآمد ثابت</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
   container.innerHTML = items.join("");
@@ -749,7 +761,8 @@ function renderLineChart(container, points, valueKey = "nominal", label = "") {
 }
 
 function formatPortfolioQuantity(assetId, quantity) {
-  if (assetId === "gold" || assetId === "silver") return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 3 }).format(Number(quantity) || 0);
+  if (["gold", "silver", "platinum", "palladium", "copper"].includes(assetId)) return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 3 }).format(Number(quantity) || 0);
+  if (["bitcoin", "ethereum", "tether"].includes(assetId)) return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 8 }).format(Number(quantity) || 0);
   return formatIRR(quantity);
 }
 
@@ -815,6 +828,19 @@ function populatePortfolioAssetOptions() {
     select.innerHTML = options;
     if (assetIds(portfolio).includes(current)) select.value = current;
   });
+  const marketSelect = $("#portfolio-market-asset");
+  if (marketSelect) {
+    const supported = ["gold", "silver", "currency", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper"];
+    const current = marketSelect.value;
+    marketSelect.innerHTML = supported.map((assetId) => {
+      const meta = portfolioAssetMeta(assetId, portfolio);
+      return `<option value="${escapeHTML(assetId)}">${escapeHTML(meta.title)}</option>`;
+    }).join("");
+    if (supported.includes(current)) marketSelect.value = current;
+    const selected = portfolioAssetMeta(marketSelect.value, portfolio);
+    const unit = $("#portfolio-market-asset-unit");
+    if (unit) unit.textContent = portfolioUnitLabel(marketSelect.value, portfolio.assets?.[marketSelect.value]?.unit || (marketSelect.value === "currency" ? "TOMAN" : ""));
+  }
 }
 
 function renderPortfolio() {
@@ -1086,6 +1112,40 @@ function saveHistory(inputs, recommendation, contribution) {
     marketSnapshot: marketSnapshot(liveMarket),
   };
   writeJson(HISTORY_KEY, mergeHistory([entry], history, HISTORY_LIMIT));
+}
+
+function handleMarketAssetSubmit(event) {
+  event.preventDefault();
+  const assetId = $("#portfolio-market-asset").value;
+  const quantity = Math.max(0, numberFromInput($("#portfolio-market-quantity").value));
+  if (!assetId || !(quantity > 0)) {
+    setPortfolioStatus("دارایی و مقدار معتبر وارد کن.", "warning");
+    return;
+  }
+  const now = new Date().toISOString();
+  const portfolio = readPortfolio();
+  const type = activePortfolioVersion(portfolio).transactions.length ? "BUY" : "OPENING";
+  const transaction = createTransaction({
+    type,
+    assetId,
+    quantity,
+    source: "market-asset-entry",
+    note: "Market asset entry",
+    date: now,
+  }, liveMarket || {}, now, portfolio);
+  if (!transaction) {
+    setPortfolioStatus("قیمت معتبر این دارایی در داده بازار موجود نیست؛ مقدار را دستی در تراکنش پیشرفته ثبت کن.", "warning");
+    return;
+  }
+  const appended = appendTransactions(portfolio, [transaction], { action: type === "OPENING" ? "create-market-asset-opening" : "record-market-asset-purchase", affectsHistory: true, detail: assetId });
+  if (!appended.validation.valid || !writePortfolio(appended.portfolio)) {
+    setPortfolioStatus(text("portfolio.validation"), "warning");
+    return;
+  }
+  event.target.reset();
+  renderPortfolio();
+  $("#portfolio-section").open = true;
+  setPortfolioStatus("دارایی بازار ثبت شد؛ مقدار و قیمت منبع در دفتر تراکنش نگه داشته شد.", "success");
 }
 
 function handleStockEntrySubmit(event) {
@@ -1500,6 +1560,8 @@ function bindEvents() {
   $("#history-file").addEventListener("change", importHistoryFile);
   $("#simple-portfolio-form").addEventListener("submit", handleSimplePortfolioSubmit);
   $("#stock-entry-form").addEventListener("submit", handleStockEntrySubmit);
+  $("#portfolio-market-asset-form")?.addEventListener("submit", handleMarketAssetSubmit);
+  $("#portfolio-market-asset")?.addEventListener("change", () => populatePortfolioAssetOptions());
   $("#apply-simple-change").addEventListener("click", applySimpleChange);
   $("#cancel-simple-change").addEventListener("click", cancelSimpleChange);
   $("#advanced-transaction-form").addEventListener("submit", handleAdvancedTransactionSubmit);
