@@ -8,7 +8,7 @@ The Cloudflare market function reads public sources and returns only validated q
 
 - Domestic dollar, gold, and silver: TGJU, Bonbast, and the Navasan public data mirror.
 - Global crypto reference prices: CoinGecko and Binance public tickers, converted through the aggregated domestic dollar quote.
-- Global metals: Metals.live, with existing ChartGoldPrice/TGJU coverage retained for gold and silver.
+- Global metals: Metals.live plus Yahoo Finance futures charts for platinum, palladium, and copper; existing ChartGoldPrice/TGJU coverage is retained for gold and silver.
 - Tehran market reference: the public TSETMC index endpoint, exposed as an index-point reference rather than a tradeable portfolio holding.
 - Fixed income: the configured fund-provider page.
 
