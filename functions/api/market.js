@@ -202,16 +202,16 @@ async function providerGlobalMetals(dollarPrice) {
   const data = await fetchJson(METALS_LIVE_URL);
   const row = Array.isArray(data) ? data.at(-1) : data;
   const conversions = {
-    gold: { factor: 0.75, unit: "gram" },
-    silver: { factor: 1, unit: "gram" },
-    platinum: { factor: 1, unit: "gram" },
-    palladium: { factor: 1, unit: "gram" },
-    copper: { factor: 1, unit: "gram" },
+    gold: { factor: 0.75, unit: "gram", divisor: TROY_OUNCE_TO_GRAMS },
+    silver: { factor: 1, unit: "gram", divisor: TROY_OUNCE_TO_GRAMS },
+    platinum: { factor: 1, unit: "gram", divisor: TROY_OUNCE_TO_GRAMS },
+    palladium: { factor: 1, unit: "gram", divisor: TROY_OUNCE_TO_GRAMS },
+    copper: { factor: 1, unit: "gram", divisor: 453.59237 },
   };
   return Object.entries(conversions).map(([asset, meta]) => {
     const ounceUsd = parseNumber(row && row[asset]);
     if (!Number.isFinite(ounceUsd) || ounceUsd <= 0) return null;
-    return quote(asset, ounceUsd * Number(dollarPrice) * meta.factor / TROY_OUNCE_TO_GRAMS, "Metals.live", {
+    return quote(asset, ounceUsd * Number(dollarPrice) * meta.factor / meta.divisor, "Metals.live", {
       sourceUrl: METALS_LIVE_URL,
       sourceTime: null,
       unit: meta.unit,
