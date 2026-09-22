@@ -9,10 +9,12 @@ export const HISTORY_VERSION = 2;
 const MARKET_ASSETS = ["dollar", "gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper", "bourseIndex"];
 
 function finite(value) {
+  if (value === null || value === undefined || value === "") return null;
   return Number.isFinite(Number(value)) ? Number(value) : null;
 }
 
 function validDate(value) {
+  if (value === null || value === undefined || value === "") return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
@@ -23,10 +25,71 @@ function sanitizeSnapshot(snapshot, fallbackDate) {
   MARKET_ASSETS.forEach((key) => {
     const source = snapshot.assets && snapshot.assets[key];
     const price = finite(source && source.price);
-    if (price !== null && price > 0) result.assets[key] = { price, changePct: finite(source.changePct), unit: typeof source.unit === "string" ? source.unit.slice(0, 20) : undefined };
+    if (price !== null && price > 0) {
+      const item = { price, changePct: finite(source.changePct), unit: typeof source.unit === "string" ? source.unit.slice(0, 20) : undefined };
+      const sourceCount = finite(source.sourceCount);
+      const configuredSourceCount = finite(source.configuredSourceCount);
+      const spreadPct = finite(source.spreadPct);
+      if (sourceCount !== null && sourceCount >= 0) item.sourceCount = sourceCount;
+      if (configuredSourceCount !== null && configuredSourceCount >= 0) item.configuredSourceCount = configuredSourceCount;
+      if (spreadPct !== null && spreadPct >= 0) item.spreadPct = spreadPct;
+      if (typeof source.sleeveId === "string" && source.sleeveId.length <= 60) item.sleeveId = source.sleeveId;
+      if (Array.isArray(source.sources)) item.sources = source.sources.filter((value) => typeof value === "string").slice(0, 8).map((value) => value.slice(0, 100));
+      if (Array.isArray(source.derivedFrom)) item.derivedFrom = source.derivedFrom.filter((value) => typeof value === "string").slice(0, 5).map((value) => value.slice(0, 100));
+      if (Array.isArray(source.dependencies)) item.dependencies = source.dependencies.slice(0, 5).map((dependency) => {
+        if (!dependency || typeof dependency !== "object") return null;
+        const dependencyPrice = finite(dependency.price);
+        const dependencySourceCount = finite(dependency.sourceCount);
+        return {
+          instrumentId: typeof dependency.instrumentId === "string" ? dependency.instrumentId.slice(0, 60) : "",
+          price: dependencyPrice !== null && dependencyPrice > 0 ? dependencyPrice : null,
+          sourceCount: dependencySourceCount !== null && dependencySourceCount >= 0 ? dependencySourceCount : 0,
+          unit: typeof dependency.unit === "string" ? dependency.unit.slice(0, 20) : "",
+          source: typeof dependency.source === "string" ? dependency.source.slice(0, 100) : "",
+          status: ["healthy", "degraded", "conflicted", "unavailable"].includes(dependency.status) ? dependency.status : "unavailable",
+          confidence: ["high", "medium", "low", "none"].includes(dependency.confidence) ? dependency.confidence : "none",
+          observedAt: validDate(dependency.observedAt),
+          retrievedAt: validDate(dependency.retrievedAt),
+        };
+      }).filter(Boolean);
+      if (Array.isArray(source.sourceValues)) item.sourceValues = source.sourceValues.slice(0, 8).map((value) => {
+        if (!value || typeof value !== "object") return null;
+        const sourcePrice = finite(value.price);
+        if (sourcePrice === null || sourcePrice <= 0) return null;
+        return {
+          source: typeof value.source === "string" ? value.source.slice(0, 100) : "",
+          price: sourcePrice,
+          quoteType: ["direct", "derived"].includes(value.quoteType) ? value.quoteType : "direct",
+          observedAt: validDate(value.observedAt),
+        };
+      }).filter(Boolean);
+      if (["direct", "derived", "mixed"].includes(source.quoteType)) item.quoteType = source.quoteType;
+      if (["healthy", "degraded", "conflicted", "unavailable"].includes(source.status)) item.status = source.status;
+      if (["high", "medium", "low", "none"].includes(source.confidence)) item.confidence = source.confidence;
+      if (typeof source.consensusPolicyVersion === "string") item.consensusPolicyVersion = source.consensusPolicyVersion.slice(0, 60);
+      if (typeof source.consensusCalibrated === "boolean") item.consensusCalibrated = source.consensusCalibrated;
+      const agreementTolerancePct = finite(source.agreementTolerancePct);
+      if (agreementTolerancePct !== null && agreementTolerancePct >= 0) item.agreementTolerancePct = agreementTolerancePct;
+      const observedAt = validDate(source.observedAt);
+      const retrievedAt = validDate(source.retrievedAt);
+      if (observedAt) item.observedAt = observedAt;
+      if (retrievedAt) item.retrievedAt = retrievedAt;
+      result.assets[key] = item;
+    }
   });
   const fixedReturn = finite(snapshot.funds && snapshot.funds.fixedIncome && snapshot.funds.fixedIncome.effectiveAnnualReturn);
-  if (fixedReturn !== null) result.funds.fixedIncome = { effectiveAnnualReturn: fixedReturn };
+  if (fixedReturn !== null) {
+    const fixedSource = snapshot.funds.fixedIncome;
+    const fixed = { effectiveAnnualReturn: fixedReturn };
+    const sourceCount = finite(fixedSource.sourceCount);
+    if (sourceCount !== null && sourceCount >= 0) fixed.sourceCount = sourceCount;
+    if (Array.isArray(fixedSource.sources)) fixed.sources = fixedSource.sources.filter((value) => typeof value === "string").slice(0, 8).map((value) => value.slice(0, 100));
+    const observedAt = validDate(fixedSource.observedAt || fixedSource.asOf);
+    const retrievedAt = validDate(fixedSource.retrievedAt);
+    if (observedAt) fixed.observedAt = observedAt;
+    if (retrievedAt) fixed.retrievedAt = retrievedAt;
+    result.funds.fixedIncome = fixed;
+  }
   return Object.keys(result.assets).length || Object.keys(result.funds).length ? result : null;
 }
 

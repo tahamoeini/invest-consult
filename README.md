@@ -8,7 +8,7 @@ It is a mathematical decision-support engine. It does not use an AI model to pre
 
 - Persian right-to-left interface using Vazirmatn.
 - English source code, comments, README, and technical documentation.
-- Generic planning categories: fixed income, gold, currency, and silver. Personal portfolio tracking keeps cash, other assets, and each named stock as separate user-owned ledger accounts.
+- A catalog separates priceable instruments from eight decision sleeves: liquidity, fixed income, gold, FX, Iran equity, global equity, crypto, and commodities. Recommendations still use the established fixed-income, gold, currency, and silver categories until other sleeves have adequate data or explicit versioned assumptions.
 - All Iranian currency inputs, market values, calculations, and exports use تومان. Legacy browser data and legacy exports are converted once on import; gold and silver quantities remain grams.
 - Salary, profile inputs, recommendation snapshots, and history remain in the browser's local storage.
 - History and the personal portfolio ledger can be exported as a versioned JSON file. Imported recommendation records merge by timestamp; an imported portfolio ledger replaces the current one only after confirmation.
@@ -16,10 +16,13 @@ It is a mathematical decision-support engine. It does not use an AI model to pre
 - Portfolio values are calculated from holdings at a selected date and the best available immutable market-history point. Missing history remains missing rather than being backfilled.
 - Corrections and tracking restarts are versioned and audited. The interface confirms before a change can affect historical portfolio calculations.
 - A monthly recommendation based on salary, an optional age input, goal, horizon, risk tolerance, income stability, and emergency-fund status.
-- New-contribution rebalancing: the tool directs the next contribution toward underweight categories instead of telling the user what to sell.
+- Separate net-worth, investable-capital, and liquid-asset totals, with emergency-reserve coverage shown in months of essential expenses.
+- New-contribution rebalancing: the tool shows target/current drift and directs the next contribution toward underweight supported categories instead of telling the user what to sell. Other sleeves are identified as excluded from that calculation.
+- A goal planner estimates success probability, P10/P50/P90 outcomes, projected inflation-adjusted target value, and required monthly contribution using the same simulation model.
 - A deterministic plan simulation with contribution growth, inflation adjustment, allocation, and rebalancing.
-- Historical backtesting with total invested, final value, CAGR-style annualized outcome, inflation-adjusted return, maximum drawdown, and best/worst starting periods.
-- Monte Carlo output with P10, P50, and P90 nominal and inflation-adjusted outcomes.
+- Historical backtesting with total invested, final value, CAGR-style annualized outcome, inflation-adjusted return, maximum drawdown, volatility, Sortino, and best/worst starting periods. Sharpe is in the advanced report and identifies its fixed-income reference rate.
+- Monte Carlo output with P10, P50, and P90 nominal and inflation-adjusted outcomes. The baseline is retained; EWMA and three-month block-bootstrap methods are gated by walk-forward validation.
+- Simulation and backtest execute lazily in a browser Web Worker, keeping the interface responsive and cancelling stale calculations on navigation or plan changes.
 - Clear labels when a calculation uses observed historical data versus model assumptions.
 
 ## Architecture
@@ -31,9 +34,12 @@ index.html                 Persian UI shell
 styles.css                 Responsive presentation
 app.js                     Browser state, rendering, and local storage
 src/engine.js              Pure planning, simulation, backtest, and Monte Carlo engine
+src/analysis.js            Analysis task router shared by the Worker and tests
+src/analysis.worker.js     Background simulation and backtest worker
+src/market/catalog.js      Instrument and sleeve registries
 src/portfolio.js           Portfolio ledger, versioning, valuation, and performance metrics
 src/history.js             Versioned recommendation and portfolio export/import validation
-functions/api/market.js    Cloudflare Pages Function for live data aggregation
+functions/api/market.js    Cloudflare Pages Function for selected-asset quotes and quality aggregation
 content/fa.json            Persian UI copy
 tests/engine.test.js       Node built-in test suite
 ```
@@ -61,7 +67,9 @@ The Pages Function uses independent public providers:
 - Provider C: the public Navasan data mirror.
 - Auxiliary metal source: global gold and silver reference prices converted to تومان with the aggregated dollar quote.
 
-Each quote is normalized to an asset, price, source, timestamp, and optional daily change. Invalid, unavailable, or failed quotes are dropped. If at least one valid quote remains, the displayed price is the median of the valid quotes. The endpoint returns provider diagnostics, source counts, source values, and provenance for inspection.
+Each quote distinguishes direct from derived price, upstream observation time from retrieval time, and source provenance. Retrieval time is never presented as the market observation time. Binance BTCUSDT/ETHUSDT values are not converted as USD; they stay out of Toman aggregation until a verified USDT/TOMAN rate is available. Requests can select allow-listed assets, and conversion dependencies are fetched server-side. Providers run concurrently with bounded timeouts and fallback sources are called only when needed. The endpoint returns partial data when some sources fail.
+
+A single source is shown with low confidence. Two-source disagreement is marked conflicted until class-specific agreement thresholds are calibrated. Three or more sources use median/MAD outlier detection. Conflicted prices are excluded from portfolio valuation. The response includes policy version, source counts, values, and response-time diagnostics; its initial interactive budget is 3.5 seconds.
 
 The application does not replace a failed source with a stale cached quote or a fabricated value. The browser may display the last complete response as a clearly labelled cache fallback when the endpoint itself is unavailable.
 
@@ -85,7 +93,9 @@ The reported CAGR is a cash-flow-aware annualized outcome when the internal mont
 
 ### Monte Carlo
 
-The simulation uses return means and volatility estimated from available monthly history where coverage is sufficient. It falls back to explicit conservative assumptions for sparse series. The default run uses 2,000 paths and can be changed to 1,000, 5,000, or 10,000 in the interface. P10, P50, and P90 are percentile summaries, not confidence guarantees.
+The simulation uses return means and volatility estimated from available monthly history where coverage is sufficient. It falls back to explicit versioned assumptions for sparse series. Covariance uses paired observed returns only; missing/imputed returns never enter covariance, and short samples shrink correlations toward zero. The default run uses 2,000 paths and can be changed to 1,000, 5,000, or 10,000 in the interface. P10, P50, and P90 are percentile summaries, not confidence guarantees.
+
+EWMA uses a 12-month half-life; moving-block bootstrap samples contiguous three-month blocks. Both methods must pass a rolling 24-month-training, minimum-24-forecast walk-forward gate before the app selects them. Otherwise, the existing Gaussian Monte Carlo remains the baseline. Goal projections and required-contribution search use the same selected model and currently include only the four modeled planning categories.
 
 The default assumptions are intentionally visible in `src/engine.js` and are not presented as expected market returns. They exist so the tool remains usable when public historical data is incomplete.
 

@@ -2,11 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ASSET_KEYS,
+  DEFAULT_ASSUMPTIONS,
+  annualToMonthlyRate,
+  buildHistoricalReturns,
   backtestHistorical,
+  covarianceMatrix,
   contributionRebalance,
+  estimateReturnModel,
+  evaluateGoal,
   recommendAllocation,
   runMonteCarlo,
   simulatePlan,
+  walkForwardValidation,
 } from "../src/engine.js";
 import {
   createHistoryExport,
@@ -100,13 +107,100 @@ test("Monte Carlo respects an explicitly supplied zero covariance matrix", () =>
   assert.equal(result.nominal.p90, 100);
 });
 
-test("history export round-trips sanitized records", () => {
-  const record = { createdAt: "2026-01-01T00:00:00.000Z", total: 1000, contributionRate: 20, weights: { fixed: 70, gold: 20, currency: 8, silver: 2 }, salary: 5000, marketSnapshot: { capturedAt: "2026-01-01T00:00:00.000Z", assets: { dollar: { price: 500000 } }, funds: { fixedIncome: { effectiveAnnualReturn: 25 } } } };
+test("covariance uses observed overlaps only and shrinks short samples", () => {
+  const rows = Array.from({ length: 12 }, (_, index) => ({
+    returns: { gold: index / 100, currency: index / 100 },
+    observed: { gold: true, currency: true },
+  }));
+  const model = { gold: { annualVolatility: 0.2 }, currency: { annualVolatility: 0.2 } };
+  const paired = covarianceMatrix(rows, ["gold", "currency"], model);
+  assert.ok(Math.abs(paired[0][1] - (0.2 / Math.sqrt(12)) ** 2 * 0.5) < 1e-10);
+  assert.ok(Math.abs(paired[0][0] - (0.2 / Math.sqrt(12)) ** 2) < 1e-10);
+  const unobserved = rows.map((row) => ({ ...row, observed: { gold: true, currency: false } }));
+  assert.equal(covarianceMatrix(unobserved, ["gold", "currency"], model)[0][1], 0);
+});
+
+test("modeled fallback returns never become observed history or estimated covariance", () => {
+  const historical = buildHistoricalReturns({ history: { gold: series(100, 0.01, 36) } });
+  assert.equal(historical.rows.every((row) => row.observed.currency === false), true);
+  const result = estimateReturnModel({ history: { gold: series(100, 0.01, 36) } });
+  assert.equal(result.model.currency.observed, false);
+  assert.equal(result.model.currency.annualReturn, DEFAULT_ASSUMPTIONS.currency.annualReturn);
+  assert.equal(result.covariance[1][2], 0);
+  const validation = walkForwardValidation({ history: { gold: series(100, 0.01, 36) } });
+  assert.ok(validation.diagnostics.gold.observations >= 3);
+});
+
+test("advanced forecast methods require 24 walk-forward forecasts after their training window", () => {
+  const tooShort = walkForwardValidation({ history: { gold: series(100, 0.01, 48) } });
+  assert.equal(tooShort.diagnostics.gold.observations, 23);
+  assert.equal(tooShort.diagnostics.gold.available, false);
+  const sufficient = walkForwardValidation({ history: { gold: series(100, 0.01, 49) } });
+  assert.equal(sufficient.diagnostics.gold.observations, 24);
+  assert.equal(sufficient.diagnostics.gold.available, true);
+});
+
+test("block bootstrap falls back to versioned assumptions for assets with fewer than 24 observed returns", () => {
+  const market = { history: { gold: [
+    { date: "2025-01-01", value: 100 },
+    { date: "2025-02-01", value: 500 },
+    { date: "2025-03-01", value: 100 },
+  ] } };
+  const result = runMonteCarlo({
+    market,
+    allocation: { fixed: 0, gold: 100, currency: 0, silver: 0 },
+    initialInvestment: 1000,
+    monthlyContribution: 0,
+    horizonYears: 1,
+    paths: 1000,
+    method: "block-bootstrap",
+    random: () => 0.4,
+  });
+  const expected = 1000 * Math.pow(1 + annualToMonthlyRate(DEFAULT_ASSUMPTIONS.gold.annualReturn), 12);
+  assert.equal(result.nominal.p10, expected);
+  assert.equal(result.nominal.p90, expected);
+  assert.equal(result.method, "block-bootstrap");
+});
+
+test("goal planner calculates probability and required contribution deterministically", () => {
+  const model = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, { annualReturn: 0, annualVolatility: 0 }]));
+  const covariance = ASSET_KEYS.map(() => ASSET_KEYS.map(() => 0));
+  const result = evaluateGoal({
+    targetToday: 2000,
+    horizonYears: 1,
+    initialInvestment: 1000,
+    monthlyContribution: 100,
+    inflationRate: 0,
+    desiredProbability: 0.75,
+    allocation: { fixed: 100 },
+    returnModel: model,
+    covariance,
+  });
+  assert.equal(result.available, true);
+  assert.equal(result.successProbability, 1);
+  assert.ok(result.requiredMonthlyContribution >= 83.3);
+  assert.ok(result.requiredMonthlyContribution <= 83.4);
+  assert.equal(result.targetNominal, 2000);
+  assert.equal(result.modelAssumptionVersion, "ir-planning-v1");
+});
+
+test("history export preserves quote provenance while accepting legacy snapshots", () => {
+  const record = { createdAt: "2026-01-01T00:00:00.000Z", total: 1000, contributionRate: 20, weights: { fixed: 70, gold: 20, currency: 8, silver: 2 }, salary: 5000, marketSnapshot: { capturedAt: "2026-01-01T00:00:00.000Z", assets: { dollar: { price: 500000, sleeveId: "fx", quoteType: "derived", derivedFrom: ["USD/EUR", "EUR/TOMAN"], sourceValues: [{ source: "A", price: 499000, quoteType: "direct", observedAt: "2025-12-31T23:54:00.000Z" }], dependencies: [{ instrumentId: "dollar", source: "A, B", sourceCount: 2, status: "degraded", confidence: "medium", observedAt: "2025-12-31T23:55:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z" }], observedAt: "2025-12-31T23:55:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z", sourceCount: 2, sources: ["A", "B"], status: "degraded", confidence: "medium", consensusPolicyVersion: "quote-consensus-v1", consensusCalibrated: false } }, funds: { fixedIncome: { effectiveAnnualReturn: 25 } } } };
   const exported = createHistoryExport([record]);
   const parsed = parseHistoryExport(JSON.parse(JSON.stringify(exported)));
   assert.equal(exported.schema, "invest-consult-history");
   assert.equal(parsed.records.length, 1);
   assert.equal(parsed.records[0].weights.fixed + parsed.records[0].weights.gold + parsed.records[0].weights.currency + parsed.records[0].weights.silver, 100);
+  assert.equal(parsed.records[0].marketSnapshot.assets.dollar.quoteType, "derived");
+  assert.equal(parsed.records[0].marketSnapshot.assets.dollar.observedAt, "2025-12-31T23:55:00.000Z");
+  assert.equal(parsed.records[0].marketSnapshot.assets.dollar.retrievedAt, "2026-01-01T00:00:00.000Z");
+  assert.deepEqual(parsed.records[0].marketSnapshot.assets.dollar.derivedFrom, ["USD/EUR", "EUR/TOMAN"]);
+  assert.equal(parsed.records[0].marketSnapshot.assets.dollar.sleeveId, "fx");
+  assert.equal(parsed.records[0].marketSnapshot.assets.dollar.sourceValues[0].price, 499000);
+  assert.equal(parsed.records[0].marketSnapshot.assets.dollar.consensusCalibrated, false);
+  assert.deepEqual(parsed.records[0].marketSnapshot.assets.dollar.dependencies, [{ instrumentId: "dollar", price: null, sourceCount: 2, unit: "", source: "A, B", status: "degraded", confidence: "medium", observedAt: "2025-12-31T23:55:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z" }]);
+  const oldSnapshot = parseHistoryExport([{ createdAt: "2026-01-01T00:00:00.000Z", total: 1000, rate: 20, weights: { fixed: 70, gold: 20, currency: 8, silver: 2 }, marketSnapshot: { assets: { dollar: { price: 500000 } } } }]);
+  assert.equal(oldSnapshot.records[0].marketSnapshot.assets.dollar.price, 500000);
 });
 
 test("legacy rate records are accepted and invalid records are skipped", () => {

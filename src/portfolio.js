@@ -1,24 +1,25 @@
 // @ts-check
 
 import { realValue } from "./engine.js";
+import { INSTRUMENT_REGISTRY, SLEEVE_REGISTRY } from "./market/catalog.js";
 
 export const PORTFOLIO_SCHEMA = "invest-consult-portfolio";
 export const PORTFOLIO_VERSION = 1;
 export const TRANSACTION_TYPES = ["OPENING", "BUY", "SELL", "DIVIDEND", "TRANSFER", "ADJUSTMENT", "DEPOSIT", "WITHDRAWAL"];
 
 export const PORTFOLIO_ASSETS = Object.freeze({
-  gold: { id: "gold", titleKey: "gold", unit: "gram", marketKey: "gold", priced: true },
-  fixed: { id: "fixed", titleKey: "fixed", unit: "TOMAN", marketKey: null, priced: true },
-  currency: { id: "currency", titleKey: "currency", unit: "USD", marketKey: "dollar", priced: true },
-  silver: { id: "silver", titleKey: "silver", unit: "gram", marketKey: "silver", priced: true },
-  bitcoin: { id: "bitcoin", titleKey: "bitcoin", unit: "coin", marketKey: "bitcoin", priced: true },
-  ethereum: { id: "ethereum", titleKey: "ethereum", unit: "coin", marketKey: "ethereum", priced: true },
-  tether: { id: "tether", titleKey: "tether", unit: "coin", marketKey: "tether", priced: true },
-  platinum: { id: "platinum", titleKey: "platinum", unit: "gram", marketKey: "platinum", priced: true },
-  palladium: { id: "palladium", titleKey: "palladium", unit: "gram", marketKey: "palladium", priced: true },
-  copper: { id: "copper", titleKey: "copper", unit: "gram", marketKey: "copper", priced: true },
-  cash: { id: "cash", titleKey: "cash", unit: "TOMAN", marketKey: null, priced: true },
-  other: { id: "other", titleKey: "other", unit: "TOMAN", marketKey: null, priced: true },
+  gold: { ...INSTRUMENT_REGISTRY.gold, id: "gold", titleKey: "gold", priced: true, isInvestable: true, isLiquid: true },
+  fixed: { id: "fixed", titleKey: "fixed", unit: "TOMAN", marketKey: null, sleeveId: "fixedIncome", priced: true, isInvestable: true, isLiquid: true },
+  currency: { ...INSTRUMENT_REGISTRY.dollar, id: "currency", titleKey: "currency", unit: "USD", marketKey: "dollar", priced: true, isInvestable: true, isLiquid: true },
+  silver: { ...INSTRUMENT_REGISTRY.silver, id: "silver", titleKey: "silver", priced: true, isInvestable: true, isLiquid: true },
+  bitcoin: { ...INSTRUMENT_REGISTRY.bitcoin, id: "bitcoin", titleKey: "bitcoin", priced: true, isInvestable: true, isLiquid: true },
+  ethereum: { ...INSTRUMENT_REGISTRY.ethereum, id: "ethereum", titleKey: "ethereum", priced: true, isInvestable: true, isLiquid: true },
+  tether: { ...INSTRUMENT_REGISTRY.tether, id: "tether", titleKey: "tether", priced: true, isInvestable: true, isLiquid: true },
+  platinum: { ...INSTRUMENT_REGISTRY.platinum, id: "platinum", titleKey: "platinum", priced: true, isInvestable: true, isLiquid: true },
+  palladium: { ...INSTRUMENT_REGISTRY.palladium, id: "palladium", titleKey: "palladium", priced: true, isInvestable: true, isLiquid: true },
+  copper: { ...INSTRUMENT_REGISTRY.copper, id: "copper", titleKey: "copper", priced: true, isInvestable: true, isLiquid: true },
+  cash: { id: "cash", titleKey: "cash", unit: "TOMAN", marketKey: null, sleeveId: "liquidity", priced: true, isInvestable: true, isLiquid: true },
+  other: { id: "other", titleKey: "other", unit: "TOMAN", marketKey: null, sleeveId: null, priced: true, isInvestable: false, isLiquid: false },
 });
 
 export const SIMPLE_ASSET_IDS = ["gold", "fixed", "cash", "other"];
@@ -39,6 +40,12 @@ function finite(value) {
 function isoDate(value, fallback = new Date().toISOString()) {
   const date = new Date(value || fallback);
   return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+}
+
+function optionalIsoDate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function makeId(prefix = "id") {
@@ -63,7 +70,27 @@ function snapshotQuote(market, assetId, date) {
   if (!definition || !definition.marketKey) return null;
   const price = marketPriceAt(market, assetId, date);
   if (price === null || price <= 0) return null;
-  return { assetId, price, source: "market-snapshot", capturedAt: isoDate(date) };
+  const observed = market?.assets?.[definition.marketKey] || {};
+  return {
+    assetId,
+    price,
+    source: observed.sources?.join(", ") || observed.source || "market-snapshot",
+    capturedAt: isoDate(date),
+    observedAt: observed.observedAt || observed.asOf || null,
+    retrievedAt: observed.retrievedAt || market.updatedAt || isoDate(date),
+    quoteType: observed.quoteType || definition.quoteType || "direct",
+    sleeveId: observed.sleeveId || definition.sleeveId || null,
+    derivedFrom: Array.isArray(observed.derivedFrom) ? observed.derivedFrom.slice() : [],
+    sourceValues: Array.isArray(observed.sourceValues) ? observed.sourceValues.slice(0, 8) : [],
+    dependencies: Array.isArray(observed.dependencies) ? observed.dependencies.slice(0, 5) : [],
+    status: observed.status || "healthy",
+    confidence: observed.confidence || null,
+    sourceCount: Math.max(0, finite(observed.sourceCount) || 0),
+    configuredSourceCount: Math.max(0, finite(observed.configuredSourceCount) || 0),
+    spreadPct: Math.max(0, finite(observed.spreadPct) || 0),
+    consensusPolicyVersion: observed.consensusPolicyVersion || null,
+    consensusCalibrated: observed.consensusCalibrated === true,
+  };
 }
 
 function normalizeTransaction(raw, assets = PORTFOLIO_ASSETS) {
@@ -98,7 +125,44 @@ function normalizeTransaction(raw, assets = PORTFOLIO_ASSETS) {
       assetId: raw.marketQuote.assetId,
       price: finite(raw.marketQuote.price),
       source: typeof raw.marketQuote.source === "string" ? raw.marketQuote.source : "market-snapshot",
-      capturedAt: isoDate(raw.marketQuote.capturedAt),
+      capturedAt: optionalIsoDate(raw.marketQuote.capturedAt),
+      observedAt: optionalIsoDate(raw.marketQuote.observedAt),
+      retrievedAt: optionalIsoDate(raw.marketQuote.retrievedAt),
+      quoteType: ["direct", "derived", "mixed"].includes(raw.marketQuote.quoteType) ? raw.marketQuote.quoteType : "direct",
+      sleeveId: typeof raw.marketQuote.sleeveId === "string" ? raw.marketQuote.sleeveId.slice(0, 60) : null,
+      derivedFrom: Array.isArray(raw.marketQuote.derivedFrom) ? raw.marketQuote.derivedFrom.filter((value) => typeof value === "string").slice(0, 5) : [],
+      sourceValues: Array.isArray(raw.marketQuote.sourceValues) ? raw.marketQuote.sourceValues.slice(0, 8).map((value) => {
+        if (!value || typeof value !== "object") return null;
+        const quotePrice = finite(value.price);
+        if (quotePrice === null || quotePrice <= 0) return null;
+        return {
+          source: typeof value.source === "string" ? value.source.slice(0, 100) : "",
+          price: quotePrice,
+          quoteType: ["direct", "derived"].includes(value.quoteType) ? value.quoteType : "direct",
+          observedAt: optionalIsoDate(value.observedAt),
+        };
+      }).filter(Boolean) : [],
+      dependencies: Array.isArray(raw.marketQuote.dependencies) ? raw.marketQuote.dependencies.slice(0, 5).map((dependency) => {
+        if (!dependency || typeof dependency !== "object") return null;
+        return {
+          instrumentId: typeof dependency.instrumentId === "string" ? dependency.instrumentId.slice(0, 60) : "",
+          price: finite(dependency.price),
+          sourceCount: Math.max(0, finite(dependency.sourceCount) || 0),
+          unit: typeof dependency.unit === "string" ? dependency.unit.slice(0, 20) : "",
+          source: typeof dependency.source === "string" ? dependency.source.slice(0, 100) : "",
+          status: typeof dependency.status === "string" ? dependency.status.slice(0, 30) : "unavailable",
+          confidence: typeof dependency.confidence === "string" ? dependency.confidence.slice(0, 20) : "none",
+          observedAt: optionalIsoDate(dependency.observedAt),
+          retrievedAt: optionalIsoDate(dependency.retrievedAt),
+        };
+      }).filter(Boolean) : [],
+      status: typeof raw.marketQuote.status === "string" ? raw.marketQuote.status.slice(0, 30) : "healthy",
+      confidence: typeof raw.marketQuote.confidence === "string" ? raw.marketQuote.confidence.slice(0, 20) : null,
+      sourceCount: Math.max(0, finite(raw.marketQuote.sourceCount) || 0),
+      configuredSourceCount: Math.max(0, finite(raw.marketQuote.configuredSourceCount) || 0),
+      spreadPct: Math.max(0, finite(raw.marketQuote.spreadPct) || 0),
+      consensusPolicyVersion: typeof raw.marketQuote.consensusPolicyVersion === "string" ? raw.marketQuote.consensusPolicyVersion.slice(0, 60) : null,
+      consensusCalibrated: raw.marketQuote.consensusCalibrated === true,
     } : undefined,
   };
 }
@@ -128,6 +192,9 @@ function normalizeAsset(raw, id) {
     unit: typeof raw.unit === "string" ? raw.unit.slice(0, 20) : "TOMAN",
     marketKey: null,
     priced: true,
+    sleeveId: Object.hasOwn(SLEEVE_REGISTRY, raw.sleeveId) ? raw.sleeveId : null,
+    isInvestable: raw.isInvestable === true,
+    isLiquid: raw.isLiquid === true,
     createdAt: isoDate(raw.createdAt),
   };
 }
@@ -161,7 +228,7 @@ export function normalizePortfolio(raw) {
   if (!raw || typeof raw !== "object" || raw.schema !== PORTFOLIO_SCHEMA || Number(raw.version) > PORTFOLIO_VERSION || !Array.isArray(raw.versions)) return createEmptyPortfolio();
   const customAssets = Object.fromEntries(Object.entries(raw.assets && typeof raw.assets === "object" ? raw.assets : {}).map(([id, asset]) => [id, normalizeAsset(asset, id)]).filter(([, asset]) => asset));
   const hasLegacyStocks = raw.versions.some((version) => Array.isArray(version.transactions) && version.transactions.some((transaction) => transaction && (transaction.assetId === "stocks" || transaction.targetAssetId === "stocks")));
-  if (hasLegacyStocks && !customAssets[LEGACY_STOCK_ASSET_ID]) customAssets[LEGACY_STOCK_ASSET_ID] = { id: LEGACY_STOCK_ASSET_ID, title: "Legacy stock holding", titleKey: "stocks", kind: "legacy-stock", unit: "TOMAN", marketKey: null, priced: true, createdAt: new Date().toISOString() };
+  if (hasLegacyStocks && !customAssets[LEGACY_STOCK_ASSET_ID]) customAssets[LEGACY_STOCK_ASSET_ID] = { id: LEGACY_STOCK_ASSET_ID, title: "Legacy stock holding", titleKey: "stocks", kind: "legacy-stock", unit: "TOMAN", marketKey: null, priced: true, sleeveId: "iranEquity", isInvestable: true, isLiquid: false, createdAt: new Date().toISOString() };
   const assets = { ...PORTFOLIO_ASSETS, ...customAssets };
   const versions = raw.versions.map((version) => normalizeVersion({ ...version, transactions: (version.transactions || []).map((transaction) => ({ ...transaction, assetId: transaction.assetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.assetId, targetAssetId: transaction.targetAssetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.targetAssetId })) }, assets)).filter(Boolean);
   if (!versions.length) return createEmptyPortfolio();
@@ -196,7 +263,8 @@ export function marketPriceAt(market, assetId, asOf = new Date().toISOString()) 
   if (!Number.isFinite(timestamp)) return null;
   const current = market && market.assets && market.assets[definition.marketKey];
   const currentPrice = finite(current && current.price);
-  const updatedAt = new Date(market && market.updatedAt || 0).getTime();
+  const updatedAt = new Date(current?.retrievedAt || market && market.updatedAt || 0).getTime();
+  if (current?.status === "conflicted" && timestamp >= updatedAt) return null;
   if (currentPrice !== null && Number.isFinite(updatedAt) && timestamp >= updatedAt) return currentPrice;
   const rawSeries = market && market.history && market.history[marketHistoryKey(assetId)];
   const points = (Array.isArray(rawSeries) ? rawSeries : []).map(seriesPointValue).filter((point) => point && point.value !== null && point.value > 0 && Number.isFinite(new Date(point.date).getTime()) && new Date(point.date).getTime() <= timestamp).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
@@ -266,17 +334,26 @@ function valueState(holdings, market, asOf, assets = PORTFOLIO_ASSETS) {
   const values = {};
   const missingPrices = [];
   let totalValue = 0;
+  let investableTotal = 0;
+  let liquidTotal = 0;
+  const sleeveValues = {};
   Object.keys(assets).forEach((assetId) => {
     const quantity = Number(holdings[assetId]) || 0;
     const price = marketPriceAt(market, assetId, asOf);
     const value = price === null ? null : quantity * price;
     values[assetId] = { quantity, price, value, unit: assets[assetId].unit };
     if (quantity > EPSILON && value === null) missingPrices.push(assetId);
-    if (value !== null) totalValue += value;
+    if (value !== null) {
+      totalValue += value;
+      if (assets[assetId].isInvestable) investableTotal += value;
+      if (assets[assetId].isLiquid) liquidTotal += value;
+      const sleeveId = assets[assetId].sleeveId;
+      if (sleeveId && assets[assetId].isInvestable) sleeveValues[sleeveId] = (sleeveValues[sleeveId] || 0) + value;
+    }
   });
   const allocation = {};
   Object.entries(values).forEach(([assetId, item]) => { allocation[assetId] = totalValue > EPSILON && item.value !== null ? item.value / totalValue * 100 : 0; });
-  return { values, totalValue, allocation, missingPrices };
+  return { values, totalValue, netWorth: totalValue, investableTotal, liquidTotal, sleeveValues, allocation, missingPrices };
 }
 
 function xirr(cashFlows, guess = 0.1) {
@@ -342,6 +419,10 @@ export function calculatePortfolio(portfolio, market, asOf = new Date().toISOStr
     holdings: state.holdings,
     values: valuation.values,
     allocation: valuation.allocation,
+    netWorth: valuation.netWorth,
+    investableTotal: valuation.investableTotal,
+    liquidTotal: valuation.liquidTotal,
+    sleeveValues: valuation.sleeveValues,
     missingPrices: valuation.missingPrices,
     assets,
     audit: version.audit,
@@ -439,7 +520,18 @@ export function createPortfolioAsset(portfolio, input, now = new Date().toISOStr
   const existing = Object.values(current.assets).find((asset) => asset.title.toLocaleLowerCase() === title.toLocaleLowerCase());
   if (existing) return { portfolio: current, asset: existing };
   const id = makeId("asset").replace(/^/, "custom:");
-  const asset = normalizeAsset({ id, title, kind: input.kind || "custom", unit: input.unit || "TOMAN", createdAt: now }, id);
+  const kind = input.kind || "custom";
+  const isStock = kind === "stock" || kind === "legacy-stock";
+  const asset = normalizeAsset({
+    id,
+    title,
+    kind,
+    unit: input.unit || "TOMAN",
+    sleeveId: input.sleeveId || (isStock ? "iranEquity" : null),
+    isInvestable: typeof input.isInvestable === "boolean" ? input.isInvestable : isStock,
+    isLiquid: typeof input.isLiquid === "boolean" ? input.isLiquid : false,
+    createdAt: now,
+  }, id);
   const next = clone(current);
   next.assets = { ...(next.assets || {}), [id]: asset };
   return { portfolio: next, asset };

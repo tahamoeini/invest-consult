@@ -2,15 +2,10 @@
 
 import {
   ASSET_KEYS,
-  DEFAULT_ASSUMPTIONS,
-  backtestHistorical,
   clamp,
   contributionRebalance,
-  estimateReturnModel,
   portfolioFromHistory,
   recommendAllocation,
-  runMonteCarlo,
-  simulatePlan,
 } from "./src/engine.js";
 import {
   createHistoryExport,
@@ -18,6 +13,7 @@ import {
   parseHistoryExport,
 } from "./src/history.js";
 import {
+  PORTFOLIO_ASSETS,
   SIMPLE_ASSET_IDS,
   activePortfolioVersion,
   appendTransactions,
@@ -30,6 +26,7 @@ import {
   portfolioSeries,
   simpleChangeTransactions,
 } from "./src/portfolio.js";
+import { INSTRUMENT_REGISTRY } from "./src/market/catalog.js";
 import { AppShell } from "./src/ui/components.js";
 import { donutChartMarkup, lineChartMarkup, normalizeSeriesIndex } from "./src/ui/charts.js";
 import { createNavigationController } from "./src/ui/navigation.js";
@@ -79,10 +76,15 @@ let pendingSimpleStock = null;
 let dashboardRange = "ALL";
 let storageWarning = false;
 let planPreviewTimer = null;
+let analysisWorkerTask = null;
+let analysisRequestId = 0;
+let analyzedPlan = null;
+let legacyEmergencyFund = "partial";
+let preferredAnalysisMethod = "gaussian";
 
 const fallbackCopy = {
-  status: { loading: "Reading market data", connected: "Live data connected", cached: "Using cached data", unavailable: "Live data unavailable" },
-  errors: { salary: "Enter a valid salary." },
+  status: { loading: "در حال خواندن داده بازار", connected: "داده زنده وصل است", cached: "در حال استفاده از داده ذخیره‌شده", unavailable: "داده زنده در دسترس نیست" },
+  errors: { salary: "یک حقوق معتبر وارد کن." },
 };
 
 function text(key, fallback = "") {
@@ -321,15 +323,26 @@ function writePortfolio(portfolio) {
   return writeJson(PORTFOLIO_KEY, normalizePortfolio(portfolio));
 }
 
+function emergencyFundSnapshot(expenses = numberFromInput($("#essential-monthly-expenses")?.value)) {
+  if (!(expenses > 0)) return { months: null, status: legacyEmergencyFund };
+  const portfolio = calculatePortfolio(readPortfolio(), liveMarket || {});
+  const months = portfolio.liquidTotal / expenses;
+  return { months, status: months >= 6 ? "complete" : months >= 1 ? "partial" : "none" };
+}
+
 function getProfile() {
   const ageInput = $("#age").value.trim();
+  const essentialMonthlyExpenses = Math.max(0, numberFromInput($("#essential-monthly-expenses")?.value));
+  const emergency = emergencyFundSnapshot(essentialMonthlyExpenses);
   return {
     age: ageInput ? numberFromInput(ageInput) : undefined,
     horizonYears: numberFromInput($("#horizon").value),
     goal: $("#goal").value,
     riskTolerance: $("#risk-tolerance").value,
     incomeStability: $("#income-stability").value,
-    emergencyFund: $("#emergency-fund").value,
+    emergencyFund: emergency.status,
+    emergencyCoverageMonths: emergency.months,
+    essentialMonthlyExpenses,
   };
 }
 
@@ -380,12 +393,14 @@ function restoreProfile() {
     const source = key === "age" ? profile.age : profile.horizonYears;
     if (source) $("#" + key).value = source;
   });
-  ["goal", "riskTolerance", "incomeStability", "emergencyFund"].forEach((key) => {
+  legacyEmergencyFund = ["complete", "partial", "none"].includes(profile.emergencyFund) ? profile.emergencyFund : "partial";
+  ["goal", "riskTolerance", "incomeStability"].forEach((key) => {
     const aliases = { riskTolerance: "risk-tolerance", incomeStability: "income-stability", emergencyFund: "emergency-fund" };
     const element = $("#" + (aliases[key] || key));
     if (element && profile[key]) element.value = profile[key];
   });
   if (Number.isFinite(Number(profile.salary)) && Number(profile.salary) > 0) $("#salary").value = profile.salary;
+  if (Number.isFinite(Number(profile.essentialMonthlyExpenses))) $("#essential-monthly-expenses").value = Math.max(0, profile.essentialMonthlyExpenses);
   if (Number.isFinite(Number(profile.contributionRate))) $("#contribution-rate").value = clamp(profile.contributionRate, 5, 40);
   if (Number.isFinite(Number(profile.initialInvestment))) $("#initial-investment").value = Math.max(0, profile.initialInvestment);
   if (Number.isFinite(Number(profile.contributionGrowth))) $("#contribution-growth").value = clamp(profile.contributionGrowth, -50, 200);
@@ -398,15 +413,36 @@ function marketSnapshot(market) {
   if (!market) return null;
   const snapshot = { capturedAt: market.updatedAt || new Date().toISOString(), assets: {}, funds: {} };
   Object.entries(market.assets || {}).forEach(([key, item]) => {
-    if (item && Number.isFinite(Number(item.price))) snapshot.assets[key] = {
+    if (item && item.price !== null && Number.isFinite(Number(item.price))) snapshot.assets[key] = {
       price: Number(item.price),
-      changePct: Number.isFinite(Number(item.changePct)) ? Number(item.changePct) : null,
+      changePct: item.changePct !== null && item.changePct !== undefined && item.changePct !== "" && Number.isFinite(Number(item.changePct)) ? Number(item.changePct) : null,
       unit: item.unit || null,
       sourceCount: Number(item.sourceCount) || 0,
+      configuredSourceCount: Number(item.configuredSourceCount) || 0,
+      spreadPct: item.spreadPct !== null && item.spreadPct !== undefined && Number.isFinite(Number(item.spreadPct)) ? Number(item.spreadPct) : null,
+      sources: Array.isArray(item.sources) ? item.sources.slice(0, 8) : [],
+      sourceValues: Array.isArray(item.sourceValues) ? item.sourceValues.slice(0, 8) : [],
+      sleeveId: item.sleeveId || null,
+      observedAt: item.observedAt || item.asOf || null,
+      retrievedAt: item.retrievedAt || market.updatedAt || null,
+      quoteType: item.quoteType || "direct",
+      derivedFrom: Array.isArray(item.derivedFrom) ? item.derivedFrom.slice(0, 5) : [],
+      dependencies: Array.isArray(item.dependencies) ? item.dependencies.slice(0, 5) : [],
+      status: item.status || "healthy",
+      confidence: item.confidence || null,
+      consensusPolicyVersion: item.consensusPolicyVersion || null,
+      consensusCalibrated: item.consensusCalibrated === true,
+      agreementTolerancePct: item.agreementTolerancePct !== null && item.agreementTolerancePct !== undefined && Number.isFinite(Number(item.agreementTolerancePct)) ? Number(item.agreementTolerancePct) : null,
     };
   });
   const fixed = market.funds && market.funds.fixedIncome;
-  if (fixed && Number.isFinite(Number(fixed.effectiveAnnualReturn))) snapshot.funds.fixedIncome = { effectiveAnnualReturn: Number(fixed.effectiveAnnualReturn) };
+  if (fixed && fixed.effectiveAnnualReturn !== null && fixed.effectiveAnnualReturn !== undefined && Number.isFinite(Number(fixed.effectiveAnnualReturn))) snapshot.funds.fixedIncome = {
+    effectiveAnnualReturn: Number(fixed.effectiveAnnualReturn),
+    observedAt: fixed.observedAt || fixed.asOf || null,
+    retrievedAt: fixed.retrievedAt || market.updatedAt || null,
+    sourceCount: Number(fixed.sourceCount) || 0,
+    sources: Array.isArray(fixed.sources) ? fixed.sources.slice(0, 8) : [],
+  };
   return Object.keys(snapshot.assets).length || Object.keys(snapshot.funds).length ? snapshot : null;
 }
 
@@ -419,7 +455,7 @@ function marketValueUnit(item) {
 
 function renderMarket(data) {
   if (!data || !data.assets) {
-    marketDataEl.innerHTML = `<div class="empty-state">${escapeHTML(text("market.empty", "No market data is available."))}</div>`;
+    marketDataEl.innerHTML = `<div class="empty-state">${escapeHTML(text("market.empty", "داده بازار در دسترس نیست."))}</div>`;
     $("#market-updated").textContent = "—";
     $("#market-coverage").textContent = "—";
     renderMarketDiagnostics(null);
@@ -428,21 +464,27 @@ function renderMarket(data) {
   const labels = text("market.labels", {});
   const cards = Object.entries(labels).map(([key, label]) => {
     const item = data.assets[key];
-    if (!item || !Number.isFinite(Number(item.price))) return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>داده در دسترس نیست</small></div></div>`;
-    const change = Number(item.changePct);
+    const hasPrice = item && item.status !== "conflicted" && item.price !== null && Number.isFinite(Number(item.price));
+    if (!hasPrice) {
+      const detail = item?.status === "conflicted" ? text("market.conflicted") : text("market.unavailable");
+      return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>${escapeHTML(detail)}</small></div></div>`;
+    }
+    const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
     const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange", "\u2014");
     const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
-    const freshness = item.asOf || data.updatedAt;
-    return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))} · ${escapeHTML(freshnessLabel(freshness))}</small></div></div>`;
+    const timeLabels = marketTimeLabels(item, data.updatedAt);
+    const quality = text(`market.quality.${item.status || "healthy"}`);
+    const basis = text(`market.quoteType.${item.quoteType || "direct"}`);
+    return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)} · ${escapeHTML(basis)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(quality)} · ${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(timeLabels)}</small></div></div>`;
   }).join("");
   const fixed = data.funds && data.funds.fixedIncome;
-  const fixedCard = fixed && Number.isFinite(Number(fixed.effectiveAnnualReturn))
-    ? `<div class="market-row"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>${formatPercent(fixed.effectiveAnnualReturn)}</strong><small>${escapeHTML(text("market.annual"))} · ${escapeHTML(String(fixed.sourceCount || 0))} ${escapeHTML(text("market.sources", "source"))} · ${escapeHTML(freshnessLabel(fixed.asOf || data.updatedAt))}</small></div></div>`
+  const fixedCard = fixed && fixed.effectiveAnnualReturn !== null && fixed.effectiveAnnualReturn !== undefined && Number.isFinite(Number(fixed.effectiveAnnualReturn))
+    ? `<div class="market-row"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>${formatPercent(fixed.effectiveAnnualReturn)}</strong><small>${escapeHTML(text("market.annual"))} · ${escapeHTML(String(fixed.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(marketTimeLabels(fixed, data.updatedAt))}</small></div></div>`
     : `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>—</strong><small>داده در دسترس نیست</small></div></div>`;
-  marketDataEl.innerHTML = cards + fixedCard || `<div class="empty-state">${escapeHTML(text("market.empty", "No market data is available."))}</div>`;
-  $("#market-updated").textContent = data.updatedAt ? `${text("market.updated", "Updated")} ${formatDateTime(data.updatedAt)}` : "\u2014";
+  marketDataEl.innerHTML = cards + fixedCard || `<div class="empty-state">${escapeHTML(text("market.empty", "داده بازار در دسترس نیست."))}</div>`;
+  $("#market-updated").textContent = data.updatedAt ? `${text("market.updated", "آخرین خوانش")} ${formatDateTime(data.updatedAt)}` : "\u2014";
   const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item.sourceCount) || 0), 0);
-  $("#market-coverage").textContent = `${sourceTotal} ${text("market.sourceQuotes", "valid source quotes")}`;
+  $("#market-coverage").textContent = `${sourceTotal} ${text("market.sourceQuotes", "قیمت معتبر")}`;
   renderMarketDiagnostics(data);
 }
 
@@ -489,6 +531,7 @@ function setDashboardMetric(valueId, noteId, value, note, state = "ready") {
 }
 
 function freshnessLabel(value) {
+  if (value === null || value === undefined || value === "") return text("market.observationUnknown");
   const timestamp = new Date(value || 0).getTime();
   if (!Number.isFinite(timestamp)) return "زمان نامشخص";
   const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
@@ -497,6 +540,14 @@ function freshnessLabel(value) {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${formatIRR(hours)} ساعت قبل`;
   return `${formatIRR(Math.round(hours / 24))} روز قبل`;
+}
+
+function marketTimeLabels(item, retrievedFallback = null) {
+  const observedAt = item?.observedAt || item?.asOf || null;
+  const retrievedAt = item?.retrievedAt || retrievedFallback;
+  const observed = observedAt ? `${text("market.observedAt")}: ${freshnessLabel(observedAt)}` : text("market.observationUnknown");
+  const retrieved = retrievedAt ? `${text("market.retrievedAt")}: ${freshnessLabel(retrievedAt)}` : "";
+  return retrieved ? `${observed} · ${retrieved}` : observed;
 }
 
 function confidenceLabel(item) {
@@ -625,16 +676,24 @@ function renderMarketSnapshot(data) {
     return;
   }
   const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
-  status.textContent = `${formatIRR(sourceTotal)} quote معتبر · ${freshnessLabel(data.updatedAt)}`;
+  status.textContent = `${formatIRR(sourceTotal)} قیمت معتبر · ${freshnessLabel(data.updatedAt)}`;
   status.className = "data-note";
   const marketKeys = ["gold", "dollar", "silver", "bitcoin", "ethereum", "bourseIndex"];
   const items = marketKeys.map((key) => {
     const item = data.assets[key];
     const label = text(`market.labels.${key}.title`, text(`assets.${key}.title`, key));
-    return item ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${Number(item.changePct) > 0.05 ? "positive" : Number(item.changePct) < -0.05 ? "negative" : "muted"}">${Number.isFinite(Number(item.changePct)) ? `${Number(item.changePct) > 0 ? "+" : ""}${formatPercent(item.changePct)}` : "تغییر روزانه نامشخص"}</span><small>${freshnessLabel(item.asOf || data.updatedAt)} · ${escapeHTML(confidenceLabel(item).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>داده در دسترس نیست</small></article>`;
+    const hasPrice = item && item.status !== "conflicted" && item.price !== null && item.price !== undefined && Number.isFinite(Number(item.price));
+    if (!hasPrice) {
+      const quality = item?.status === "conflicted" ? text("market.conflicted") : text("market.unavailable");
+      return `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>${escapeHTML(quality)}</small></article>`;
+    }
+    const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
+    const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
+    const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange");
+    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, data.updatedAt))}</small></article>`;
   });
   const fixed = data.funds?.fixedIncome;
-  items.push(fixed ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-fixed"></span><strong>درآمد ثابت</strong></div><b>${formatPercent(fixed.effectiveAnnualReturn)}</b><span class="muted">بازده موثر سالانه</span><small>${freshnessLabel(data.updatedAt)} · ${escapeHTML(confidenceLabel(fixed).label)}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>درآمد ثابت</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
+  items.push(fixed && fixed.effectiveAnnualReturn !== null && fixed.effectiveAnnualReturn !== undefined && Number.isFinite(Number(fixed.effectiveAnnualReturn)) ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-fixed"></span><strong>درآمد ثابت</strong></div><b>${formatPercent(fixed.effectiveAnnualReturn)}</b><span class="muted">بازده موثر سالانه</span><small>${escapeHTML(confidenceLabel(fixed).label)}</small><small>${escapeHTML(marketTimeLabels(fixed, data.updatedAt))}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>درآمد ثابت</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
   container.innerHTML = items.join("");
 }
 
@@ -645,9 +704,16 @@ function renderMarketDiagnostics(data) {
     container.innerHTML = `<div class="empty-state">تشخیص منبع برای این پاسخ در دسترس نیست.</div>`;
     return;
   }
-  const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(id)}</strong><small>${item.status === "fulfilled" ? "پاسخ داده" : "ناموفق"}</small></div><b>${formatIRR(item.quoteCount || 0)} quote</b></div>`).join("");
-  const assets = Object.entries(data.diagnostics.assets || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(id)}</strong><small>${formatIRR(item.successful || 0)} از ${formatIRR(item.attempted || 0)} منبع</small></div><b class="${item.successful ? "positive" : "negative"}">${item.successful ? "قابل استفاده" : "در دسترس نیست"}</b></div>`).join("");
-  container.innerHTML = `<div><span class="kicker">منابع</span>${providers || `<div class="empty-state">موردی نیست.</div>`}</div><div><span class="kicker">پوشش دارایی</span>${assets || `<div class="empty-state">موردی نیست.</div>`}</div><div class="diagnostic-method"><span class="kicker">روش تجمیع</span><p>قیمت هر دارایی از میانه quoteهای معتبر منابع پاسخ‌گو ساخته می‌شود؛ منبع ناموفق حذف می‌شود و داده قدیمی یا ساختگی جایگزین نمی‌شود.</p></div>`;
+  const providerNames = { providerA: "TGJU", providerB: "Bonbast", providerC: "Navasan", auxiliary: "ChartGoldPrice", coinGecko: "CoinGecko", binance: "Binance", metalsLive: "Metals.live", yahooMetals: "Yahoo Finance", tsetmc: "TSETMC" };
+  const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(providerNames[id] || id)}</strong><small>${item.status === "fulfilled" ? "پاسخ داده" : "ناموفق"}</small></div><b>${formatIRR(item.quoteCount || 0)} قیمت</b></div>`).join("");
+  const assets = Object.entries(data.diagnostics.assets || {}).map(([id, item]) => {
+    const label = text(`market.labels.${id}.title`, text(`assets.${id}.title`, id));
+    const unavailable = item.status === "conflicted" ? text("market.conflicted") : "در دسترس نیست";
+    return `<div class="diagnostic-row"><div><strong>${escapeHTML(label)}</strong><small>${formatIRR(item.successful || 0)} از ${formatIRR(item.attempted || 0)} منبع</small></div><b class="${item.successful ? "positive" : "negative"}">${item.successful ? "قابل استفاده" : escapeHTML(unavailable)}</b></div>`;
+  }).join("");
+  const consensusNote = data.consensusCalibrated === false ? text("market.consensusUncalibrated") : text("market.consensusCalibrated");
+  const responseTime = Number.isFinite(Number(data.diagnostics.responseTimeMs)) ? `<p>${escapeHTML(text("market.responseTime"))}: ${formatIRR(data.diagnostics.responseTimeMs)} ${escapeHTML(text("market.milliseconds"))} / ${formatIRR(data.diagnostics.interactiveBudgetMs || 3500)} ${escapeHTML(text("market.milliseconds"))}</p>` : "";
+  container.innerHTML = `<div><span class="kicker">منابع</span>${providers || `<div class="empty-state">موردی نیست.</div>`}</div><div><span class="kicker">پوشش دارایی</span>${assets || `<div class="empty-state">موردی نیست.</div>`}</div><div class="diagnostic-method"><span class="kicker">روش تجمیع</span><p>${escapeHTML(text("market.aggregationPolicy"))} ${escapeHTML(consensusNote)}</p>${responseTime}</div>`;
 }
 
 function renderDashboard() {
@@ -737,10 +803,17 @@ function renderReasons(profile, historyPortfolio) {
 }
 
 function renderContributionPlan(plan) {
-  contributionPlanEl.innerHTML = ASSET_KEYS.map((key) => {
+  const rows = ASSET_KEYS.map((key) => {
     const meta = assetMeta(key);
-    return `<div class="contribution-row"><span><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span>${escapeHTML(meta.title)}</span><strong>${formatIRR(plan.amounts[key])} ${escapeHTML(text("currencyUnit"))}</strong></div>`;
+    const drift = Number(plan.drift?.[key]) || 0;
+    const driftLabel = `${drift > 0 ? "+" : ""}${formatPercent(drift)} ${text("allocation.percentagePoints")}`;
+    return `<div class="contribution-row"><span><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span>${escapeHTML(meta.title)}<small>${escapeHTML(text("allocation.current"))} ${formatPercent(plan.currentWeights?.[key] || 0)} · ${escapeHTML(text("allocation.target"))} ${formatPercent(plan.weights[key])} · ${escapeHTML(text("allocation.drift"))} ${escapeHTML(driftLabel)}</small></span><strong>${formatIRR(plan.amounts[key])} ${escapeHTML(text("currencyUnit"))}</strong></div>`;
   }).join("");
+  const excluded = Number(plan.excludedInvestableTotal) || 0;
+  const note = excluded > 0 ? `<p class="data-note">${escapeHTML(text("allocation.excludedHoldings"))} ${formatIRR(excluded)} ${escapeHTML(text("currencyUnit"))}</p>` : "";
+  const missingCount = Number(plan.excludedMissingCount) || 0;
+  const missingNote = missingCount > 0 ? `<p class="data-note">${escapeHTML(text("allocation.excludedMissingPrices"))} ${formatIRR(missingCount)}</p>` : "";
+  contributionPlanEl.innerHTML = rows + note + missingNote;
 }
 
 function renderLineChart(container, points, valueKey = "nominal", label = "") {
@@ -843,6 +916,25 @@ function populatePortfolioAssetOptions() {
   }
 }
 
+function renderEmergencyCoverage(portfolioResult = null) {
+  const result = portfolioResult || calculatePortfolio(readPortfolio(), liveMarket || {});
+  const hasTransactions = result.transactions.length > 0;
+  const essentialExpenses = Math.max(0, numberFromInput($("#essential-monthly-expenses")?.value));
+  const coverageMonths = essentialExpenses > 0 ? result.liquidTotal / essentialExpenses : null;
+  const coverageLabel = coverageMonths === null
+    ? text("portfolio.coverageMissing")
+    : `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(coverageMonths)} ${text("portfolio.months")}`;
+  const coverageMetric = $("#portfolio-emergency-coverage");
+  if (coverageMetric) coverageMetric.textContent = coverageLabel;
+  const emergencyStatus = $("#emergency-fund-status");
+  if (emergencyStatus) emergencyStatus.textContent = coverageMonths === null
+    ? text(`portfolio.emergency.${legacyEmergencyFund}`)
+    : `${coverageLabel} · ${text(`portfolio.emergency.${coverageMonths >= 6 ? "complete" : coverageMonths >= 1 ? "partial" : "none"}`)}`;
+  const liquidMetric = $("#portfolio-liquid-total");
+  if (liquidMetric) liquidMetric.textContent = hasTransactions ? portfolioValueLabel(result.liquidTotal) : "—";
+  return { coverageMonths, status: coverageMonths === null ? legacyEmergencyFund : coverageMonths >= 6 ? "complete" : coverageMonths >= 1 ? "partial" : "none" };
+}
+
 function renderPortfolio() {
   if (!portfolioAllocationEl) return;
   populatePortfolioAssetOptions();
@@ -861,6 +953,9 @@ function renderPortfolio() {
   $("#portfolio-cagr").textContent = !completeValuation || result.cagr === null ? text("portfolio.unavailable") : formatPercent(result.cagr * 100);
   $("#portfolio-real-return").textContent = !completeValuation || result.inflationAdjustedReturn === null ? text("portfolio.unavailable") : formatPercent(result.inflationAdjustedReturn * 100);
   $("#portfolio-start-date").textContent = result.trackingStart ? formatDate(result.trackingStart) : text("portfolio.notStarted");
+  $("#portfolio-net-worth").textContent = hasTransactions && !result.missingPrices.length ? portfolioValueLabel(result.netWorth) : text("portfolio.unavailable");
+  $("#portfolio-investable-total").textContent = hasTransactions && !result.missingPrices.length ? portfolioValueLabel(result.investableTotal) : text("portfolio.unavailable");
+  renderEmergencyCoverage(result);
   const versionLabel = version.label === "Initial portfolio" ? text("portfolio.initialLabel") : version.label;
   $("#portfolio-version-label").textContent = versionLabel;
   $("#portfolio-version-count").textContent = `${portfolio.versions.length} ${text("portfolio.versionCount")}`;
@@ -940,12 +1035,14 @@ function openAssetDrawer(assetId) {
   else drawer.setAttribute("open", "");
 }
 
-function renderSimulation(simulation, monteCarlo) {
+function renderSimulation(simulation, monteCarlo, validation = null) {
   simulationSummaryEl.innerHTML = [
     [text("analysis.invested"), `${formatIRR(simulation.totalInvested)} ${text("currencyUnit")}`],
     [text("analysis.final"), `${formatIRR(simulation.finalValue)} ${text("currencyUnit")}`],
     [text("analysis.realFinal"), `${formatIRR(simulation.finalRealValue)} ${text("currencyUnit")}`],
     [text("analysis.drawdown"), formatPercent(simulation.maxDrawdown * 100)],
+    [text("analysis.volatility"), formatPercent((monteCarlo.volatility || 0) * 100)],
+    [text("analysis.sortino"), Number.isFinite(monteCarlo.sortino) ? monteCarlo.sortino.toFixed(2) : "—"],
   ].map(([label, value]) => `<div class="metric"><small>${escapeHTML(label)}</small><strong>${escapeHTML(value)}</strong></div>`).join("");
   renderLineChart(simulationChartEl, simulation.points.filter((point, index) => index % Math.max(1, Math.floor(simulation.points.length / 18)) === 0 || index === simulation.points.length - 1), "nominal", text("analysis.path"));
   monteCarloEl.innerHTML = [
@@ -956,6 +1053,10 @@ function renderSimulation(simulation, monteCarlo) {
   const p10 = Number(monteCarlo.nominal.p10);
   const p90 = Number(monteCarlo.nominal.p90);
   $("#monthly-range").textContent = Number.isFinite(p10) && Number.isFinite(p90) ? `${formatIRR(p10)} تا ${formatIRR(p90)}` : "—";
+  const methodNames = { gaussian: text("analysis.modelGaussian"), ewma: text("analysis.modelEwma"), "block-bootstrap": text("analysis.modelBootstrap") };
+  const validationStatus = validation?.available ? text("analysis.validationPassed") : text("analysis.validationInsufficient");
+  const assumptionVersion = monteCarlo.model?.fixed?.assumptionVersion || "ir-planning-v1";
+  $("#analysis-method-note").textContent = `${text("analysis.modelVersion")}: ${methodNames[monteCarlo.method] || methodNames.gaussian} · ${text("analysis.monteCarloVersion")}: ${monteCarlo.modelVersion} · ${text("analysis.modelAssumptionVersion")}: ${assumptionVersion} · ${text("analysis.validation")}: ${validationStatus}`;
   const scenarioEl = $("#scenario-comparison");
   if (scenarioEl) {
     const scenarios = [["محتاطانه", monteCarlo.nominal.p10, "نتیجه صدک ۱۰ مدل", "scenario-cautious"], ["میانه", monteCarlo.nominal.p50, "نتیجه صدک ۵۰ مدل", "scenario-base"], ["خوش‌بینانه", monteCarlo.nominal.p90, "نتیجه صدک ۹۰ مدل", "scenario-positive"]];
@@ -968,8 +1069,15 @@ function renderBacktest(result) {
     backtestEl.innerHTML = `<div class="empty-state">${escapeHTML(text("backtest.insufficient"))}</div>`;
     return;
   }
-  const metric = (label, value, percent = false) => `<div class="metric"><small>${escapeHTML(label)}</small><strong>${percent ? formatPercent(value * 100) : formatIRR(value) + " " + text("currencyUnit")}</strong></div>`;
-  backtestEl.innerHTML = `<div class="backtest-note">${escapeHTML(result.estimated ? text("backtest.partial") : text("backtest.full"))} ${escapeHTML(text("backtest.observations"))}: ${escapeHTML(String(result.observations))}</div><div class="metric-grid">${metric(text("backtest.medianFinal"), result.median.finalValue)}${metric(text("backtest.medianCagr"), result.median.cagr, true)}${metric(text("backtest.medianReal"), result.median.inflationAdjustedReturn, true)}${metric(text("backtest.medianDrawdown"), result.median.maxDrawdown, true)}</div><div class="best-worst"><div><small>${escapeHTML(text("backtest.best"))}</small><strong>${escapeHTML(result.best.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.best.end)}</strong><span>${formatPercent(result.best.cagr * 100)}</span></div><div><small>${escapeHTML(text("backtest.worst"))}</small><strong>${escapeHTML(result.worst.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.worst.end)}</strong><span>${formatPercent(result.worst.cagr * 100)}</span></div></div>`;
+  const metric = (label, value, percent = false) => {
+    const formatted = value === null || value === undefined || !Number.isFinite(Number(value)) ? "—" : percent ? formatPercent(Number(value) * 100) : `${formatIRR(value)} ${text("currencyUnit")}`;
+    return `<div class="metric"><small>${escapeHTML(label)}</small><strong>${escapeHTML(formatted)}</strong></div>`;
+  };
+  const riskMetrics = `${metric(text("backtest.medianVolatility"), result.median.volatility, true)}${metric(text("backtest.medianSortino"), result.median.sortino, true)}`;
+  const sharpe = Number.isFinite(result.median.sharpe)
+    ? `<details class="advanced-risk-metric"><summary>${escapeHTML(text("backtest.advancedSharpe"))}</summary><div class="metric-grid">${metric(text("backtest.medianSharpe"), result.median.sharpe, true)}<p class="data-note">${escapeHTML(text("backtest.sharpeReference"))}: ${formatPercent((result.referenceAnnualReturn || 0) * 100)} ${escapeHTML(text("backtest.referenceFixedIncome"))}</p></div></details>`
+    : "";
+  backtestEl.innerHTML = `<div class="backtest-note">${escapeHTML(result.estimated ? text("backtest.partial") : text("backtest.full"))} ${escapeHTML(text("backtest.observations"))}: ${escapeHTML(String(result.observations))}</div><div class="metric-grid">${metric(text("backtest.medianFinal"), result.median.finalValue)}${metric(text("backtest.medianCagr"), result.median.cagr, true)}${metric(text("backtest.medianReal"), result.median.inflationAdjustedReturn, true)}${metric(text("backtest.medianDrawdown"), result.median.maxDrawdown, true)}${riskMetrics}</div>${sharpe}<div class="best-worst"><div><small>${escapeHTML(text("backtest.best"))}</small><strong>${escapeHTML(result.best.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.best.end)}</strong><span>${formatPercent(result.best.cagr * 100)}</span></div><div><small>${escapeHTML(text("backtest.worst"))}</small><strong>${escapeHTML(result.worst.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.worst.end)}</strong><span>${formatPercent(result.worst.cagr * 100)}</span></div></div>`;
 }
 
 function renderHistory() {
@@ -1050,23 +1158,80 @@ function calculatePlan(inputs) {
   const recommendation = recommendAllocation(inputs.profile);
   const history = readHistory();
   const portfolio = portfolioFromHistory(history, liveMarket);
-  const currentHoldings = Object.fromEntries(ASSET_KEYS.map((key) => [key, portfolio.categories[key].value]));
+  const ledger = calculatePortfolio(readPortfolio(), liveMarket || {});
+  const currentHoldings = ledger.transactions.length
+    ? Object.fromEntries(ASSET_KEYS.map((asset) => [asset, Math.max(0, Number(ledger.values[asset]?.value) || 0)]))
+    : Object.fromEntries(ASSET_KEYS.map((key) => [key, portfolio.categories[key].value]));
   const contribution = contributionRebalance(currentHoldings, recommendation.weights, inputs.monthlyContribution);
-  const modelResult = estimateReturnModel(liveMarket || {}, DEFAULT_ASSUMPTIONS);
-  const simulation = simulatePlan({ ...inputs, allocation: recommendation.weights, annualReturns: modelResult.model });
-  const monteCarlo = runMonteCarlo({ ...inputs, allocation: recommendation.weights, returnModel: modelResult.model, historical: modelResult.historical });
-  return { inputs, recommendation, contribution, simulation, monteCarlo, portfolio, modelResult };
+  contribution.excludedInvestableTotal = ledger.transactions.length
+    ? Math.max(0, ledger.investableTotal - Object.values(currentHoldings).reduce((total, value) => total + value, 0))
+    : 0;
+  contribution.excludedMissingCount = ledger.transactions.length ? ledger.missingPrices.length : 0;
+  return { inputs, recommendation, contribution, portfolio };
+}
+
+function cancelAnalysisWorker() {
+  if (!analysisWorkerTask) return;
+  analysisRequestId += 1;
+  analysisWorkerTask.worker?.terminate();
+  analysisWorkerTask.resolve(null);
+  analysisWorkerTask = null;
+}
+
+function runAnalysisWorker(task) {
+  cancelAnalysisWorker();
+  const requestId = ++analysisRequestId;
+  if (typeof Worker === "undefined") return Promise.reject(new Error("analysis-worker-unavailable"));
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./src/analysis.worker.js", import.meta.url), { type: "module" });
+    analysisWorkerTask = { worker, resolve, taskType: task.type };
+    worker.addEventListener("message", (event) => {
+      if (event.data?.requestId !== requestId || analysisRequestId !== requestId) return;
+      worker.terminate();
+      analysisWorkerTask = null;
+      if (event.data.error) reject(new Error(event.data.error));
+      else resolve(event.data.result);
+    });
+    worker.addEventListener("error", () => {
+      if (analysisRequestId !== requestId) return;
+      worker.terminate();
+      analysisWorkerTask = null;
+      reject(new Error("analysis-worker-failed"));
+    }, { once: true });
+    worker.postMessage({ requestId, task });
+  });
+}
+
+async function runPlanAnalysis(plan = lastPlan) {
+  if (!plan) return;
+  simulationSummaryEl.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.running"))}</div>`;
+  try {
+    const result = await runAnalysisWorker({
+      type: "plan-analysis",
+      options: { ...plan.inputs, market: liveMarket || {}, allocation: plan.recommendation.weights },
+    });
+    if (!result || appStore.getState().activeView !== "simulation" || lastPlan !== plan) return;
+    analyzedPlan = plan;
+    preferredAnalysisMethod = result.monteCarlo.method;
+    renderSimulation(result.simulation, result.monteCarlo, result.validation);
+  } catch {
+    if (appStore.getState().activeView === "simulation" && lastPlan === plan) simulationSummaryEl.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.failed"))}</div>`;
+  }
 }
 
 function renderPlanOutput(plan) {
-  const { inputs, recommendation, contribution, simulation, monteCarlo, portfolio } = plan;
+  cancelAnalysisWorker();
+  const { inputs, recommendation, contribution, portfolio } = plan;
   $("#monthly-investment").textContent = formatIRR(inputs.monthlyContribution);
   $("#monthly-rate").textContent = formatPercent(inputs.contributionRate);
   $("#profile-label").textContent = text(`profileLabels.${inputs.profile.riskTolerance}`, text("profileLabels.conservative"));
   allocationListEl.innerHTML = allocationRows(recommendation.weights, contribution.amounts);
   renderContributionPlan(contribution);
   renderReasons(inputs.profile, portfolio);
-  renderSimulation(simulation, monteCarlo);
+  $("#monthly-range").textContent = text("analysis.openForRange");
+  simulationSummaryEl.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.lazy"))}</div>`;
+  monteCarloEl.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.lazy"))}</div>`;
+  simulationChartEl.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.lazy"))}</div>`;
 }
 
 function renderPlan({ saveHistoryRecord = true, scrollIntoView = true, validate = true } = {}) {
@@ -1489,32 +1654,92 @@ async function importHistoryFile(event) {
   }
 }
 
-function runBacktest() {
+async function runBacktest() {
   if (!lastPlan) {
     navigationController.goTo("plan");
     renderPlan();
   }
   if (!lastPlan) return;
-  const result = backtestHistorical({
-    market: liveMarket || {},
-    allocation: lastPlan.recommendation.weights,
-    initialInvestment: lastPlan.inputs.initialInvestment,
-    monthlyContribution: lastPlan.inputs.monthlyContribution,
-    contributionGrowth: lastPlan.inputs.contributionGrowth,
-    inflationRate: lastPlan.inputs.inflationRate,
-    horizonYears: lastPlan.inputs.profile.horizonYears,
-    rebalance: lastPlan.inputs.rebalance,
-  });
-  renderBacktest(result);
+  backtestEl.innerHTML = `<div class="empty-state">${escapeHTML(text("backtest.running"))}</div>`;
+  const result = await runAnalysisWorker({
+    type: "backtest",
+    options: {
+      market: liveMarket || {},
+      allocation: lastPlan.recommendation.weights,
+      initialInvestment: lastPlan.inputs.initialInvestment,
+      monthlyContribution: lastPlan.inputs.monthlyContribution,
+      contributionGrowth: lastPlan.inputs.contributionGrowth,
+      inflationRate: lastPlan.inputs.inflationRate,
+      horizonYears: lastPlan.inputs.profile.horizonYears,
+      rebalance: lastPlan.inputs.rebalance,
+    },
+  }).catch(() => null);
+  if (appStore.getState().activeView !== "simulation") return;
+  if (result) renderBacktest(result);
+  else backtestEl.innerHTML = `<div class="empty-state">${escapeHTML(text("analysis.failed"))}</div>`;
   $("#backtest-section").open = true;
   $("#backtest-section").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function runGoalPlanning(event) {
+  event.preventDefault();
+  const targetToday = Math.max(0, numberFromInput($("#goal-target-today").value));
+  const targetDate = new Date(`${$("#goal-target-date").value}T00:00:00Z`);
+  const years = (targetDate.getTime() - Date.now()) / (365.25 * 24 * 60 * 60 * 1000);
+  if (!(targetToday > 0) || !(years > 0)) {
+    $("#goal-result").textContent = text("goal.invalid");
+    return;
+  }
+  $("#goal-result").textContent = text("goal.running");
+  const currentPortfolio = calculatePortfolio(readPortfolio(), liveMarket || {});
+  const modeledAssets = ["fixed", "gold", "currency", "silver"];
+  const missingModeledAsset = modeledAssets.some((assetId) => (Number(currentPortfolio.holdings[assetId]) || 0) > 0 && currentPortfolio.values[assetId]?.value === null);
+  if (missingModeledAsset) {
+    $("#goal-result").textContent = text("goal.missingModelPrices");
+    return;
+  }
+  const modeledCapital = modeledAssets.reduce((total, assetId) => total + Math.max(0, Number(currentPortfolio.values[assetId]?.value) || 0), 0);
+  const excludedCapital = Math.max(0, currentPortfolio.investableTotal - modeledCapital);
+  const excludedMissingCount = currentPortfolio.missingPrices.filter((assetId) => !modeledAssets.includes(assetId)).length;
+  const inputs = getPlanInputs();
+  const allocation = lastPlan?.recommendation.weights || recommendAllocation(inputs.profile).weights;
+  const result = await runAnalysisWorker({
+    type: "goal",
+    options: {
+      market: liveMarket || {},
+      allocation,
+      initialInvestment: modeledCapital,
+      monthlyContribution: lastPlan?.inputs.monthlyContribution || inputs.monthlyContribution,
+      contributionGrowth: inputs.contributionGrowth,
+      inflationRate: inputs.inflationRate,
+      horizonYears: years,
+      targetToday,
+      desiredProbability: Number($("#goal-success-target").value),
+      paths: 1000,
+      method: preferredAnalysisMethod,
+      rebalance: inputs.rebalance,
+    },
+  }).catch(() => null);
+  if (appStore.getState().activeView !== "simulation") return;
+  if (!result?.available) {
+    $("#goal-result").textContent = text("goal.unavailable");
+    return;
+  }
+  const success = formatPercent(result.successProbability * 100);
+  const required = result.feasible ? `${formatIRR(result.requiredMonthlyContribution)} ${text("currencyUnit")}` : text("goal.unreachable");
+  const excludedNote = excludedCapital > 0 ? ` ${text("goal.excludedCapital")}: ${formatIRR(excludedCapital)} ${text("currencyUnit")}.` : "";
+  const missingNote = excludedMissingCount > 0 ? ` ${text("goal.excludedMissingPrices")}: ${formatIRR(excludedMissingCount)}.` : "";
+  const modelNote = ` ${text("goal.modelVersion")}: ${result.modelVersion} · ${text("analysis.modelAssumptionVersion")}: ${result.modelAssumptionVersion || "ir-planning-v1"}.`;
+  $("#goal-result").innerHTML = `<div class="goal-metrics"><div><small>${escapeHTML(text("goal.success"))}</small><strong>${escapeHTML(success)}</strong></div><div><small>${escapeHTML(text("goal.outcomes"))}</small><strong>${formatIRR(result.outcomes.p10)} / ${formatIRR(result.outcomes.p50)} / ${formatIRR(result.outcomes.p90)} ${escapeHTML(text("currencyUnit"))}</strong></div><div><small>${escapeHTML(text("goal.targetNominal"))}</small><strong>${formatIRR(result.targetNominal)} ${escapeHTML(text("currencyUnit"))}</strong></div><div><small>${escapeHTML(text("goal.requiredContribution"))}</small><strong>${escapeHTML(required)}</strong></div></div><p>${escapeHTML(result.estimated ? text("analysis.estimated") : text("analysis.observed"))}${escapeHTML(excludedNote)}${escapeHTML(missingNote)}${escapeHTML(modelNote)}</p>`;
+  if (analyzedPlan !== lastPlan && appStore.getState().activeView === "simulation") runPlanAnalysis(lastPlan);
 }
 
 async function loadMarket() {
   setStatus(text("status.loading", fallbackCopy.status.loading), "loading");
   appStore.setState({ marketStatus: "loading", error: null });
   try {
-    const response = await fetchWithTimeout("/api/market", { cache: "default" });
+    const assets = marketRequestAssets();
+    const response = await fetchWithTimeout(`/api/market?assets=${encodeURIComponent(assets.join(","))}`, { cache: "default" });
     if (!response.ok) throw new Error("Market request failed");
     liveMarket = await response.json();
     if (!appStore.getState().marketCacheDisabled) writeJson(MARKET_CACHE_KEY, liveMarket);
@@ -1533,6 +1758,18 @@ async function loadMarket() {
     renderDashboard();
     setStatus(liveMarket ? text("status.cached", fallbackCopy.status.cached) : text("status.timeout", fallbackCopy.status.unavailable), "warning");
   }
+}
+
+function marketRequestAssets() {
+  const requested = new Set([...Object.keys(text("market.labels", {})), "fixedIncome"]);
+  const supported = new Set(Object.keys(INSTRUMENT_REGISTRY));
+  const portfolio = readPortfolio();
+  assetIds(portfolio).forEach((assetId) => {
+    const definition = portfolio.assets?.[assetId] || PORTFOLIO_ASSETS[assetId];
+    const marketKey = definition?.marketKey;
+    if (marketKey && supported.has(marketKey)) requested.add(marketKey);
+  });
+  return [...requested].filter((assetId) => supported.has(assetId) || assetId === "fixedIncome");
 }
 
 async function loadCopy() {
@@ -1555,6 +1792,10 @@ function bindEvents() {
   }));
   $("#refresh-market").addEventListener("click", loadMarket);
   $("#run-backtest").addEventListener("click", runBacktest);
+  $("#goal-form")?.addEventListener("submit", runGoalPlanning);
+  $("#analysis-section")?.addEventListener("toggle", () => {
+    if ($("#analysis-section").open && appStore.getState().activeView === "simulation" && lastPlan && analyzedPlan !== lastPlan) runPlanAnalysis(lastPlan);
+  });
   $("#export-history").addEventListener("click", exportHistory);
   $("#import-history").addEventListener("click", () => $("#history-file").click());
   $("#history-file").addEventListener("change", importHistoryFile);
@@ -1604,6 +1845,8 @@ function bindEvents() {
     if (toggle) toggle.checked = state.sidebarCollapsed;
     const cacheToggle = $("#settings-market-cache");
     if (cacheToggle) cacheToggle.checked = state.marketCacheDisabled;
+    if (state.activeView !== "simulation") cancelAnalysisWorker();
+    else if ($("#analysis-section")?.open && lastPlan && analyzedPlan !== lastPlan && analysisWorkerTask?.taskType !== "plan-analysis") runPlanAnalysis(lastPlan);
   });
   $("#contribution-rate").addEventListener("input", (event) => { $("#contribution-output").textContent = formatPercent(Number(event.target.value), 0); });
   $$('[data-number-input]').forEach((input) => {
@@ -1611,8 +1854,8 @@ function bindEvents() {
     input.addEventListener("input", formatNumberInput);
   });
   $$("#plan-form select, #plan-form input").forEach((element) => {
-    element.addEventListener("change", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); previewPlanIfVisible(); renderDashboard(); });
-    element.addEventListener("input", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); previewPlanIfVisible(); renderDashboard(); });
+    element.addEventListener("change", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); previewPlanIfVisible(); renderDashboard(); renderEmergencyCoverage(); });
+    element.addEventListener("input", () => { persistProfile(); syncPlanState(); renderSettingsAssumptions(); previewPlanIfVisible(); renderDashboard(); renderEmergencyCoverage(); });
   });
   window.addEventListener("error", () => {
     const error = $("#app-error");
@@ -1637,6 +1880,9 @@ async function init() {
   renderDashboard();
   renderSettingsAssumptions();
   $("#advanced-date").value = new Date().toISOString().slice(0, 10);
+  const goalDate = new Date();
+  goalDate.setFullYear(goalDate.getFullYear() + 5);
+  $("#goal-target-date").value = goalDate.toISOString().slice(0, 10);
   updateAdvancedTransactionFields();
   await loadMarket();
   showStorageWarning();

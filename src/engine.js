@@ -7,7 +7,16 @@
  * DOM, network, storage, or provider-specific code.
  */
 
-export const ASSET_KEYS = ["fixed", "gold", "currency", "silver"];
+import { PLANNING_ASSET_TO_SLEEVE } from "./market/catalog.js";
+
+export const ASSET_KEYS = Object.freeze(Object.keys(PLANNING_ASSET_TO_SLEEVE));
+export const MODEL_ASSUMPTION_VERSION = "ir-planning-v1";
+export const MONTE_CARLO_MODEL_VERSION = "mc-gaussian-v1";
+export const BOOTSTRAP_MODEL_VERSION = "mc-block-bootstrap-v1";
+export const MIN_PAIRED_MONTHS = 24;
+export const MIN_WALK_FORWARD_FORECASTS = 24;
+export const BOOTSTRAP_BLOCK_MONTHS = 3;
+export const EWMA_HALF_LIFE_MONTHS = 12;
 
 export const DEFAULT_ALLOCATION = Object.freeze({
   fixed: 72,
@@ -57,6 +66,17 @@ export function standardDeviation(values) {
   if (valid.length < 2) return 0;
   const average = mean(valid);
   return Math.sqrt(mean(valid.map((value) => (value - average) ** 2)));
+}
+
+export function annualizedVolatility(returns) {
+  return standardDeviation(returns) * Math.sqrt(12);
+}
+
+export function sortinoRatio(returns, targetMonthlyReturn = 0) {
+  const valid = returns.filter(Number.isFinite);
+  if (valid.length < 2) return null;
+  const downside = Math.sqrt(mean(valid.map((value) => Math.min(0, value - targetMonthlyReturn) ** 2)));
+  return downside > EPSILON ? ((mean(valid) - targetMonthlyReturn) / downside) * Math.sqrt(12) : null;
 }
 
 export function percentile(values, probability) {
@@ -207,10 +227,7 @@ function seriesReturns(series) {
   })).filter((point) => Number.isFinite(point.value) && point.value > -1);
 }
 
-/**
- * Convert provider history into aligned monthly returns. Missing assets use
- * the transparent model assumption and are marked as estimated.
- */
+/** Align observed returns with modeled fallbacks while retaining observation flags. */
 export function buildHistoricalReturns(market, assumptions = DEFAULT_ASSUMPTIONS) {
   const marketKeys = { fixed: null, gold: "gold", currency: "dollar", silver: "silver" };
   const actual = {};
@@ -248,34 +265,115 @@ export function buildHistoricalReturns(market, assumptions = DEFAULT_ASSUMPTIONS
 
 function currentFixedReturn(market) {
   const value = market && market.funds && market.funds.fixedIncome && market.funds.fixedIncome.effectiveAnnualReturn;
-  return Number.isFinite(Number(value)) ? Number(value) / 100 : null;
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) ? Number(value) / 100 : null;
 }
 
 export function estimateReturnModel(market, assumptions = DEFAULT_ASSUMPTIONS) {
   const historical = buildHistoricalReturns(market, assumptions);
   const model = {};
+  const ewmaModel = {};
   ASSET_KEYS.forEach((asset) => {
-    const values = historical.rows.map((row) => row.returns[asset]).filter(Number.isFinite);
+    const values = historical.rows.filter((row) => row.observed[asset]).map((row) => row.returns[asset]).filter(Number.isFinite);
     const configured = assumptions[asset] || DEFAULT_ASSUMPTIONS[asset];
     const observedAnnual = monthlyToAnnualRate(mean(values));
-    const observedVolatility = standardDeviation(values) * Math.sqrt(12);
+    const observedVolatility = annualizedVolatility(values);
+    const ewmaVolatility = values.length >= MIN_PAIRED_MONTHS ? exponentiallyWeightedVolatility(values, EWMA_HALF_LIFE_MONTHS) : null;
     const officialFixed = asset === "fixed" ? currentFixedReturn(market) : null;
-    model[asset] = {
-      annualReturn: officialFixed ?? (historical.coverage[asset] >= 0.5 ? observedAnnual : configured.annualReturn),
-      annualVolatility: asset === "fixed" ? configured.annualVolatility : historical.coverage[asset] >= 0.5 ? observedVolatility : configured.annualVolatility,
+    const annualReturn = officialFixed ?? (values.length >= MIN_PAIRED_MONTHS ? observedAnnual : configured.annualReturn);
+    const annualVolatility = asset === "fixed" ? configured.annualVolatility : values.length >= MIN_PAIRED_MONTHS ? observedVolatility : configured.annualVolatility;
+    const base = {
+      annualReturn,
+      annualVolatility,
       observations: values.length,
-      observed: historical.coverage[asset] >= 0.5,
+      observed: values.length >= MIN_PAIRED_MONTHS || officialFixed !== null,
+      assumptionVersion: MODEL_ASSUMPTION_VERSION,
     };
+    model[asset] = base;
+    ewmaModel[asset] = { ...base, annualVolatility: ewmaVolatility ?? annualVolatility };
   });
-  return { model, historical, covariance: covarianceMatrix(historical.rows, ASSET_KEYS) };
+  return { model, ewmaModel, historical, referenceAnnualReturn: currentFixedReturn(market), covariance: covarianceMatrix(historical.rows, ASSET_KEYS, model) };
 }
 
-function covarianceMatrix(rows, assets) {
-  const columns = assets.map((asset) => rows.map((row) => Number(row.returns[asset]) || 0));
-  const means = columns.map(mean);
-  return columns.map((column, rowIndex) => columns.map((other, columnIndex) => {
-    if (column.length < 2) return 0;
-    return mean(column.map((value, index) => (value - means[rowIndex]) * (other[index] - means[columnIndex])));
+export function walkForwardValidation(market, assumptions = DEFAULT_ASSUMPTIONS) {
+  const historical = buildHistoricalReturns(market, assumptions);
+  const diagnostics = {};
+  ASSET_KEYS.forEach((asset) => {
+    const observedRows = historical.rows.filter((row) => row.observed[asset]);
+    const losses = { sample: [], ewma: [] };
+    const coverage = { gaussian: 0, ewma: 0, bootstrap: 0 };
+    let forecasts = 0;
+    for (let index = MIN_PAIRED_MONTHS; index < observedRows.length; index += 1) {
+      const training = observedRows.slice(index - MIN_PAIRED_MONTHS, index).map((row) => row.returns[asset]);
+      const actual = observedRows[index].returns[asset];
+      const expected = mean(training);
+      const sampleVolatility = standardDeviation(training);
+      const weightedVolatility = exponentiallyWeightedVolatility(training, EWMA_HALF_LIFE_MONTHS) / Math.sqrt(12);
+      const realizedVariance = (actual - expected) ** 2;
+      losses.sample.push(Math.abs(realizedVariance - sampleVolatility ** 2));
+      losses.ewma.push(Math.abs(realizedVariance - weightedVolatility ** 2));
+      if (Math.abs(actual - expected) <= 1.2816 * sampleVolatility) coverage.gaussian += 1;
+      if (Math.abs(actual - expected) <= 1.2816 * weightedVolatility) coverage.ewma += 1;
+      if (actual >= percentile(training, 0.1) && actual <= percentile(training, 0.9)) coverage.bootstrap += 1;
+      forecasts += 1;
+    }
+    const baselineLoss = mean(losses.sample);
+    const ewmaLoss = mean(losses.ewma);
+    const gaussianCoverage = forecasts ? coverage.gaussian / forecasts : null;
+    const ewmaCoverage = forecasts ? coverage.ewma / forecasts : null;
+    const bootstrapCoverage = forecasts ? coverage.bootstrap / forecasts : null;
+    diagnostics[asset] = {
+      observations: forecasts,
+      available: forecasts >= MIN_WALK_FORWARD_FORECASTS,
+      sampleVolatilityLoss: forecasts ? baselineLoss : null,
+      ewmaVolatilityLoss: forecasts ? ewmaLoss : null,
+      gaussianCoverage,
+      ewmaCoverage,
+      bootstrapCoverage,
+      ewmaEligible: forecasts >= MIN_WALK_FORWARD_FORECASTS && ewmaLoss <= baselineLoss && Math.abs(ewmaCoverage - 0.8) <= Math.abs(gaussianCoverage - 0.8),
+      bootstrapEligible: forecasts >= MIN_WALK_FORWARD_FORECASTS && Math.abs(bootstrapCoverage - 0.8) <= Math.abs(gaussianCoverage - 0.8),
+    };
+  });
+  const eligibleAssets = ASSET_KEYS.filter((asset) => diagnostics[asset].available);
+  return {
+    available: eligibleAssets.length > 0,
+    diagnostics,
+    ewmaEligible: eligibleAssets.length > 0 && eligibleAssets.every((asset) => diagnostics[asset].ewmaEligible),
+    bootstrapEligible: eligibleAssets.length > 0 && eligibleAssets.every((asset) => diagnostics[asset].bootstrapEligible),
+  };
+}
+
+function exponentiallyWeightedVolatility(values, halfLifeMonths = EWMA_HALF_LIFE_MONTHS) {
+  if (values.length < 2) return null;
+  const weights = values.map((_, index) => Math.pow(0.5, (values.length - index - 1) / halfLifeMonths));
+  const weightTotal = sum(weights);
+  const average = sum(values.map((value, index) => value * weights[index])) / weightTotal;
+  const variance = sum(values.map((value, index) => weights[index] * (value - average) ** 2)) / weightTotal;
+  return Math.sqrt(Math.max(variance, 0) * 12);
+}
+
+export function covarianceMatrix(rows, assets = ASSET_KEYS, model = null) {
+  return assets.map((rowAsset, rowIndex) => assets.map((columnAsset, columnIndex) => {
+    const paired = rows.filter((row) => row.observed?.[rowAsset] && row.observed?.[columnAsset])
+      .map((row) => [Number(row.returns[rowAsset]), Number(row.returns[columnAsset])])
+      .filter(([left, right]) => Number.isFinite(left) && Number.isFinite(right));
+    const rowVolatility = Math.max(0, Number(model?.[rowAsset]?.annualVolatility) || 0) / Math.sqrt(12);
+    const columnVolatility = Math.max(0, Number(model?.[columnAsset]?.annualVolatility) || 0) / Math.sqrt(12);
+    if (rowIndex === columnIndex) {
+      if (paired.length < MIN_PAIRED_MONTHS) return rowVolatility ** 2;
+      const values = paired.map(([value]) => value);
+      return standardDeviation(values) ** 2;
+    }
+    if (paired.length < 2) return 0;
+    const leftValues = paired.map(([left]) => left);
+    const rightValues = paired.map(([, right]) => right);
+    const leftDeviation = standardDeviation(leftValues);
+    const rightDeviation = standardDeviation(rightValues);
+    if (leftDeviation <= EPSILON || rightDeviation <= EPSILON) return 0;
+    const leftMean = mean(leftValues);
+    const rightMean = mean(rightValues);
+    const correlation = mean(paired.map(([left, right]) => (left - leftMean) * (right - rightMean))) / (leftDeviation * rightDeviation);
+    const shrinkage = Math.min(1, paired.length / MIN_PAIRED_MONTHS);
+    return clamp(correlation, -1, 1) * shrinkage * rowVolatility * columnVolatility;
   }));
 }
 
@@ -382,7 +480,7 @@ function irr(cashFlows) {
   return null;
 }
 
-function pathMetrics(values, contributions, inflationRate) {
+function pathMetrics(values, contributions, inflationRate, monthlyReturns = [], referenceAnnualReturn = null) {
   const months = Math.max(1, values.length - 1);
   const cashFlows = contributions.map((amount) => -amount);
   cashFlows[cashFlows.length - 1] += values[values.length - 1];
@@ -396,6 +494,11 @@ function pathMetrics(values, contributions, inflationRate) {
     cagr,
     inflationAdjustedReturn: finalRealValue / Math.max(sum(contributions), EPSILON) - 1,
     maxDrawdown: maxDrawdown(values),
+    volatility: annualizedVolatility(monthlyReturns),
+    sortino: sortinoRatio(monthlyReturns),
+    sharpe: Number.isFinite(referenceAnnualReturn) && monthlyReturns.length >= 2
+      ? (monthlyToAnnualRate(mean(monthlyReturns)) - referenceAnnualReturn) / Math.max(annualizedVolatility(monthlyReturns), EPSILON)
+      : null,
     months,
   };
 }
@@ -413,19 +516,22 @@ export function backtestHistorical(options = {}) {
     const holdings = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, 0]));
     const values = [Math.max(0, Number(options.initialInvestment) || 0)];
     const contributions = [Math.max(0, Number(options.initialInvestment) || 0)];
+    const monthlyReturns = [];
     addContribution(holdings, contributions[0], allocation);
     for (let offset = 0; offset < horizon; offset += 1) {
       const contribution = monthlyContributionAt(options.monthlyContribution, options.contributionGrowth, offset);
       addContribution(holdings, contribution, allocation);
       contributions.push(contribution);
+      const valueBeforeReturn = portfolioTotal(holdings);
       applyReturns(holdings, historical.rows[start + offset].returns);
+      if (valueBeforeReturn > EPSILON) monthlyReturns.push(portfolioTotal(holdings) / valueBeforeReturn - 1);
       if (options.rebalance !== false) rebalance(holdings, allocation);
       values.push(portfolioTotal(holdings));
     }
     periods.push({
       start: historical.rows[start].month,
       end: historical.rows[start + horizon - 1].month,
-      ...pathMetrics(values, contributions, Number(options.inflationRate) || 0),
+      ...pathMetrics(values, contributions, Number(options.inflationRate) || 0, monthlyReturns, currentFixedReturn(options.market)),
     });
   }
 
@@ -436,6 +542,7 @@ export function backtestHistorical(options = {}) {
     observations: historical.rows.length,
     coverage: historical.coverage,
     estimated: historical.estimated,
+    referenceAnnualReturn: currentFixedReturn(options.market),
     horizonMonths: horizon,
     periods,
     best,
@@ -445,6 +552,9 @@ export function backtestHistorical(options = {}) {
       cagr: median(periods.map((period) => period.cagr)),
       inflationAdjustedReturn: median(periods.map((period) => period.inflationAdjustedReturn)),
       maxDrawdown: median(periods.map((period) => period.maxDrawdown)),
+      volatility: median(periods.map((period) => period.volatility)),
+      sortino: median(periods.map((period) => period.sortino)),
+      sharpe: median(periods.map((period) => period.sharpe)),
     },
   };
 }
@@ -454,7 +564,9 @@ export function contributionRebalance(currentHoldings, targetAllocation, monthly
   const current = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, Math.max(0, Number(currentHoldings && currentHoldings[asset]) || 0)]));
   const target = normalizeAllocation(targetAllocation);
   const currentTotal = portfolioTotal(current);
-  if (currentTotal <= EPSILON) return { amounts: ASSET_KEYS.reduce((result, asset) => ({ ...result, [asset]: contribution * target[asset] / 100 }), {}), weights: target, current, currentTotal };
+  const currentWeights = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, currentTotal > EPSILON ? current[asset] / currentTotal * 100 : 0]));
+  const drift = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, currentWeights[asset] - target[asset]]));
+  if (currentTotal <= EPSILON) return { amounts: ASSET_KEYS.reduce((result, asset) => ({ ...result, [asset]: contribution * target[asset] / 100 }), {}), weights: target, current, currentTotal, currentWeights, drift };
 
   const desiredAfterContribution = currentTotal + contribution;
   const deficits = {};
@@ -462,7 +574,7 @@ export function contributionRebalance(currentHoldings, targetAllocation, monthly
   const deficitTotal = sum(Object.values(deficits));
   const amounts = {};
   ASSET_KEYS.forEach((asset) => { amounts[asset] = deficitTotal > EPSILON ? contribution * deficits[asset] / deficitTotal : contribution * target[asset] / 100; });
-  return { amounts, weights: normalizeAllocation(amounts), current, currentTotal };
+  return { amounts, weights: normalizeAllocation(amounts), current, currentTotal, currentWeights, drift };
 }
 
 function correlatedDraws(model, covariance, random) {
@@ -481,18 +593,61 @@ function correlatedDraws(model, covariance, random) {
   return Object.fromEntries(assets.map((asset, row) => [asset, rows[row][0] + sum(lower[row].map((value, index) => value * standard[index]))]));
 }
 
+function bootstrapDraws(rows, model, random, cursor) {
+  if (!rows.length) return null;
+  if (cursor.remaining <= 0) {
+    const blockLength = Math.min(BOOTSTRAP_BLOCK_MONTHS, rows.length);
+    cursor.index = Math.floor(random() * (rows.length - blockLength + 1));
+    cursor.remaining = blockLength;
+  }
+  const row = rows[cursor.index];
+  cursor.index += 1;
+  cursor.remaining -= 1;
+  return Object.fromEntries(ASSET_KEYS.map((asset) => [
+    asset,
+    row.observed?.[asset] && model[asset]?.observed ? row.returns[asset] : annualToMonthlyRate(model[asset].annualReturn),
+  ]));
+}
+
+function createSeededRandom(seed = 1) {
+  let state = (Number(seed) >>> 0) || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+}
+
 export function runMonteCarlo(options = {}) {
   const paths = Math.round(clamp(options.paths || 2000, 1000, 10000));
   const horizonYears = clamp(options.horizonYears || 5, 1, 50);
   const allocation = normalizeAllocation(options.allocation);
-  const modelResult = options.returnModel ? { model: options.returnModel, historical: options.historical || null, covariance: options.covariance || (options.historical ? covarianceMatrix(options.historical.rows, ASSET_KEYS) : null) } : estimateReturnModel(options.market, options.assumptions || DEFAULT_ASSUMPTIONS);
+  const modelResult = options.returnModel
+    ? { model: options.returnModel, ewmaModel: options.ewmaModel || options.returnModel, historical: options.historical || null, covariance: options.covariance || (options.historical ? covarianceMatrix(options.historical.rows, ASSET_KEYS, options.returnModel) : null), referenceAnnualReturn: options.referenceAnnualReturn ?? null }
+    : estimateReturnModel(options.market, options.assumptions || DEFAULT_ASSUMPTIONS);
+  const method = ["ewma", "block-bootstrap"].includes(options.method) ? options.method : "gaussian";
+  const selectedModel = method === "ewma" ? modelResult.ewmaModel || modelResult.model : modelResult.model;
+  const covariance = method === "ewma" && modelResult.historical
+    ? covarianceMatrix(modelResult.historical.rows, ASSET_KEYS, selectedModel)
+    : modelResult.covariance;
   const random = typeof options.random === "function" ? options.random : Math.random;
   const finals = [];
   const realFinals = [];
   const drawdowns = [];
+  const volatilities = [];
+  const sortinos = [];
+  const sharpes = [];
+  const goalTarget = Number(options.goalTarget);
+  const targetNominal = Number.isFinite(goalTarget) && goalTarget > 0
+    ? goalTarget * Math.pow(1 + Math.max(-0.99, Number(options.inflationRate) || 0), horizonYears)
+    : null;
+  let successfulGoals = 0;
 
   for (let path = 0; path < paths; path += 1) {
     const holdings = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, 0]));
+    const monthlyReturns = [];
+    const bootstrapCursor = { index: 0, remaining: 0 };
     let totalInvested = Math.max(0, Number(options.initialInvestment) || 0);
     addContribution(holdings, totalInvested, allocation);
     const values = [portfolioTotal(holdings)];
@@ -500,24 +655,92 @@ export function runMonteCarlo(options = {}) {
       const contribution = monthlyContributionAt(options.monthlyContribution, options.contributionGrowth, month);
       totalInvested += contribution;
       addContribution(holdings, contribution, allocation);
-      applyReturns(holdings, correlatedDraws(modelResult.model, modelResult.covariance, random));
+      const valueBeforeReturn = portfolioTotal(holdings);
+      const returns = method === "block-bootstrap"
+        ? bootstrapDraws(modelResult.historical?.rows || [], selectedModel, random, bootstrapCursor) || correlatedDraws(selectedModel, covariance, random)
+        : correlatedDraws(selectedModel, covariance, random);
+      applyReturns(holdings, returns);
+      if (valueBeforeReturn > EPSILON) monthlyReturns.push(portfolioTotal(holdings) / valueBeforeReturn - 1);
       if (options.rebalance !== false) rebalance(holdings, allocation);
       values.push(portfolioTotal(holdings));
     }
     finals.push(values[values.length - 1]);
+    if (targetNominal !== null && values[values.length - 1] >= targetNominal) successfulGoals += 1;
     realFinals.push(realValue(values[values.length - 1], Number(options.inflationRate) || 0, horizonYears));
     drawdowns.push(maxDrawdown(values));
+    volatilities.push(annualizedVolatility(monthlyReturns));
+    sortinos.push(sortinoRatio(monthlyReturns));
+    if (Number.isFinite(modelResult.referenceAnnualReturn) && monthlyReturns.length >= 2) {
+      sharpes.push((monthlyToAnnualRate(mean(monthlyReturns)) - modelResult.referenceAnnualReturn) / Math.max(annualizedVolatility(monthlyReturns), EPSILON));
+    }
   }
 
   return {
     paths,
     horizonYears,
+    method,
+    modelVersion: method === "block-bootstrap" ? BOOTSTRAP_MODEL_VERSION : method === "ewma" ? "mc-ewma-v1" : MONTE_CARLO_MODEL_VERSION,
     nominal: { p10: percentile(finals, 0.1), p50: percentile(finals, 0.5), p90: percentile(finals, 0.9) },
     real: { p10: percentile(realFinals, 0.1), p50: percentile(realFinals, 0.5), p90: percentile(realFinals, 0.9) },
     maxDrawdown: { p10: percentile(drawdowns, 0.1), p50: percentile(drawdowns, 0.5), p90: percentile(drawdowns, 0.9) },
+    volatility: percentile(volatilities, 0.5),
+    sortino: percentile(sortinos, 0.5),
+    sharpe: percentile(sharpes, 0.5),
+    goalProbability: targetNominal === null ? null : successfulGoals / paths,
+    goalTargetNominal: targetNominal,
     historicalObservations: modelResult.historical ? modelResult.historical.observations : 0,
     estimated: modelResult.historical ? modelResult.historical.estimated : true,
-    model: modelResult.model,
+    model: selectedModel,
+  };
+}
+
+export function evaluateGoal(options = {}) {
+  const targetToday = Math.max(0, Number(options.targetToday) || 0);
+  const horizonYears = clamp(options.horizonYears || 0, 0.25, 50);
+  const desiredProbability = clamp(options.desiredProbability ?? 0.75, 0.5, 0.99);
+  if (targetToday <= 0 || !horizonYears) return { available: false, reason: "invalid-goal" };
+
+  const seed = Number(options.seed) || 42;
+  const paths = Math.round(clamp(options.paths || 1000, 1000, 5000));
+  const common = { ...options, paths, horizonYears, goalTarget: targetToday };
+  const runAtContribution = (monthlyContribution) => runMonteCarlo({
+    ...common,
+    monthlyContribution,
+    random: createSeededRandom(seed),
+  });
+  const current = runAtContribution(Math.max(0, Number(options.monthlyContribution) || 0));
+  let low = 0;
+  let high = Math.max(Number(options.monthlyContribution) || 0, targetToday / (horizonYears * 12), 1);
+  let upper = runAtContribution(high);
+  let attempts = 0;
+  while ((upper.goalProbability || 0) < desiredProbability && attempts < 12) {
+    high *= 2;
+    upper = runAtContribution(high);
+    attempts += 1;
+  }
+  const feasible = (upper.goalProbability || 0) >= desiredProbability;
+  if (feasible) {
+    for (let iteration = 0; iteration < 18; iteration += 1) {
+      const midpoint = (low + high) / 2;
+      const candidate = runAtContribution(midpoint);
+      if ((candidate.goalProbability || 0) >= desiredProbability) high = midpoint;
+      else low = midpoint;
+    }
+  }
+  return {
+    available: true,
+    targetToday,
+    targetNominal: current.goalTargetNominal,
+    horizonYears,
+    desiredProbability,
+    successProbability: current.goalProbability,
+    outcomes: current.nominal,
+    requiredMonthlyContribution: feasible ? high : null,
+    feasible,
+    modelVersion: current.modelVersion,
+    modelAssumptionVersion: current.model?.fixed?.assumptionVersion || MODEL_ASSUMPTION_VERSION,
+    estimated: current.estimated,
+    historicalObservations: current.historicalObservations,
   };
 }
 
