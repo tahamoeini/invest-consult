@@ -317,7 +317,7 @@ async function providerTgjuIndex() {
   };
 }
 
-function normalizeHistorySeries(value) {
+export function normalizeHistorySeries(value) {
   if (Array.isArray(value)) {
     return value.map((point) => {
       if (Array.isArray(point)) return { date: point[0], value: Number(point[1]) };

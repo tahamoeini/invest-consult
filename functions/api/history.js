@@ -1,0 +1,238 @@
+import {
+  extractTgjuChartData,
+  normalizeHistorySeries,
+  normalizeMetalHistory,
+  normalizeTgjuHistory,
+} from "./market.js";
+import { INSTRUMENT_REGISTRY } from "../../src/market/catalog.js";
+import {
+  HISTORY_RANGE_DAYS,
+  convertUsdHistoryToToman,
+  filterHistoryRange,
+  normalizeObservedHistory,
+} from "../../src/market/history.js";
+
+const HISTORY_ASSETS = new Set([...Object.keys(INSTRUMENT_REGISTRY), "fixedIncome", "cash"]);
+const DEFAULT_HISTORY_ASSETS = ["dollar", "gold", "silver"];
+const TGJU_BASE = "https://www.tgju.org/profile/";
+const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
+const COINGECKO_BASE = "https://api.coingecko.com/api/v3/coins/";
+const CHART_GOLD_URL = "https://www.chartgoldprice.com/api/data?history=both";
+const TROY_OUNCE_TO_GRAMS = 31.1034768;
+const COPPER_POUND_TO_GRAMS = 453.59237;
+const REQUEST_TIMEOUT_MS = 8000;
+const HEADERS = {
+  "User-Agent": "invest-consult/2.0 (+https://github.com/tahamoeini/invest-consult)",
+  "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+};
+
+const TGJU_PAGES = Object.freeze({ dollar: "price_dollar_rl", gold: "geram18", silver: "silver_999" });
+const YAHOO_SERIES = Object.freeze({
+  platinum: { symbol: "PL=F", divisor: TROY_OUNCE_TO_GRAMS },
+  palladium: { symbol: "PA=F", divisor: TROY_OUNCE_TO_GRAMS },
+  copper: { symbol: "HG=F", divisor: COPPER_POUND_TO_GRAMS },
+});
+const COINGECKO_IDS = Object.freeze({ bitcoin: "bitcoin", ethereum: "ethereum", tether: "tether" });
+const SOURCE_URLS = Object.freeze({
+  TGJU: "https://www.tgju.org/",
+  "Yahoo Finance": "https://finance.yahoo.com/",
+  CoinGecko: "https://www.coingecko.com/",
+  ChartGoldPrice: "https://www.chartgoldprice.com/gold-price-api",
+});
+
+function asUrl(urlLike) {
+  return urlLike instanceof URL ? urlLike : new URL(String(urlLike || "https://invest-consult.local/api/history"));
+}
+
+export function parseHistoryRequest(urlLike) {
+  const url = asUrl(urlLike);
+  const range = url.searchParams.get("range") || "all";
+  if (!Object.hasOwn(HISTORY_RANGE_DAYS, range)) return { error: "invalid-range" };
+  const suppliedAssets = url.searchParams.get("assets");
+  const assets = suppliedAssets === null
+    ? DEFAULT_HISTORY_ASSETS.slice()
+    : [...new Set(suppliedAssets.split(",").map((asset) => asset.trim()).filter((asset) => HISTORY_ASSETS.has(asset)))];
+  if (!assets.length) return { error: "no-supported-assets" };
+  return { assets, range };
+}
+
+async function fetchResponse(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: { ...HEADERS, ...(options.headers || {}) },
+    });
+    if (!response.ok) throw new Error("provider-response-not-ok");
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchText(url) {
+  const response = await fetchResponse(url);
+  return response.text();
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetchResponse(url, options);
+  return response.json();
+}
+
+async function fetchTgjuSeries(assetId) {
+  const page = TGJU_PAGES[assetId];
+  if (!page) throw new Error("unsupported-tgju-series");
+  const sourceUrl = TGJU_BASE + page;
+  const raw = extractTgjuChartData(await fetchText(sourceUrl));
+  const points = normalizeTgjuHistory(raw).map((point) => ({ date: point.date, value: point.value, source: "TGJU" }));
+  return { points, source: "TGJU", sourceUrl, currency: "TOMAN" };
+}
+
+async function fetchIndexSeries() {
+  const sourceUrl = TGJU_BASE + "gc30";
+  const raw = extractTgjuChartData(await fetchText(sourceUrl));
+  const points = normalizeHistorySeries(raw).map((point) => ({ date: point.date, value: point.value, source: "TGJU" }));
+  return { points, source: "TGJU", sourceUrl, currency: "INDEX" };
+}
+
+async function fetchAuxiliaryMetalSeries(assetId) {
+  const data = await fetchJson(CHART_GOLD_URL);
+  const rawHistory = data?.history?.[assetId] || data?.history?.series?.[assetId] || [];
+  const factor = assetId === "gold" ? 0.75 : 1;
+  const points = normalizeMetalHistory(rawHistory).map((point) => ({
+    date: point.date,
+    value: point.value * factor,
+    source: "ChartGoldPrice",
+    currency: "USD",
+  }));
+  return { points, source: "ChartGoldPrice", sourceUrl: SOURCE_URLS.ChartGoldPrice, currency: "USD" };
+}
+
+async function fetchYahooSeries(assetId) {
+  const definition = YAHOO_SERIES[assetId];
+  if (!definition) throw new Error("unsupported-yahoo-series");
+  const sourceUrl = YAHOO_BASE + encodeURIComponent(definition.symbol) + "?range=max&interval=1d";
+  const data = await fetchJson(sourceUrl);
+  const result = data?.chart?.result?.[0];
+  const timestamps = result?.timestamp || [];
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  const points = timestamps.flatMap((timestamp, index) => {
+    const value = Number(closes[index]);
+    return Number.isFinite(value) && value > 0
+      ? [{ date: timestamp * 1000, value: value / definition.divisor, source: "Yahoo Finance", currency: "USD" }]
+      : [];
+  });
+  if (!points.length) throw new Error("provider-history-empty");
+  return { points, source: "Yahoo Finance", sourceUrl, currency: "USD" };
+}
+
+async function fetchCryptoSeries(assetId, apiKey) {
+  if (!apiKey) throw new Error("coingecko-demo-key-missing");
+  const sourceUrl = COINGECKO_BASE + encodeURIComponent(COINGECKO_IDS[assetId]) + "/market_chart?vs_currency=usd&days=365&precision=full";
+  const data = await fetchJson(sourceUrl, { headers: { "x-cg-demo-api-key": apiKey } });
+  const points = normalizeObservedHistory(data?.prices, "CoinGecko").map((point) => ({
+    ...point,
+    source: "CoinGecko",
+    currency: "USD",
+  }));
+  if (!points.length) throw new Error("provider-history-empty");
+  return { points, source: "CoinGecko", sourceUrl, currency: "USD" };
+}
+
+function errorReason(error) {
+  if (error?.message === "coingecko-demo-key-missing") return "coingecko-demo-key-missing";
+  if (error?.message === "provider-history-empty") return "provider-history-empty";
+  return "provider-unavailable";
+}
+
+function rangeCoverage(points, source, range, reason = null, extra = {}) {
+  return {
+    status: points.length >= 2 ? "available" : points.length ? "insufficient-history" : "unavailable",
+    range,
+    observationCount: points.length,
+    firstObservedAt: points[0]?.date || null,
+    lastObservedAt: points.at(-1)?.date || null,
+    source: source || null,
+    reason: points.length >= 2 ? null : reason || "history-unavailable",
+    ...extra,
+  };
+}
+
+async function loadRawSeries(assetId, apiKey) {
+  if (TGJU_PAGES[assetId]) {
+    try {
+      return await fetchTgjuSeries(assetId);
+    } catch {
+      if (!["gold", "silver"].includes(assetId)) throw new Error("provider-unavailable");
+      return await fetchAuxiliaryMetalSeries(assetId);
+    }
+  }
+  if (assetId === "bourseIndex") return fetchIndexSeries();
+  if (YAHOO_SERIES[assetId]) return fetchYahooSeries(assetId);
+  if (COINGECKO_IDS[assetId]) return fetchCryptoSeries(assetId, apiKey);
+  throw new Error("history-unavailable");
+}
+
+export async function onRequestGet(context = {}) {
+  const request = parseHistoryRequest(context.request?.url);
+  if (request.error) return new Response(JSON.stringify({ error: request.error }), {
+    status: 400,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+
+  const { assets: selectedAssets, range } = request;
+  const needsDollarHistory = selectedAssets.some((assetId) => ["gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper"].includes(assetId));
+  const rawAssets = [...new Set([...selectedAssets.filter((assetId) => assetId !== "fixedIncome" && assetId !== "cash"), ...(needsDollarHistory && !selectedAssets.includes("dollar") ? ["dollar"] : [])])];
+  const apiKey = context.env?.COINGECKO_DEMO_API_KEY || "";
+  const settled = await Promise.allSettled(rawAssets.map(async (assetId) => [assetId, await loadRawSeries(assetId, apiKey)]));
+  const rawSeries = {};
+  const errors = {};
+  settled.forEach((outcome, index) => {
+    const assetId = rawAssets[index];
+    if (outcome.status === "fulfilled") rawSeries[outcome.value[0]] = outcome.value[1];
+    else errors[assetId] = errorReason(outcome.reason);
+  });
+
+  const dollarPoints = normalizeObservedHistory(rawSeries.dollar?.points || [], rawSeries.dollar?.source || "TGJU");
+  const responseAssets = {};
+  selectedAssets.forEach((assetId) => {
+    let provider = rawSeries[assetId];
+    let points = [];
+    let reason = errors[assetId] || null;
+    let missingFxCount = 0;
+    if (provider) {
+      const normalized = normalizeObservedHistory(provider.points, provider.source);
+      if (provider.currency === "USD") {
+        const converted = convertUsdHistoryToToman(normalized, dollarPoints);
+        points = converted.points;
+        missingFxCount = converted.missingFxCount;
+        if (!points.length) reason = needsDollarHistory && !dollarPoints.length ? "dated-fx-unavailable" : "no-matching-dated-fx";
+      } else points = normalized;
+    } else if (assetId === "fixedIncome" || assetId === "cash") {
+      reason = "no-observed-history-source";
+    }
+    points = filterHistoryRange(points, range);
+    responseAssets[assetId] = {
+      unit: assetId === "bourseIndex" ? "point" : assetId === "dollar" ? "TOMAN/USD" : "TOMAN",
+      currency: assetId === "bourseIndex" ? "INDEX" : "TOMAN",
+      sourceUrl: provider?.sourceUrl || null,
+      points,
+      coverage: rangeCoverage(points, provider?.source, range, reason, { missingFxCount }),
+    };
+  });
+
+  return new Response(JSON.stringify({
+    updatedAt: new Date().toISOString(),
+    requestedRange: range,
+    assets: responseAssets,
+    sources: SOURCE_URLS,
+  }), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, no-store",
+    },
+  });
+}

@@ -31,11 +31,24 @@ export function lineSegments(points) {
 }
 
 function pathFor(points, x, y) {
-  return points.map((point, index) => `${index ? "L" : "M"}${x(point.index).toFixed(2)},${y(point.value).toFixed(2)}`).join(" ");
+  return points.map((point, index) => `${index ? "L" : "M"}${x(point).toFixed(2)},${y(point.value).toFixed(2)}`).join(" ");
 }
 
 function defaultValueLabel(value) {
   return String(Math.round(Number(value) || 0));
+}
+
+export function clampTooltipCenter(center, tooltipWidth, chartWidth, padding = 8) {
+  const safeChartWidth = Math.max(0, Number(chartWidth) || 0);
+  const safePadding = Math.max(0, Number(padding) || 0);
+  const halfTooltip = Math.min(
+    Math.max(0, (Number(tooltipWidth) || 0) / 2),
+    Math.max(0, (safeChartWidth - safePadding * 2) / 2),
+  );
+  const minimum = Math.min(safeChartWidth / 2, safePadding + halfTooltip);
+  const maximum = Math.max(safeChartWidth / 2, safeChartWidth - safePadding - halfTooltip);
+  const value = Number.isFinite(Number(center)) ? Number(center) : safeChartWidth / 2;
+  return Math.max(minimum, Math.min(maximum, value));
 }
 
 /**
@@ -68,7 +81,17 @@ export function lineChartMarkup({
   const range = Math.max(max - min, Math.abs(max) * 0.02, 1);
   const domainMin = min - range * 0.08;
   const domainMax = max + range * 0.08;
-  const x = (index) => padding.left + (pointCount <= 1 ? 0 : index / (pointCount - 1)) * plotWidth;
+  const hasActualDates = normalized.every((item) => item.points.every((point) => finite(point.value) === null || Number.isFinite(new Date(point.date).getTime())));
+  const datedTimes = hasActualDates
+    ? normalized.flatMap((item) => item.points.filter((point) => finite(point.value) !== null).map((point) => new Date(point.date).getTime()))
+    : [];
+  const minTime = datedTimes.length ? Math.min(...datedTimes) : 0;
+  const maxTime = datedTimes.length ? Math.max(...datedTimes) : 0;
+  const x = (point) => {
+    const time = new Date(point.date).getTime();
+    if (datedTimes.length >= 2 && Number.isFinite(time)) return padding.left + (time - minTime) / Math.max(maxTime - minTime, 1) * plotWidth;
+    return padding.left + (pointCount <= 1 ? 0 : point.index / (pointCount - 1)) * plotWidth;
+  };
   const y = (value) => padding.top + (1 - (value - domainMin) / Math.max(domainMax - domainMin, 1)) * plotHeight;
   const grid = [0, 0.5, 1].map((ratio) => {
     const lineY = padding.top + plotHeight * ratio;
@@ -79,21 +102,44 @@ export function lineChartMarkup({
     const lineY = padding.top + plotHeight * (index / (axisValues.length - 1));
     return `<text x="${padding.left - 9}" y="${(lineY + 4).toFixed(2)}" text-anchor="end" class="chart-axis-label">${escapeHTML(valueLabel(value))}</text>`;
   }).join("");
+  let pointSequence = 0;
   const lines = normalized.map((item) => {
     const segments = lineSegments(item.points);
     const paths = segments.map((segment) => `<path d="${pathFor(segment, x, y)}" class="chart-line" stroke="${escapeHTML(item.color || "#126b62")}" />`).join("");
-    const dots = showDots ? item.points.filter((point) => finite(point.value) !== null).map((point) => `<circle cx="${x(point.index).toFixed(2)}" cy="${y(point.value).toFixed(2)}" r="3.2" class="chart-dot" fill="${escapeHTML(item.color || "#126b62")}"><title>${escapeHTML(item.name || "")} ${escapeHTML(point.label || "")}: ${escapeHTML(valueLabel(point.value))}</title></circle>`).join("") : "";
+    const dots = showDots ? item.points.filter((point) => finite(point.value) !== null).map((point) => {
+      const dateLabel = point.label || point.date || "";
+      const description = [item.name || "", dateLabel, valueLabel(point.value)].filter(Boolean).join(" · ");
+      const timestamp = point.date ? new Date(point.date).getTime() : point.index;
+      const sequence = pointSequence++;
+      return `<circle cx="${x(point).toFixed(2)}" cy="${y(point.value).toFixed(2)}" r="3.4" class="chart-dot" fill="${escapeHTML(item.color || "#126b62")}" tabindex="-1" focusable="true" aria-label="${escapeHTML(description)}" data-timestamp="${escapeHTML(timestamp)}" data-sequence="${sequence}"><title>${escapeHTML(description)}</title></circle>`;
+    }).join("") : "";
     return paths + dots;
   }).join("");
   const firstSeries = normalized.find((item) => item.points.length === pointCount) || normalized.find((item) => item.points.length);
-  const labels = [0, Math.floor((pointCount - 1) / 2), pointCount - 1]
+  const labelIndexes = datedTimes.length >= 2
+    ? [minTime, (minTime + maxTime) / 2, maxTime].map((target) => {
+      let nearestIndex = 0;
+      let nearestDistance = Infinity;
+      firstSeries?.points.forEach((point, index) => {
+        const distance = Math.abs(new Date(point.date).getTime() - target);
+        if (Number.isFinite(distance) && distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = index;
+        }
+      });
+      return nearestIndex;
+    })
+    : [0, Math.floor((pointCount - 1) / 2), pointCount - 1];
+  const labels = labelIndexes
     .filter((index, position, array) => index >= 0 && array.indexOf(index) === position)
     .map((index) => {
       const point = firstSeries?.points[index];
-      return point ? `<text x="${x(index).toFixed(2)}" y="${height - 8}" text-anchor="${index === 0 ? "start" : index === pointCount - 1 ? "end" : "middle"}" class="chart-axis-label">${escapeHTML(point.label || "")}</text>` : "";
+      const xPosition = point ? x(point) : padding.left;
+      const anchor = xPosition < padding.left + 12 ? "start" : xPosition > width - padding.right - 12 ? "end" : "middle";
+      return point ? `<text x="${xPosition.toFixed(2)}" y="${height - 8}" text-anchor="${anchor}" class="chart-axis-label">${escapeHTML(point.label || "")}</text>` : "";
     }).join("");
   const legend = normalized.length > 1 ? `<div class="chart-legend">${normalized.map((item) => `<span><i style="--legend-color:${escapeHTML(item.color || "#126b62")}"></i>${escapeHTML(item.name || "")}</span>`).join("")}</div>` : "";
-  return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHTML(ariaLabel)}" preserveAspectRatio="none"><title>${escapeHTML(ariaLabel)}</title><g>${grid}${yAxis}${lines}${labels}</g></svg>${legend}</div>`;
+  return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="group" tabindex="0" aria-keyshortcuts="ArrowLeft ArrowRight Home End" aria-label="${escapeHTML(ariaLabel)}" preserveAspectRatio="none"><title>${escapeHTML(ariaLabel)}</title><g>${grid}${yAxis}${lines}${labels}</g></svg>${legend}<div class="chart-tooltip" role="status" aria-live="polite" hidden></div></div>`;
 }
 
 export function donutChartMarkup({

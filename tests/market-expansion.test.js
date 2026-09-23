@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { aggregate } from "../functions/api/market.js";
 import {
+  PORTFOLIO_ASSETS,
   appendTransactions,
   calculatePortfolio,
+  createPortfolioAsset,
   createEmptyPortfolio,
   createTransaction,
   marketPriceAt,
@@ -226,4 +228,67 @@ test("conflicted live quotes are excluded from portfolio valuation", () => {
   }, now);
   assert.equal(valuation.values.bitcoin.value, null);
   assert.deepEqual(valuation.missingPrices, ["bitcoin"]);
+});
+
+test("silver conflict values and a last-known reading stay outside current portfolio valuation", () => {
+  const now = "2026-09-23T18:00:00.000Z";
+  const staleDate = "2026-09-21T13:30:00.000Z";
+  const market = {
+    updatedAt: now,
+    assets: {
+      silver: {
+        price: null,
+        status: "conflicted",
+        retrievedAt: now,
+        sourceValues: [
+          { source: "Provider A", price: 501240, observedAt: "2026-09-23T17:00:00.000Z" },
+          { source: "Auxiliary metal source", price: 486249, observedAt: "2026-09-23T16:45:00.000Z" },
+        ],
+      },
+    },
+    history: { silver: [{ date: staleDate, price: 508750, source: "TGJU" }] },
+  };
+  const portfolio = createEmptyPortfolio(now);
+  const opening = createTransaction({
+    type: "OPENING",
+    assetId: "silver",
+    quantity: 2,
+    unitPrice: 500000,
+    date: "2026-09-21",
+  }, market, now, portfolio);
+  const saved = appendTransactions(portfolio, [opening]).portfolio;
+  const valuation = calculatePortfolio(saved, market, now);
+  const lastKnown = lastKnownMarketQuote("silver", market, null, new Date(now).getTime());
+  assert.deepEqual(market.assets.silver.sourceValues.map((item) => item.price), [501240, 486249]);
+  assert.equal(lastKnown.price, 508750);
+  assert.equal(valuation.values.silver.value, null);
+  assert.equal(valuation.currentValue, 0);
+  assert.deepEqual(valuation.missingPrices, ["silver"]);
+});
+
+test("all investable catalog assets and a named manual holding can be recorded in the ledger", () => {
+  const now = "2026-09-23T18:00:00.000Z";
+  let portfolio = createEmptyPortfolio(now);
+  const catalogIds = Object.values(PORTFOLIO_ASSETS).filter((asset) => asset.isInvestable).map((asset) => asset.id);
+  const manual = createPortfolioAsset(portfolio, { title: "فولاد", kind: "stock", unit: "TOMAN" }, now);
+  portfolio = manual.portfolio;
+  const transactions = catalogIds.map((assetId) => createTransaction({
+    type: "OPENING",
+    assetId,
+    quantity: 1,
+    unitPrice: 1,
+    date: now,
+  }, { assets: {}, history: {} }, now, portfolio));
+  transactions.push(createTransaction({
+    type: "OPENING",
+    assetId: manual.asset.id,
+    quantity: 5000000,
+    unitPrice: 1,
+    date: now,
+  }, { assets: {}, history: {} }, now, portfolio));
+  const saved = appendTransactions(portfolio, transactions).portfolio;
+  const valuation = calculatePortfolio(saved, { assets: {}, history: {} }, now);
+  catalogIds.forEach((assetId) => assert.equal(valuation.holdings[assetId], 1));
+  assert.equal(valuation.holdings[manual.asset.id], 5000000);
+  assert.equal(valuation.assets[manual.asset.id].title, "فولاد");
 });

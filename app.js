@@ -22,14 +22,16 @@ import {
   createPortfolioAsset,
   createPortfolioVersion,
   createTransaction,
+  marketPriceAt,
   normalizePortfolio,
   portfolioSeries,
   simpleChangeTransactions,
 } from "./src/portfolio.js";
 import { INSTRUMENT_REGISTRY } from "./src/market/catalog.js";
+import { prepareComparableHistory } from "./src/market/history.js";
 import { lastKnownMarketQuote } from "./src/market/last-known.js";
 import { AppShell } from "./src/ui/components.js";
-import { donutChartMarkup, lineChartMarkup, normalizeSeriesIndex } from "./src/ui/charts.js";
+import { clampTooltipCenter, donutChartMarkup, lineChartMarkup } from "./src/ui/charts.js";
 import { createNavigationController } from "./src/ui/navigation.js";
 import { createAppStore } from "./src/ui/state.js";
 
@@ -76,6 +78,27 @@ let lastPlan = null;
 let pendingSimpleBalances = null;
 let pendingSimpleStock = null;
 let dashboardRange = "ALL";
+let historyComparisonRange = "1y";
+let historyComparisonData = null;
+let historyComparisonLoading = false;
+let historyComparisonError = null;
+let historyComparisonRequestId = 0;
+let historyComparisonLoadedSignature = "";
+let historyComparisonPendingSignature = "";
+const historyComparisonSelection = new Set(["portfolio", "gold", "dollar", "silver"]);
+const HISTORY_CHART_COLORS = Object.freeze({
+  portfolio: "#126b62",
+  dollar: "#4979a7",
+  gold: "#c18a2c",
+  silver: "#8997a0",
+  bitcoin: "#d98232",
+  ethereum: "#6d65b7",
+  tether: "#278b78",
+  platinum: "#5a7485",
+  palladium: "#85617f",
+  copper: "#ba6949",
+  bourseIndex: "#348c84",
+});
 let storageWarning = false;
 let planPreviewTimer = null;
 let analysisWorkerTask = null;
@@ -469,6 +492,16 @@ function lastKnownPriceMarkup(assetId, data, cachedMarket, currentItem) {
   return `<small class="market-last-known"><strong>${escapeHTML(text("market.lastKnown", "آخرین مقدار ثبت‌شده"))}:</strong> ${formatIRR(quote.price)} ${escapeHTML(unit)} · ${escapeHTML(text("market.lastKnownObserved", "مشاهده"))} ${escapeHTML(formatDateTime(quote.observedAt))} · ${escapeHTML(freshnessLabel(quote.observedAt))}</small>`;
 }
 
+function marketConflictSourcesMarkup(item) {
+  if (item?.status !== "conflicted" || !Array.isArray(item.sourceValues) || !item.sourceValues.length) return "";
+  const unit = marketValueUnit(item);
+  const values = item.sourceValues.map((source) => {
+    const observed = source.observedAt ? formatDateTime(source.observedAt) : "زمان مشاهده نامشخص";
+    return `<div class="market-conflict-source"><strong>${escapeHTML(source.source || "منبع بازار")}</strong><b>${formatIRR(source.price)} ${escapeHTML(unit)}</b><small>زمان مشاهده: ${escapeHTML(observed)}</small></div>`;
+  }).join("");
+  return `<div class="market-conflict-values" aria-label="مقادیر منابع متعارض">${values}</div>`;
+}
+
 function renderMarket(data, cachedMarket = lastKnownMarket) {
   if ((!data || !data.assets) && !cachedMarket) {
     marketDataEl.innerHTML = `<div class="empty-state">${escapeHTML(text("market.empty", "داده بازار در دسترس نیست."))}</div>`;
@@ -485,7 +518,8 @@ function renderMarket(data, cachedMarket = lastKnownMarket) {
     if (!hasPrice) {
       const detail = marketUnavailableMessage(item, currentMarket.diagnostics?.assets?.[key]);
       const lastKnown = lastKnownPriceMarkup(key, currentMarket, cachedMarket, item);
-      return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>${escapeHTML(detail)}</small>${lastKnown}</div></div>`;
+      const conflictValues = marketConflictSourcesMarkup(item);
+      return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>${escapeHTML(detail)}</small>${conflictValues}${lastKnown}</div></div>`;
     }
     const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
     const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange", "\u2014");
@@ -710,7 +744,8 @@ function renderMarketSnapshot(data, cachedMarket = lastKnownMarket) {
     if (!hasPrice) {
       const quality = marketUnavailableMessage(item, currentMarket.diagnostics?.assets?.[key]);
       const lastKnown = lastKnownPriceMarkup(key, currentMarket, cachedMarket, item);
-      return `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>${escapeHTML(quality)}</small>${lastKnown}</article>`;
+      const conflictValues = marketConflictSourcesMarkup(item);
+      return `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>${escapeHTML(quality)}</small>${conflictValues}${lastKnown}</article>`;
     }
     const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
     const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
@@ -942,17 +977,59 @@ function populatePortfolioAssetOptions() {
   });
   const marketSelect = $("#portfolio-market-asset");
   if (marketSelect) {
-    const supported = ["gold", "silver", "currency", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper"];
+    const portfolioIds = new Set(assetIds(portfolio));
+    const marketIds = Object.entries(INSTRUMENT_REGISTRY)
+      .filter(([, instrument]) => instrument.tradable !== false)
+      .map(([instrumentId, instrument]) => instrument.recommendationAssetId || instrumentId);
+    const coreIds = ["fixed", "cash", "other"];
+    const manualIds = Object.keys(portfolio.assets || {});
+    const supported = [...new Set([...marketIds, ...coreIds, ...manualIds])].filter((assetId) => portfolioIds.has(assetId));
     const current = marketSelect.value;
-    marketSelect.innerHTML = supported.map((assetId) => {
+    const optionMarkup = (assetId) => {
       const meta = portfolioAssetMeta(assetId, portfolio);
       return `<option value="${escapeHTML(assetId)}">${escapeHTML(meta.title)}</option>`;
-    }).join("");
+    };
+    const marketOptions = supported.filter((assetId) => marketIds.includes(assetId)).map(optionMarkup).join("");
+    const coreOptions = supported.filter((assetId) => coreIds.includes(assetId)).map(optionMarkup).join("");
+    const manualOptions = supported.filter((assetId) => manualIds.includes(assetId)).map(optionMarkup).join("");
+    marketSelect.innerHTML = (marketOptions ? `<optgroup label="دارایی‌های بازار">${marketOptions}</optgroup>` : "")
+      + (coreOptions ? `<optgroup label="نقد و درآمد ثابت">${coreOptions}</optgroup>` : "")
+      + (manualOptions ? `<optgroup label="دارایی‌های نام‌دار">${manualOptions}</optgroup>` : "");
     if (supported.includes(current)) marketSelect.value = current;
-    const selected = portfolioAssetMeta(marketSelect.value, portfolio);
     const unit = $("#portfolio-market-asset-unit");
     if (unit) unit.textContent = portfolioUnitLabel(marketSelect.value, portfolio.assets?.[marketSelect.value]?.unit || (marketSelect.value === "currency" ? "TOMAN" : ""));
+    updateMarketEntryAvailability();
   }
+}
+
+function marketEntryPriceAt(assetId, dateValue) {
+  const today = new Date().toISOString().slice(0, 10);
+  const definition = readPortfolio().assets?.[assetId] || PORTFOLIO_ASSETS[assetId];
+  const marketKey = definition?.marketKey;
+  if (dateValue === today && marketKey) {
+    const current = liveMarket?.assets?.[marketKey];
+    const currentPrice = Number(current?.price);
+    if (Number.isFinite(currentPrice) && currentPrice > 0 && current.status !== "conflicted" && current.status !== "unavailable") return currentPrice;
+  }
+  if (!dateValue) return null;
+  const pointInTime = dateValue === today ? new Date().toISOString() : dateValue + "T23:59:59.999Z";
+  return marketPriceAt(liveMarket || {}, assetId, pointInTime);
+}
+
+function updateMarketEntryAvailability() {
+  const assetId = $("#portfolio-market-asset")?.value;
+  const dateValue = $("#portfolio-market-date")?.value;
+  const priceAtAcquisition = assetId ? marketEntryPriceAt(assetId, dateValue) : null;
+  const needsPrice = !(Number.isFinite(Number(priceAtAcquisition)) && Number(priceAtAcquisition) > 0);
+  const isBackdated = dateValue && dateValue !== new Date().toISOString().slice(0, 10);
+  const fields = $("#portfolio-market-acquisition-fields");
+  const priceInput = $("#portfolio-market-acquisition-price");
+  const hint = $("#portfolio-market-acquisition-hint");
+  if (fields) fields.classList.toggle("is-hidden", !needsPrice && !isBackdated);
+  if (priceInput) priceInput.required = needsPrice;
+  if (hint) hint.textContent = needsPrice
+    ? "قیمت خرید واقعی را وارد کن؛ این عدد برای ارزش امروز استفاده نمی‌شود."
+    : "در صورت نیاز، بهای واقعی خرید را وارد کن؛ خالی = مشاهده بازار در تاریخ خرید.";
 }
 
 function renderEmergencyCoverage(portfolioResult = null) {
@@ -1143,54 +1220,236 @@ function renderHistory() {
   renderHistoricalComparison();
 }
 
-function marketHistoryPoints(assetKey) {
-  const raw = liveMarket?.history?.[assetKey];
-  if (!Array.isArray(raw)) return [];
-  return raw.map((point) => {
-    const date = Array.isArray(point) ? point[0] : point?.date || point?.time || point?.timestamp;
-    const value = Array.isArray(point) ? point[1] : point?.price ?? point?.value ?? point?.close ?? point?.c;
-    return { date, value: Number(value), label: date ? formatDate(date) : "" };
-  }).filter((point) => Number.isFinite(new Date(point.date).getTime()) && Number.isFinite(point.value) && point.value > 0).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+function historyAssetDefinitions() {
+  const marketAssets = Object.keys(INSTRUMENT_REGISTRY).map((assetId) => ({
+    id: assetId,
+    name: text("market.labels." + assetId + ".title", assetMeta(assetId).title),
+    color: HISTORY_CHART_COLORS[assetId] || "#667785",
+    dotClass: assetId === "dollar" ? "asset-currency" : "asset-" + assetId,
+  }));
+  return [
+    { id: "portfolio", name: "پرتفوی تو", color: HISTORY_CHART_COLORS.portfolio, dotClass: "asset-fixed" },
+    ...marketAssets,
+  ];
 }
 
-function mixedMarketSeries(keys, weights) {
-  const maps = keys.map((key) => new Map(marketHistoryPoints(key).map((point) => [new Date(point.date).toISOString().slice(0, 10), point.value])));
-  if (maps.some((map) => !map.size)) return [];
-  const dates = [...maps[0].keys()].filter((date) => maps.every((map) => map.has(date))).sort();
-  return dates.map((date) => ({ date, label: formatDate(date), value: keys.reduce((sum, key, index) => sum + maps[index].get(date) * weights[index], 0) }));
+function historyCoverageMessage(assetId) {
+  if (assetId === "portfolio") return "دفتر محلی";
+  const coverage = historyComparisonData?.assets?.[assetId]?.coverage;
+  if (!coverage) return historyComparisonLoading ? "در حال دریافت" : "برای بررسی آماده است";
+  if (coverage.status === "available") return formatIRR(coverage.observationCount) + " مشاهده";
+  const reasons = {
+    "coingecko-demo-key-missing": "کلید Demo رمزارز تنظیم نشده",
+    "dated-fx-unavailable": "نرخ دلار تاریخ‌دار موجود نیست",
+    "no-matching-dated-fx": "نرخ دلار هم‌تاریخ پیدا نشد",
+    "no-observed-history-source": "منبع تاریخچه ندارد",
+    "provider-history-empty": "منبع تاریخچه‌ای برنگرداند",
+    "provider-unavailable": "منبع پاسخ نداد",
+    "history-unavailable": "تاریخچه در دسترس نیست",
+  };
+  return reasons[coverage.reason] || (coverage.status === "insufficient-history" ? "مشاهده کافی نیست" : "تاریخچه در دسترس نیست");
+}
+
+function renderHistoryAssetOptions() {
+  const container = $("#history-asset-options");
+  if (!container) return;
+  const definitions = historyAssetDefinitions();
+  const selectedCount = historyComparisonSelection.size;
+  $("#history-selected-count").textContent = formatIRR(selectedCount) + " انتخاب";
+  container.innerHTML = definitions.map((asset) => {
+    const checked = historyComparisonSelection.has(asset.id) ? " checked" : "";
+    return `<label class="history-asset-option"><input type="checkbox" data-history-asset="${escapeHTML(asset.id)}"${checked}><span class="asset-dot ${escapeHTML(asset.dotClass)}"></span><span class="history-asset-copy"><strong>${escapeHTML(asset.name)}</strong><small>${escapeHTML(historyCoverageMessage(asset.id))}</small></span></label>`;
+  }).join("");
+  $$("[data-history-range]").forEach((button) => {
+    const active = button.dataset.historyRange === historyComparisonRange;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function historyReasonLabel(reason) {
+  if (reason === "coingecko-demo-key-missing") return "برای نمایش تاریخچه رمزارز، کلید اختیاری CoinGecko Demo را در تنظیمات سرور قرار بده.";
+  if (reason === "dated-fx-unavailable" || reason === "no-matching-dated-fx") return "تاریخچه به تومان تبدیل نشد؛ نرخ دلار هم‌تاریخ موجود نیست.";
+  if (reason === "no-observed-history-source") return "برای این مورد هنوز منبع تاریخچه مشاهده‌شده وجود ندارد.";
+  return "تاریخچه معتبر این دارایی در این بازه در دسترس نیست.";
+}
+
+function renderHistoryMetrics(metrics) {
+  const container = $("#historical-comparison-metrics");
+  if (!container) return;
+  container.innerHTML = metrics.map((metric) => {
+    const returnValue = metric.periodReturn === null ? "—" : (metric.periodReturn > 0 ? "+" : "") + formatPercent(metric.periodReturn * 100);
+    const annualizedValue = metric.annualizedReturn === null ? "—" : formatPercent(metric.annualizedReturn * 100);
+    const drawdownValue = metric.maxDrawdown === null ? "—" : formatPercent(metric.maxDrawdown * 100);
+    return `<article class="history-performance-card"><strong class="history-performance-title">${escapeHTML(metric.name)}</strong><div class="history-performance-values"><div><small>بازده دوره</small><b>${escapeHTML(returnValue)}</b></div><div><small>بازده سالانه‌شده</small><b>${escapeHTML(annualizedValue)}</b></div><div><small>بیشترین افت</small><b>${escapeHTML(drawdownValue)}</b></div><div><small>پوشش داده</small><b>${escapeHTML(formatPercent(metric.coverage * 100))}</b></div></div></article>`;
+  }).join("");
+}
+
+function portfolioComparisonPoints() {
+  const { portfolio, result } = readDashboardPortfolio();
+  if (!result.trackingStart) return [];
+  return portfolioSeries(portfolio, liveMarket || {}, result.trackingStart, new Date().toISOString(), numberFromInput($("#inflation-rate")?.value) / 100)
+    .filter((point) => Number.isFinite(Number(point.value)) && Number(point.value) > 0)
+    .map((point) => ({ date: point.date, value: Number(point.value), source: "Portfolio ledger" }));
 }
 
 function renderHistoricalComparison() {
   const chart = $("#historical-comparison-chart");
   const list = $("#historical-comparison-list");
   if (!chart || !list) return;
-  const series = [];
-  const { portfolio, result } = readDashboardPortfolio();
-  const userPoints = result.trackingStart ? portfolioSeries(portfolio, liveMarket || {}, result.trackingStart, new Date().toISOString(), numberFromInput($("#inflation-rate")?.value) / 100).filter((point) => Number.isFinite(point.value)).map((point) => ({ date: point.date, value: point.value, label: formatDate(point.date) })) : [];
-  if (userPoints.length >= 2) series.push({ name: "پرتفوی تو", color: "#126b62", points: normalizeSeriesIndex(userPoints) });
-  const benchmarkDefinitions = [
-    ["gold", "طلا", "#c18a2c"],
-    ["dollar", "ارز", "#4979a7"],
-    ["silver", "نقره", "#8997a0"],
-  ];
-  const availability = [];
-  benchmarkDefinitions.forEach(([key, name, color]) => {
-    const points = marketHistoryPoints(key);
-    availability.push({ name, available: points.length >= 2, detail: points.length >= 2 ? `${formatIRR(points.length)} مشاهده تاریخی` : "تاریخچه کافی در دسترس نیست" });
-    if (points.length >= 2) series.push({ name, color, points: normalizeSeriesIndex(points) });
+  renderHistoryAssetOptions();
+
+  const assets = {};
+  const selectedDefinitions = historyAssetDefinitions().filter((asset) => historyComparisonSelection.has(asset.id));
+  selectedDefinitions.forEach((asset) => {
+    const points = asset.id === "portfolio" ? portfolioComparisonPoints() : historyComparisonData?.assets?.[asset.id]?.points || [];
+    assets[asset.id] = { name: asset.name, color: asset.color, points, source: asset.id === "portfolio" ? "Portfolio ledger" : "" };
   });
-  const mixed = mixedMarketSeries(["gold", "dollar", "silver"], [0.4, 0.3, 0.3]);
-  availability.push({ name: "سبد ساده بازار", available: mixed.length >= 2, detail: mixed.length >= 2 ? "۴۰٪ طلا · ۳۰٪ ارز · ۳۰٪ نقره" : "به سه تاریخچه مشترک نیاز دارد" });
-  if (mixed.length >= 2) series.push({ name: "سبد ساده بازار", color: "#8b5bb7", points: normalizeSeriesIndex(mixed) });
-  availability.push({ name: "درآمد ثابت", available: false, detail: "داده تاریخی صندوق در API فعلی وجود ندارد" });
+  const comparison = prepareComparableHistory(assets, historyComparisonRange);
+  const series = comparison.series.map((item) => ({
+    ...item,
+    points: item.points.map((point) => ({ ...point, label: formatDate(point.date) })),
+  }));
   chart.innerHTML = lineChartMarkup({
     series,
     ariaLabel: "مقایسه شاخصی پرتفوی و دارایی‌های بازار",
-    emptyLabel: "برای مقایسه، تاریخچه بازار یا دفتر پرتفوی کافی وجود ندارد.",
-    valueLabel: (value) => `${formatIRR(value)} شاخص`,
-    height: 280,
+    emptyLabel: "برای این انتخاب‌ها، تاریخچه مشترک کافی وجود ندارد.",
+    valueLabel: (value) => formatIRR(value) + " شاخص",
+    height: 320,
   });
-  list.innerHTML = availability.map((item) => `<div class="benchmark-item"><span class="health-dot ${item.available ? "health-good" : "health-neutral"}"></span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.detail)}</small></div><b>${item.available ? "قابل مقایسه" : "در دسترس نیست"}</b></div>`).join("");
+  renderHistoryMetrics(comparison.metrics);
+
+  const status = $("#historical-comparison-status");
+  if (status) {
+    if (historyComparisonLoading) status.textContent = "در حال دریافت تاریخچه منابع انتخاب‌شده…";
+    else if (historyComparisonError) status.innerHTML = escapeHTML(historyComparisonError) + ' <button id="history-comparison-retry" class="text-button" type="button">تلاش دوباره</button>';
+    else if (comparison.from && comparison.to) status.textContent = "بازه مشترک: " + formatDate(comparison.from) + " تا " + formatDate(comparison.to) + " · " + formatIRR(comparison.days) + " روز";
+    else status.textContent = "داده تاریخی کافی برای این ترکیب در دسترس نیست.";
+  }
+  list.innerHTML = selectedDefinitions.map((asset) => {
+    const coverage = historyComparisonData?.assets?.[asset.id]?.coverage;
+    const available = asset.id === "portfolio" ? portfolioComparisonPoints().length >= 2 : coverage?.status === "available";
+    const detail = available ? historyCoverageMessage(asset.id) : asset.id === "portfolio" ? "برای دفتر پرتفوی، تاریخچه کافی ثبت نشده است." : historyReasonLabel(coverage?.reason);
+    return `<div class="benchmark-item"><span class="health-dot ${available ? "health-good" : "health-neutral"}"></span><div><strong>${escapeHTML(asset.name)}</strong><small>${escapeHTML(detail)}</small></div><b>${available ? "قابل مقایسه" : "در دسترس نیست"}</b></div>`;
+  }).join("");
+}
+
+function selectedHistoryMarketAssets() {
+  return [...historyComparisonSelection].filter((assetId) => assetId !== "portfolio").sort();
+}
+
+async function loadHistoricalMarketHistory(force = false) {
+  if (appStore.getState().activeView !== "history") return;
+  const selectedAssets = selectedHistoryMarketAssets();
+  const signature = historyComparisonRange + "|" + selectedAssets.join(",");
+  if (!force && (signature === historyComparisonLoadedSignature || signature === historyComparisonPendingSignature)) return;
+  historyComparisonRequestId += 1;
+  const requestId = historyComparisonRequestId;
+  historyComparisonLoading = selectedAssets.length > 0;
+  historyComparisonError = null;
+  if (!selectedAssets.length) {
+    historyComparisonData = { assets: {} };
+    historyComparisonLoadedSignature = signature;
+    historyComparisonPendingSignature = "";
+    historyComparisonLoading = false;
+    renderHistoricalComparison();
+    return;
+  }
+  historyComparisonPendingSignature = signature;
+  renderHistoricalComparison();
+  try {
+    const query = "/api/history?assets=" + encodeURIComponent(selectedAssets.join(",")) + "&range=" + encodeURIComponent(historyComparisonRange);
+    const response = await fetchWithTimeout(query, { cache: "no-store" }, 20000);
+    if (!response.ok) throw new Error("history-api-unavailable");
+    const data = await response.json();
+    if (requestId !== historyComparisonRequestId) return;
+    historyComparisonData = data;
+    historyComparisonLoadedSignature = signature;
+    historyComparisonPendingSignature = "";
+    historyComparisonLoading = false;
+    renderHistoricalComparison();
+  } catch {
+    if (requestId !== historyComparisonRequestId) return;
+    historyComparisonError = "تاریخچه دریافت نشد؛ اتصال منبع را بررسی کن.";
+    historyComparisonLoadedSignature = signature;
+    historyComparisonPendingSignature = "";
+    historyComparisonLoading = false;
+    renderHistoricalComparison();
+  }
+}
+
+function hideChartTooltip(chart) {
+  const tooltip = chart?.querySelector(".chart-tooltip");
+  if (tooltip) tooltip.hidden = true;
+  if (chart) delete chart.dataset.tooltipPinned;
+}
+
+function showChartTooltip(point, pinned = false) {
+  const chart = point?.closest(".line-chart");
+  const tooltip = chart?.querySelector(".chart-tooltip");
+  if (!chart || !tooltip) return;
+  tooltip.textContent = point.getAttribute("aria-label") || point.querySelector("title")?.textContent || "";
+  tooltip.hidden = false;
+  const chartRect = chart.getBoundingClientRect();
+  const pointRect = point.getBoundingClientRect();
+  const center = pointRect.left + pointRect.width / 2 - chartRect.left;
+  tooltip.style.left = clampTooltipCenter(center, tooltip.offsetWidth, chartRect.width) + "px";
+  tooltip.style.top = Math.max(4, pointRect.top - chartRect.top - tooltip.offsetHeight - 9) + "px";
+  if (pinned) chart.dataset.tooltipPinned = "true";
+}
+
+function chartPointsInDateOrder(chart) {
+  return [...chart.querySelectorAll(".chart-dot")].sort((left, right) => {
+    const byDate = Number(left.dataset.timestamp) - Number(right.dataset.timestamp);
+    return byDate || Number(left.dataset.sequence) - Number(right.dataset.sequence);
+  });
+}
+
+function bindChartTooltips() {
+  document.addEventListener("pointerover", (event) => {
+    const point = event.target.closest?.(".chart-dot");
+    if (point) showChartTooltip(point);
+  });
+  document.addEventListener("focusin", (event) => {
+    const chart = event.target.closest?.(".line-chart");
+    if (!chart) return;
+    if (event.target.matches("svg")) {
+      const first = chartPointsInDateOrder(chart)[0];
+      first?.focus();
+    } else if (event.target.matches(".chart-dot")) showChartTooltip(event.target);
+  });
+  document.addEventListener("pointerout", (event) => {
+    const chart = event.target.closest?.(".line-chart");
+    if (!chart || chart.contains(event.relatedTarget) || chart.dataset.tooltipPinned === "true" || chart.contains(document.activeElement)) return;
+    hideChartTooltip(chart);
+  });
+  document.addEventListener("click", (event) => {
+    const point = event.target.closest?.(".chart-dot");
+    if (!point) return;
+    event.preventDefault();
+    showChartTooltip(point, true);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const point = event.target.closest?.(".chart-dot");
+    if (point) {
+      showChartTooltip(point, true);
+      return;
+    }
+    if (event.target.closest?.(".line-chart")) return;
+    $$(".line-chart").forEach(hideChartTooltip);
+  });
+  document.addEventListener("keydown", (event) => {
+    const point = event.target.closest?.(".chart-dot");
+    if (!point || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const chart = point.closest(".line-chart");
+    const points = chartPointsInDateOrder(chart);
+    const currentIndex = points.indexOf(point);
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? points.length - 1 : Math.max(0, Math.min(points.length - 1, currentIndex + (event.key === "ArrowRight" ? 1 : -1)));
+    if (points[nextIndex]) {
+      event.preventDefault();
+      points[nextIndex].focus();
+    }
+  });
 }
 
 function calculatePlan(inputs) {
@@ -1322,34 +1581,49 @@ function handleMarketAssetSubmit(event) {
   event.preventDefault();
   const assetId = $("#portfolio-market-asset").value;
   const quantity = Math.max(0, numberFromInput($("#portfolio-market-quantity").value));
+  const acquisitionDate = $("#portfolio-market-date").value;
+  const enteredPrice = Math.max(0, numberFromInput($("#portfolio-market-acquisition-price").value));
   if (!assetId || !(quantity > 0)) {
     setPortfolioStatus("دارایی و مقدار معتبر وارد کن.", "warning");
     return;
   }
   const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  const date = acquisitionDate === today ? now : acquisitionDate;
+  const marketPrice = marketEntryPriceAt(assetId, acquisitionDate);
+  const unitPrice = enteredPrice > 0 ? enteredPrice : marketPrice;
+  if (!(Number.isFinite(Number(unitPrice)) && Number(unitPrice) > 0)) {
+    setPortfolioStatus("برای این تاریخ قیمت معتبر بازار موجود نیست؛ بهای واقعی خرید را وارد کن.", "warning");
+    $("#portfolio-market-acquisition-price").focus();
+    return;
+  }
+  const isBackdated = acquisitionDate < today;
+  if (isBackdated && !window.confirm("این خرید با تاریخ گذشته ثبت می‌شود و روی محاسبات تاریخی پرتفوی اثر دارد. ادامه می‌دهی؟")) return;
   const portfolio = readPortfolio();
   const type = activePortfolioVersion(portfolio).transactions.length ? "BUY" : "OPENING";
   const transaction = createTransaction({
     type,
     assetId,
     quantity,
+    unitPrice,
     source: "market-asset-entry",
     note: "Market asset entry",
-    date: now,
+    date,
   }, liveMarket || {}, now, portfolio);
   if (!transaction) {
-    setPortfolioStatus("قیمت معتبر این دارایی در داده بازار موجود نیست؛ مقدار را دستی در تراکنش پیشرفته ثبت کن.", "warning");
+    setPortfolioStatus(text("portfolio.validation"), "warning");
     return;
   }
-  const appended = appendTransactions(portfolio, [transaction], { action: type === "OPENING" ? "create-market-asset-opening" : "record-market-asset-purchase", affectsHistory: true, detail: assetId });
+  const appended = appendTransactions(portfolio, [transaction], { action: type === "OPENING" ? "create-market-asset-opening" : "record-market-asset-purchase", affectsHistory: isBackdated, detail: assetId });
   if (!appended.validation.valid || !writePortfolio(appended.portfolio)) {
     setPortfolioStatus(text("portfolio.validation"), "warning");
     return;
   }
   event.target.reset();
+  $("#portfolio-market-date").value = new Date().toISOString().slice(0, 10);
   renderPortfolio();
   $("#portfolio-section").open = true;
-  setPortfolioStatus("دارایی بازار ثبت شد؛ مقدار و قیمت منبع در دفتر تراکنش نگه داشته شد.", "success");
+  setPortfolioStatus("دارایی در دفتر ثبت شد؛ بهای خرید از مقدار امروز جدا نگه داشته می‌شود.", "success");
 }
 
 function handleStockEntrySubmit(event) {
@@ -1843,6 +2117,26 @@ function bindEvents() {
     $$('[data-dashboard-range]').forEach((item) => item.classList.toggle("is-active", item === button));
     renderDashboardPerformance();
   }));
+  $$("[data-history-range]").forEach((button) => button.addEventListener("click", () => {
+    const nextRange = button.dataset.historyRange;
+    if (!nextRange || nextRange === historyComparisonRange) return;
+    historyComparisonRange = nextRange;
+    historyComparisonData = null;
+    historyComparisonLoadedSignature = "";
+    loadHistoricalMarketHistory();
+  }));
+  $("#history-asset-options")?.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("[data-history-asset]");
+    if (!checkbox) return;
+    if (checkbox.checked) historyComparisonSelection.add(checkbox.dataset.historyAsset);
+    else historyComparisonSelection.delete(checkbox.dataset.historyAsset);
+    historyComparisonData = null;
+    historyComparisonLoadedSignature = "";
+    loadHistoricalMarketHistory();
+  });
+  $("#historical-comparison-status")?.addEventListener("click", (event) => {
+    if (event.target.closest("#history-comparison-retry")) loadHistoricalMarketHistory(true);
+  });
   $("#refresh-market").addEventListener("click", loadMarket);
   $("#run-backtest").addEventListener("click", runBacktest);
   $("#goal-form")?.addEventListener("submit", runGoalPlanning);
@@ -1856,6 +2150,7 @@ function bindEvents() {
   $("#stock-entry-form").addEventListener("submit", handleStockEntrySubmit);
   $("#portfolio-market-asset-form")?.addEventListener("submit", handleMarketAssetSubmit);
   $("#portfolio-market-asset")?.addEventListener("change", () => populatePortfolioAssetOptions());
+  $("#portfolio-market-date")?.addEventListener("change", updateMarketEntryAvailability);
   $("#apply-simple-change").addEventListener("click", applySimpleChange);
   $("#cancel-simple-change").addEventListener("click", cancelSimpleChange);
   $("#advanced-transaction-form").addEventListener("submit", handleAdvancedTransactionSubmit);
@@ -1909,6 +2204,7 @@ function bindEvents() {
     const button = event.target.closest("[data-portfolio-asset]");
     if (button) openAssetDrawer(button.dataset.portfolioAsset);
   });
+  bindChartTooltips();
   appStore.subscribe((state) => {
     const toggle = $("#settings-sidebar-collapsed");
     if (toggle) toggle.checked = state.sidebarCollapsed;
@@ -1916,6 +2212,7 @@ function bindEvents() {
     if (cacheToggle) cacheToggle.checked = state.marketCacheDisabled;
     if (state.activeView !== "simulation") cancelAnalysisWorker();
     else if ($("#analysis-section")?.open && lastPlan && analyzedPlan !== lastPlan && analysisWorkerTask?.taskType !== "plan-analysis") runPlanAnalysis(lastPlan);
+    if (state.activeView === "history") loadHistoricalMarketHistory();
   });
   $("#contribution-rate").addEventListener("input", (event) => { $("#contribution-output").textContent = formatPercent(Number(event.target.value), 0); });
   $$('[data-number-input]').forEach((input) => {
@@ -1949,6 +2246,8 @@ async function init() {
   renderDashboard();
   renderSettingsAssumptions();
   $("#advanced-date").value = new Date().toISOString().slice(0, 10);
+  $("#portfolio-market-date").value = new Date().toISOString().slice(0, 10);
+  updateMarketEntryAvailability();
   const goalDate = new Date();
   goalDate.setFullYear(goalDate.getFullYear() + 5);
   $("#goal-target-date").value = goalDate.toISOString().slice(0, 10);
