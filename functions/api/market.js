@@ -528,11 +528,13 @@ export async function onRequestGet(context = {}) {
     const result = await provider.run();
     return { id: provider.id, quotes: Array.isArray(result) ? result : result.quotes || [], history: Array.isArray(result) ? {} : result.history || {} };
   });
-  const fixedIncomePromise = selected.has("fixedIncome") ? getFixedIncomeMetric().catch(() => null) : Promise.resolve(null);
-  const [settledProviders, fixedIncome] = await Promise.all([
+  const fixedIncomeRequest = selected.has("fixedIncome") ? getFixedIncomeMetric() : null;
+  const [settledProviders, fixedIncomeSettled] = await Promise.all([
     Promise.allSettled(providerRuns),
-    fixedIncomePromise,
+    fixedIncomeRequest ? Promise.allSettled([fixedIncomeRequest]) : Promise.resolve([]),
   ]);
+  const fixedIncomeOutcome = fixedIncomeSettled[0] || { status: "skipped" };
+  const fixedIncome = fixedIncomeOutcome.status === "fulfilled" ? fixedIncomeOutcome.value : null;
   const providerResults = new Map();
   settledProviders.forEach((result, index) => {
     providerResults.set(activeDefinitions[index].id, result);
@@ -562,6 +564,9 @@ export async function onRequestGet(context = {}) {
   });
   const convertedGlobalQuotes = rawGlobalQuotes.map((item) => convertGlobalQuote(item, preliminaryDollar));
   const excludedCurrencyQuotes = rawGlobalQuotes.filter((item, index) => !convertedGlobalQuotes[index]);
+  const currencyBlockedAssets = new Set(excludedCurrencyQuotes
+    .filter((item) => item.currency === "USD")
+    .map((item) => item.asset));
   const globalQuotes = convertedGlobalQuotes.filter(Boolean);
   const referenceQuotes = providerResults.get("tsetmc")?.status === "fulfilled" ? providerResults.get("tsetmc").value.quotes : [];
   const quotes = [...primaryQuotes, ...globalQuotes, ...referenceQuotes];
@@ -569,6 +574,10 @@ export async function onRequestGet(context = {}) {
   let auxiliaryResult = { status: "skipped", quoteCount: 0 };
   const auxiliary = auxiliaryAssets.length ? await getAuxiliaryMetalData().catch(() => null) : null;
   if (auxiliaryAssets.length) auxiliaryResult = { status: auxiliary ? "fulfilled" : "rejected", quoteCount: 0 };
+  if (auxiliary && !preliminaryDollar?.price) {
+    if (auxiliaryAssets.includes("gold") && Number.isFinite(auxiliary.goldUsdPerGram)) currencyBlockedAssets.add("gold");
+    if (auxiliaryAssets.includes("silver") && Number.isFinite(auxiliary.silverUsdPerGram)) currencyBlockedAssets.add("silver");
+  }
   if (auxiliary && preliminaryDollar?.price) {
     if (selected.has("gold") && auxiliaryAssets.includes("gold") && Number.isFinite(auxiliary.goldUsdPerGram)) {
       const item = quote("gold", auxiliary.goldUsdPerGram * preliminaryDollar.price * 0.75, "Auxiliary metal source", {
@@ -606,6 +615,10 @@ export async function onRequestGet(context = {}) {
   });
   providerDiagnostics.providerC = fallbackResult;
   providerDiagnostics.auxiliary = auxiliaryResult;
+  providerDiagnostics.fixedIncome = {
+    status: fixedIncomeOutcome.status,
+    quoteCount: fixedIncome ? 1 : 0,
+  };
 
   const history = {};
   const tgjuHistory = providerResults.get("providerA")?.status === "fulfilled"
@@ -622,12 +635,22 @@ export async function onRequestGet(context = {}) {
     interactiveBudgetMs: INTERACTIVE_BUDGET_MS,
     responseTimeMs: Date.now() - startedAt,
     providers: providerDiagnostics,
-    assets: Object.fromEntries([...selected].map((asset) => [asset, {
+    assets: Object.fromEntries([...selected].filter((asset) => asset !== "fixedIncome").map((asset) => [asset, {
       attempted: [...quotes, ...excludedCurrencyQuotes].filter((item) => item.asset === asset).length,
       successful: assets[asset]?.sourceCount || 0,
       excludedForCurrency: excludedCurrencyQuotes.filter((item) => item.asset === asset).length,
       status: assets[asset]?.status || "unavailable",
+      reason: !assets[asset] && currencyBlockedAssets.has(asset)
+        ? preliminaryDollar?.status === "conflicted" ? "currency_conflicted" : "currency_unavailable"
+        : null,
     }])),
+    funds: selected.has("fixedIncome") ? {
+      fixedIncome: {
+        attempted: 1,
+        successful: fixedIncome ? 1 : 0,
+        status: fixedIncome ? "available" : "unavailable",
+      },
+    } : {},
   };
 
   return new Response(JSON.stringify({

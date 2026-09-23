@@ -453,6 +453,13 @@ function marketValueUnit(item) {
   return text("currencyUnit");
 }
 
+function marketUnavailableMessage(item, diagnostics) {
+  if (item?.status === "conflicted" || diagnostics?.status === "conflicted") return text("market.conflicted");
+  if (diagnostics?.reason === "currency_conflicted") return text("market.currencyConflict");
+  if (diagnostics?.reason === "currency_unavailable") return text("market.currencyUnavailable");
+  return text("market.unavailable");
+}
+
 function renderMarket(data) {
   if (!data || !data.assets) {
     marketDataEl.innerHTML = `<div class="empty-state">${escapeHTML(text("market.empty", "داده بازار در دسترس نیست."))}</div>`;
@@ -466,7 +473,7 @@ function renderMarket(data) {
     const item = data.assets[key];
     const hasPrice = item && item.status !== "conflicted" && item.price !== null && Number.isFinite(Number(item.price));
     if (!hasPrice) {
-      const detail = item?.status === "conflicted" ? text("market.conflicted") : text("market.unavailable");
+      const detail = marketUnavailableMessage(item, data.diagnostics?.assets?.[key]);
       return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>${escapeHTML(detail)}</small></div></div>`;
     }
     const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
@@ -684,7 +691,7 @@ function renderMarketSnapshot(data) {
     const label = text(`market.labels.${key}.title`, text(`assets.${key}.title`, key));
     const hasPrice = item && item.status !== "conflicted" && item.price !== null && item.price !== undefined && Number.isFinite(Number(item.price));
     if (!hasPrice) {
-      const quality = item?.status === "conflicted" ? text("market.conflicted") : text("market.unavailable");
+      const quality = marketUnavailableMessage(item, data.diagnostics?.assets?.[key]);
       return `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>${escapeHTML(quality)}</small></article>`;
     }
     const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
@@ -704,14 +711,28 @@ function renderMarketDiagnostics(data) {
     container.innerHTML = `<div class="empty-state">تشخیص منبع برای این پاسخ در دسترس نیست.</div>`;
     return;
   }
-  const providerNames = { providerA: "TGJU", providerB: "Bonbast", providerC: "Navasan", auxiliary: "ChartGoldPrice", coinGecko: "CoinGecko", binance: "Binance", metalsLive: "Metals.live", yahooMetals: "Yahoo Finance", tsetmc: "TSETMC" };
-  const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => `<div class="diagnostic-row"><div><strong>${escapeHTML(providerNames[id] || id)}</strong><small>${item.status === "fulfilled" ? "پاسخ داده" : "ناموفق"}</small></div><b>${formatIRR(item.quoteCount || 0)} قیمت</b></div>`).join("");
-  const assets = Object.entries(data.diagnostics.assets || {}).map(([id, item]) => {
-    const label = text(`market.labels.${id}.title`, text(`assets.${id}.title`, id));
-    const unavailable = item.status === "conflicted" ? text("market.conflicted") : "در دسترس نیست";
-    return `<div class="diagnostic-row"><div><strong>${escapeHTML(label)}</strong><small>${formatIRR(item.successful || 0)} از ${formatIRR(item.attempted || 0)} منبع</small></div><b class="${item.successful ? "positive" : "negative"}">${item.successful ? "قابل استفاده" : escapeHTML(unavailable)}</b></div>`;
+  const providerNames = { providerA: "TGJU", providerB: "Bonbast", providerC: "Navasan", auxiliary: "ChartGoldPrice", coinGecko: "CoinGecko", binance: "Binance", metalsLive: "Metals.live", yahooMetals: "Yahoo Finance", tsetmc: "TSETMC", fixedIncome: "کاریزما" };
+  const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => {
+    const status = item.status === "fulfilled"
+      ? text("market.providerResponded")
+      : item.status === "skipped" ? text("market.providerSkipped") : text("market.providerFailed");
+    return `<div class="diagnostic-row"><div><strong>${escapeHTML(providerNames[id] || id)}</strong><small>${escapeHTML(status)}</small></div><b>${formatIRR(item.quoteCount || 0)} ${escapeHTML(text("market.providerQuotesReturned"))}</b></div>`;
   }).join("");
-  const consensusNote = data.consensusCalibrated === false ? text("market.consensusUncalibrated") : text("market.consensusCalibrated");
+  const coverageItems = Object.entries(data.diagnostics.assets || {});
+  const fixedIncomeDiagnostics = data.diagnostics.funds?.fixedIncome;
+  if (fixedIncomeDiagnostics) coverageItems.push(["fixedIncome", fixedIncomeDiagnostics]);
+  const assets = coverageItems.map(([id, item]) => {
+    const label = id === "fixedIncome" ? text("assets.fixed.title") : text(`market.labels.${id}.title`, text(`assets.${id}.title`, id));
+    const unavailable = item.status === "conflicted" || item.reason
+      ? marketUnavailableMessage(null, item)
+      : text("market.coverageUnavailable");
+    const isUsable = Number(item.successful) > 0;
+    return `<div class="diagnostic-row"><div><strong>${escapeHTML(label)}</strong><small>${formatIRR(item.successful || 0)} از ${formatIRR(item.attempted || 0)} منبع</small></div><b class="${isUsable ? "positive" : "negative"}">${isUsable ? escapeHTML(text("market.usable")) : escapeHTML(unavailable)}</b></div>`;
+  }).join("");
+  const consensusCalibrated = data.diagnostics.consensusCalibrated;
+  const consensusNote = consensusCalibrated === true
+    ? text("market.consensusCalibrated")
+    : consensusCalibrated === false ? text("market.consensusUncalibrated") : text("market.consensusUnknown");
   const responseTime = Number.isFinite(Number(data.diagnostics.responseTimeMs)) ? `<p>${escapeHTML(text("market.responseTime"))}: ${formatIRR(data.diagnostics.responseTimeMs)} ${escapeHTML(text("market.milliseconds"))} / ${formatIRR(data.diagnostics.interactiveBudgetMs || 3500)} ${escapeHTML(text("market.milliseconds"))}</p>` : "";
   container.innerHTML = `<div><span class="kicker">منابع</span>${providers || `<div class="empty-state">موردی نیست.</div>`}</div><div><span class="kicker">پوشش دارایی</span>${assets || `<div class="empty-state">موردی نیست.</div>`}</div><div class="diagnostic-method"><span class="kicker">روش تجمیع</span><p>${escapeHTML(text("market.aggregationPolicy"))} ${escapeHTML(consensusNote)}</p>${responseTime}</div>`;
 }

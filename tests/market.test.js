@@ -202,3 +202,64 @@ test("primary, fallback, and auxiliary provider timeouts return within the inter
     globalThis.fetch = originalFetch;
   }
 });
+
+test("fixed income diagnostics report the fund separately from instrument quotes", async () => {
+  const originalFetch = globalThis.fetch;
+  let html = "<p>بازده مؤثر سالانه 40%</p>";
+  globalThis.fetch = async () => new Response(html, { status: 200 });
+  try {
+    const successResponse = await onRequestGet({ request: new Request("https://app.test/api/market?assets=fixedIncome") });
+    const success = await successResponse.json();
+    assert.equal(success.funds.fixedIncome.effectiveAnnualReturn, 40);
+    assert.equal(success.assets.fixedIncome, undefined);
+    assert.equal(success.diagnostics.assets.fixedIncome, undefined);
+    assert.deepEqual(success.diagnostics.funds.fixedIncome, { attempted: 1, successful: 1, status: "available" });
+    assert.deepEqual(success.diagnostics.providers.fixedIncome, { status: "fulfilled", quoteCount: 1 });
+
+    html = "<p>اطلاعات بازده منتشر نشده است.</p>";
+    const failedResponse = await onRequestGet({ request: new Request("https://app.test/api/market?assets=fixedIncome") });
+    const failed = await failedResponse.json();
+    assert.deepEqual(failed.funds, {});
+    assert.deepEqual(failed.diagnostics.funds.fixedIncome, { attempted: 1, successful: 0, status: "unavailable" });
+    assert.deepEqual(failed.diagnostics.providers.fixedIncome, { status: "rejected", quoteCount: 0 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("derived quote diagnostics distinguish blocked currency conversion from provider quote returns", async () => {
+  const originalFetch = globalThis.fetch;
+  for (const dollarStatus of ["conflicted", "unavailable"]) {
+    globalThis.fetch = async (input, options = {}) => {
+      const url = new URL(typeof input === "string" ? input : input.url);
+      if (url.hostname === "www.tgju.org") {
+        if (dollarStatus === "unavailable") throw new Error("TGJU unavailable");
+        return new Response('<td data-col="info.last_trade.PDrCotVal">5000000</td>', { status: 200 });
+      }
+      if (url.hostname === "www.bonbast.com" && options.method !== "POST") {
+        if (dollarStatus === "unavailable") throw new Error("Bonbast unavailable");
+        return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
+      }
+      if (url.hostname === "www.bonbast.com") return new Response(JSON.stringify({ usd1: "600000" }), { status: 200 });
+      if (url.hostname === "raw.githubusercontent.com") {
+        if (dollarStatus === "unavailable") throw new Error("Navasan unavailable");
+        return new Response(JSON.stringify({ usd: { value: "700000", date: 1770000000 } }), { status: 200 });
+      }
+      if (url.hostname === "api.coingecko.com") return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
+      if (url.hostname === "api.binance.com") throw new Error("Binance unavailable");
+      throw new Error(`Unexpected request: ${url.href}`);
+    };
+    try {
+      const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bitcoin") });
+      const data = await response.json();
+      assert.equal(data.assets.bitcoin, undefined);
+      assert.equal(data.diagnostics.assets.bitcoin.status, "unavailable");
+      assert.equal(data.diagnostics.assets.bitcoin.reason, dollarStatus === "conflicted" ? "currency_conflicted" : "currency_unavailable");
+      assert.equal(data.diagnostics.assets.bitcoin.successful, 0);
+      assert.equal(data.diagnostics.assets.bitcoin.excludedForCurrency, 1);
+      assert.equal(data.diagnostics.providers.coinGecko.quoteCount, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+});
