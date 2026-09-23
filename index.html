@@ -235,13 +235,13 @@
           <div class="page-heading"><div><span class="kicker">داده بازار</span><h2 id="assets-view-title">دارایی‌ها و بازار</h2><p>قیمت‌های عمومی از چند منبع جمع می‌شوند و برای هر دسته با میانه‌گیری نمایش داده می‌شوند.</p></div><span class="page-badge">چندمنبعی</span></div>
           <aside class="panel market-panel">
             <div class="section-heading"><div><span class="kicker">داده زنده</span><h2>بازار الان</h2></div><button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی">↻</button></div>
-            <p class="panel-intro">قیمت هر دارایی با توجه به سازگاری و اعتبار منابع نمایش داده می‌شود؛ موارد متعارض در ارزش‌گذاری وارد نمی‌شوند. این داده برای تصمیم‌سازی است، نه معامله لحظه‌ای.</p>
+            <p class="panel-intro">قیمت‌های دارای توافق موقت با هشدار و اطمینان متوسط نمایش داده می‌شوند؛ قیمت‌های متعارض در ارزش‌گذاری وارد نمی‌شوند. این داده برای تصمیم‌سازی است، نه معامله لحظه‌ای.</p>
             <div id="market-data" class="market-data"><div class="loading-lines"><i></i><i></i><i></i><i></i></div></div>
             <div class="market-footer"><span id="market-updated">—</span><span id="market-coverage">—</span></div>
-            <div class="data-note">اگر منبعی جواب ندهد، حذف می‌شود؛ عدد ساختگی یا آخرین عدد قدیمی جای آن نمی‌نشیند.</div>
+            <div class="data-note">اگر قیمت زنده در دسترس نباشد، آخرین مقدار ثبت‌شده جداگانه با تاریخ و سن داده نمایش داده می‌شود و وارد ارزش‌گذاری جاری نمی‌شود.</div>
           </aside>
           <details class="panel diagnostics-panel"><summary class="section-heading collapsible-summary"><div><span class="kicker">لایه پیشرفته</span><h3>تشخیص منبع و تازگی داده</h3></div><span class="info-chip">اختیاری</span></summary><div id="market-diagnostics" class="diagnostics-grid"><div class="empty-state">بعد از دریافت داده، وضعیت منابع اینجا نمایش داده می‌شود.</div></div></details>
-          <article class="panel assets-explainer"><div class="section-heading"><div><span class="kicker">چرا چندمنبعی؟</span><h3>یک عدد، با زمینه شفاف</h3></div><span class="info-chip">بدون API پولی</span></div><p>اگر چند منبع معتبر پاسخ بدهند، عدد میانی استفاده می‌شود تا یک منبع منفرد نتیجه را بیش از حد جابه‌جا نکند. در صورت قطع یک منبع، داده جعلی جایگزین نمی‌شود.</p></article>
+          <article class="panel assets-explainer"><div class="section-heading"><div><span class="kicker">چرا چندمنبعی؟</span><h3>یک عدد، با زمینه شفاف</h3></div><span class="info-chip">بدون API پولی</span></div><p>اگر چند منبع معتبر پاسخ بدهند، عدد میانی پس از کنارگذاشتن داده‌های پرت محاسبه می‌شود. توافق داخل حدود موقت با برچسب اطمینان متوسط نمایش داده می‌شود؛ اختلاف بیشتر تعارض است و وارد ارزش‌گذاری نمی‌شود.</p></article>
         </section>
 
         <section data-app-view="settings" class="app-view" aria-labelledby="settings-view-title">

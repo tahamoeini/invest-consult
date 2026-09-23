@@ -261,11 +261,18 @@ export function marketPriceAt(market, assetId, asOf = new Date().toISOString()) 
   if (!definition.marketKey) return 1;
   const timestamp = new Date(asOf).getTime();
   if (!Number.isFinite(timestamp)) return null;
+  const currentUnavailableAt = market?._currentQuotesUnavailableAt
+    ? new Date(market._currentQuotesUnavailableAt).getTime()
+    : NaN;
+  if (Number.isFinite(currentUnavailableAt) && timestamp >= currentUnavailableAt) return null;
   const current = market && market.assets && market.assets[definition.marketKey];
   const currentPrice = finite(current && current.price);
-  const updatedAt = new Date(current?.retrievedAt || market && market.updatedAt || 0).getTime();
-  if (current?.status === "conflicted" && timestamp >= updatedAt) return null;
-  if (currentPrice !== null && Number.isFinite(updatedAt) && timestamp >= updatedAt) return currentPrice;
+  const updateTimeValue = current?.retrievedAt || market?.updatedAt;
+  const updatedAt = updateTimeValue ? new Date(updateTimeValue).getTime() : NaN;
+  const currentQuoteUsable = currentPrice !== null && current?.status !== "conflicted" && current?.status !== "unavailable";
+  if (Number.isFinite(updatedAt) && timestamp >= updatedAt) {
+    return currentQuoteUsable ? currentPrice : null;
+  }
   const rawSeries = market && market.history && market.history[marketHistoryKey(assetId)];
   const points = (Array.isArray(rawSeries) ? rawSeries : []).map(seriesPointValue).filter((point) => point && point.value !== null && point.value > 0 && Number.isFinite(new Date(point.date).getTime()) && new Date(point.date).getTime() <= timestamp).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
   return points.length ? points[points.length - 1].value : null;

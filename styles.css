@@ -562,6 +562,8 @@ input[type="range"] { padding: 0; border: 0; accent-color: var(--primary); }
 .market-snapshot-item.is-unavailable { background: var(--surface-muted); color: var(--muted); }
 .market-row-unavailable { background: var(--surface-muted); }
 .market-row-unavailable .market-value strong, .market-row-unavailable .market-value small { color: var(--muted); }
+.market-value > .market-last-known, .market-snapshot-item > .market-last-known { display: block; margin-top: 5px; color: var(--text-secondary, #66757b); line-height: 1.6; white-space: normal; }
+.market-last-known strong { color: inherit; }
 .confidence-high { color: #19725d; }
 .confidence-medium { color: #8f641b; }
 .confidence-low, .confidence-none { color: var(--muted); }

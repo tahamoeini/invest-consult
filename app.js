@@ -27,6 +27,7 @@ import {
   simpleChangeTransactions,
 } from "./src/portfolio.js";
 import { INSTRUMENT_REGISTRY } from "./src/market/catalog.js";
+import { lastKnownMarketQuote } from "./src/market/last-known.js";
 import { AppShell } from "./src/ui/components.js";
 import { donutChartMarkup, lineChartMarkup, normalizeSeriesIndex } from "./src/ui/charts.js";
 import { createNavigationController } from "./src/ui/navigation.js";
@@ -70,6 +71,7 @@ const navigationController = createNavigationController(appShell, appStore);
 
 let copy;
 let liveMarket = null;
+let lastKnownMarket = null;
 let lastPlan = null;
 let pendingSimpleBalances = null;
 let pendingSimpleStock = null;
@@ -460,37 +462,48 @@ function marketUnavailableMessage(item, diagnostics) {
   return text("market.unavailable");
 }
 
-function renderMarket(data) {
-  if (!data || !data.assets) {
+function lastKnownPriceMarkup(assetId, data, cachedMarket, currentItem) {
+  const quote = lastKnownMarketQuote(assetId, data, cachedMarket);
+  if (!quote) return "";
+  const unit = marketValueUnit({ unit: quote.unit || currentItem?.unit || INSTRUMENT_REGISTRY[assetId]?.unit });
+  return `<small class="market-last-known"><strong>${escapeHTML(text("market.lastKnown", "آخرین مقدار ثبت‌شده"))}:</strong> ${formatIRR(quote.price)} ${escapeHTML(unit)} · ${escapeHTML(text("market.lastKnownObserved", "مشاهده"))} ${escapeHTML(formatDateTime(quote.observedAt))} · ${escapeHTML(freshnessLabel(quote.observedAt))}</small>`;
+}
+
+function renderMarket(data, cachedMarket = lastKnownMarket) {
+  if ((!data || !data.assets) && !cachedMarket) {
     marketDataEl.innerHTML = `<div class="empty-state">${escapeHTML(text("market.empty", "داده بازار در دسترس نیست."))}</div>`;
     $("#market-updated").textContent = "—";
     $("#market-coverage").textContent = "—";
     renderMarketDiagnostics(null);
     return;
   }
+  const currentMarket = data && data.assets ? data : { assets: {}, funds: {}, history: {} };
   const labels = text("market.labels", {});
   const cards = Object.entries(labels).map(([key, label]) => {
-    const item = data.assets[key];
+    const item = currentMarket.assets[key];
     const hasPrice = item && item.status !== "conflicted" && item.price !== null && Number.isFinite(Number(item.price));
     if (!hasPrice) {
-      const detail = marketUnavailableMessage(item, data.diagnostics?.assets?.[key]);
-      return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>${escapeHTML(detail)}</small></div></div>`;
+      const detail = marketUnavailableMessage(item, currentMarket.diagnostics?.assets?.[key]);
+      const lastKnown = lastKnownPriceMarkup(key, currentMarket, cachedMarket, item);
+      return `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)}</small></div><div class="market-value"><strong>—</strong><small>${escapeHTML(detail)}</small>${lastKnown}</div></div>`;
     }
     const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
     const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange", "\u2014");
     const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
-    const timeLabels = marketTimeLabels(item, data.updatedAt);
+    const timeLabels = marketTimeLabels(item, currentMarket.updatedAt);
     const quality = text(`market.quality.${item.status || "healthy"}`);
     const basis = text(`market.quoteType.${item.quoteType || "direct"}`);
     return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)} · ${escapeHTML(basis)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(quality)} · ${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(timeLabels)}</small></div></div>`;
   }).join("");
-  const fixed = data.funds && data.funds.fixedIncome;
+  const fixed = currentMarket.funds && currentMarket.funds.fixedIncome;
   const fixedCard = fixed && fixed.effectiveAnnualReturn !== null && fixed.effectiveAnnualReturn !== undefined && Number.isFinite(Number(fixed.effectiveAnnualReturn))
-    ? `<div class="market-row"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>${formatPercent(fixed.effectiveAnnualReturn)}</strong><small>${escapeHTML(text("market.annual"))} · ${escapeHTML(String(fixed.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(marketTimeLabels(fixed, data.updatedAt))}</small></div></div>`
+    ? `<div class="market-row"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>${formatPercent(fixed.effectiveAnnualReturn)}</strong><small>${escapeHTML(text("market.annual"))} · ${escapeHTML(String(fixed.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(marketTimeLabels(fixed, currentMarket.updatedAt))}</small></div></div>`
     : `<div class="market-row market-row-unavailable"><div><span class="asset-dot asset-fixed"></span><strong>${escapeHTML(text("assets.fixed.title"))}</strong><small>${escapeHTML(text("market.fixedDetail"))}</small></div><div class="market-value"><strong>—</strong><small>داده در دسترس نیست</small></div></div>`;
   marketDataEl.innerHTML = cards + fixedCard || `<div class="empty-state">${escapeHTML(text("market.empty", "داده بازار در دسترس نیست."))}</div>`;
-  $("#market-updated").textContent = data.updatedAt ? `${text("market.updated", "آخرین خوانش")} ${formatDateTime(data.updatedAt)}` : "\u2014";
-  const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item.sourceCount) || 0), 0);
+  $("#market-updated").textContent = currentMarket.diagnostics && currentMarket.updatedAt
+    ? `${text("market.updated", "آخرین خوانش")} ${formatDateTime(currentMarket.updatedAt)}`
+    : text("market.liveUnavailable", "قیمت زنده معتبر دریافت نشده است");
+  const sourceTotal = Object.values(currentMarket.assets).reduce((total, item) => total + (Number(item.sourceCount) || 0), 0);
   $("#market-coverage").textContent = `${sourceTotal} ${text("market.sourceQuotes", "قیمت معتبر")}`;
   renderMarketDiagnostics(data);
 }
@@ -559,6 +572,7 @@ function marketTimeLabels(item, retrievedFallback = null) {
 
 function confidenceLabel(item) {
   const count = Number(item?.sourceCount) || 0;
+  if (item?.status === "provisional" || item?.confidence === "medium") return { label: "اعتماد متوسط", className: "confidence-medium" };
   if (count >= 3) return { label: "اعتماد بالا", className: "confidence-high" };
   if (count === 2) return { label: "اعتماد متوسط", className: "confidence-medium" };
   if (count === 1) return { label: "یک منبع", className: "confidence-low" };
@@ -672,35 +686,39 @@ function getAssetColor(assetId) {
   return { fixed: "#126b62", gold: "#c18a2c", currency: "#4979a7", silver: "#8997a0", stocks: "#8b5bb7", cash: "#4c9c6d", other: "#c56c4a", bitcoin: "#f7931a", ethereum: "#627eea", tether: "#26a17b", platinum: "#8a9aa8", palladium: "#6d7480", copper: "#b87333", bourseIndex: "#7c5cbf" }[assetId] || "#126b62";
 }
 
-function renderMarketSnapshot(data) {
+function renderMarketSnapshot(data, cachedMarket = lastKnownMarket) {
   const container = $("#dashboard-market-snapshot");
   const status = $("#dashboard-market-status");
   if (!container || !status) return;
-  if (!data || !data.assets) {
+  if ((!data || !data.assets) && !cachedMarket) {
     status.textContent = text("dashboard.marketUnavailable", "داده بازار در دسترس نیست؛ عدد ساختگی نمایش داده نمی‌شود.");
     status.className = "data-note data-note-warning";
     container.innerHTML = `<div class="empty-state">داده بازار در دسترس نیست. از صفحه بازار دوباره تلاش کن.</div>`;
     return;
   }
-  const sourceTotal = Object.values(data.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
-  status.textContent = `${formatIRR(sourceTotal)} قیمت معتبر · ${freshnessLabel(data.updatedAt)}`;
+  const currentMarket = data && data.assets ? data : { assets: {}, funds: {}, history: {} };
+  const sourceTotal = Object.values(currentMarket.assets).reduce((total, item) => total + (Number(item?.sourceCount) || 0), 0);
+  status.textContent = currentMarket.diagnostics && currentMarket.updatedAt
+    ? `${formatIRR(sourceTotal)} قیمت معتبر · ${freshnessLabel(currentMarket.updatedAt)}`
+    : text("dashboard.marketUnavailable", "داده زنده بازار در دسترس نیست؛ مقدار ثبت‌شده فقط برای مرجع است و در ارزش‌گذاری جاری وارد نمی‌شود.");
   status.className = "data-note";
   const marketKeys = ["gold", "dollar", "silver", "bitcoin", "ethereum", "bourseIndex"];
   const items = marketKeys.map((key) => {
-    const item = data.assets[key];
+    const item = currentMarket.assets[key];
     const label = text(`market.labels.${key}.title`, text(`assets.${key}.title`, key));
     const hasPrice = item && item.status !== "conflicted" && item.price !== null && item.price !== undefined && Number.isFinite(Number(item.price));
     if (!hasPrice) {
-      const quality = marketUnavailableMessage(item, data.diagnostics?.assets?.[key]);
-      return `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>${escapeHTML(quality)}</small></article>`;
+      const quality = marketUnavailableMessage(item, currentMarket.diagnostics?.assets?.[key]);
+      const lastKnown = lastKnownPriceMarkup(key, currentMarket, cachedMarket, item);
+      return `<article class="market-snapshot-item is-unavailable"><strong>${escapeHTML(label)}</strong><b>—</b><small>${escapeHTML(quality)}</small>${lastKnown}</article>`;
     }
     const change = item.changePct === null || item.changePct === undefined || item.changePct === "" ? NaN : Number(item.changePct);
     const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
     const changeLabel = Number.isFinite(change) ? `${change > 0 ? "+" : ""}${formatPercent(change)}` : text("market.noChange");
-    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, data.updatedAt))}</small></article>`;
+    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, currentMarket.updatedAt))}</small></article>`;
   });
-  const fixed = data.funds?.fixedIncome;
-  items.push(fixed && fixed.effectiveAnnualReturn !== null && fixed.effectiveAnnualReturn !== undefined && Number.isFinite(Number(fixed.effectiveAnnualReturn)) ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-fixed"></span><strong>درآمد ثابت</strong></div><b>${formatPercent(fixed.effectiveAnnualReturn)}</b><span class="muted">بازده موثر سالانه</span><small>${escapeHTML(confidenceLabel(fixed).label)}</small><small>${escapeHTML(marketTimeLabels(fixed, data.updatedAt))}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>درآمد ثابت</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
+  const fixed = currentMarket.funds?.fixedIncome;
+  items.push(fixed && fixed.effectiveAnnualReturn !== null && fixed.effectiveAnnualReturn !== undefined && Number.isFinite(Number(fixed.effectiveAnnualReturn)) ? `<article class="market-snapshot-item"><div><span class="asset-dot asset-fixed"></span><strong>درآمد ثابت</strong></div><b>${formatPercent(fixed.effectiveAnnualReturn)}</b><span class="muted">بازده موثر سالانه</span><small>${escapeHTML(confidenceLabel(fixed).label)}</small><small>${escapeHTML(marketTimeLabels(fixed, currentMarket.updatedAt))}</small></article>` : `<article class="market-snapshot-item is-unavailable"><strong>درآمد ثابت</strong><b>—</b><small>داده در دسترس نیست</small></article>`);
   container.innerHTML = items.join("");
 }
 
@@ -711,10 +729,10 @@ function renderMarketDiagnostics(data) {
     container.innerHTML = `<div class="empty-state">تشخیص منبع برای این پاسخ در دسترس نیست.</div>`;
     return;
   }
-  const providerNames = { providerA: "TGJU", providerB: "Bonbast", providerC: "Navasan", auxiliary: "ChartGoldPrice", coinGecko: "CoinGecko", binance: "Binance", metalsLive: "Metals.live", yahooMetals: "Yahoo Finance", tsetmc: "TSETMC", fixedIncome: "کاریزما" };
+  const providerNames = { providerA: "TGJU", providerB: "Bonbast", providerC: "Navasan", auxiliary: "ChartGoldPrice", coinGecko: "CoinGecko", binance: "Binance", metalsLive: "Metals.live", yahooMetals: "Yahoo Finance", tsetmc: "TSETMC", tgjuIndex: "TGJU · شاخص کل", fixedIncome: "کاریزما" };
   const providers = Object.entries(data.diagnostics.providers || {}).map(([id, item]) => {
     const status = item.status === "fulfilled"
-      ? text("market.providerResponded")
+      ? Number(item.quoteCount) > 0 ? text("market.providerResponded") : text("market.providerEmpty")
       : item.status === "skipped" ? text("market.providerSkipped") : text("market.providerFailed");
     return `<div class="diagnostic-row"><div><strong>${escapeHTML(providerNames[id] || id)}</strong><small>${escapeHTML(status)}</small></div><b>${formatIRR(item.quoteCount || 0)} ${escapeHTML(text("market.providerQuotesReturned"))}</b></div>`;
   }).join("");
@@ -784,7 +802,7 @@ function renderDashboard() {
     if (actionAllocation) actionAllocation.innerHTML = "";
     actionReason.textContent = "بدون ورودی کافی، عددی حدس زده نمی‌شود.";
   }
-  renderMarketSnapshot(liveMarket);
+  renderMarketSnapshot(liveMarket, lastKnownMarket);
 }
 
 function assetMeta(key) {
@@ -1758,22 +1776,36 @@ async function runGoalPlanning(event) {
 async function loadMarket() {
   setStatus(text("status.loading", fallbackCopy.status.loading), "loading");
   appStore.setState({ marketStatus: "loading", error: null });
+  const cacheDisabled = appStore.getState().marketCacheDisabled;
+  lastKnownMarket = cacheDisabled ? null : readJson(MARKET_CACHE_KEY, null);
   try {
     const assets = marketRequestAssets();
     const response = await fetchWithTimeout(`/api/market?assets=${encodeURIComponent(assets.join(","))}`, { cache: "default" });
     if (!response.ok) throw new Error("Market request failed");
     liveMarket = await response.json();
-    if (!appStore.getState().marketCacheDisabled) writeJson(MARKET_CACHE_KEY, liveMarket);
+    const cacheDisabledNow = appStore.getState().marketCacheDisabled;
+    if (!cacheDisabledNow) writeJson(MARKET_CACHE_KEY, liveMarket);
+    else lastKnownMarket = null;
     appStore.setState({ market: liveMarket, marketStatus: "connected" });
-    renderMarket(liveMarket);
+    renderMarket(liveMarket, lastKnownMarket);
     renderHistory();
     renderPortfolio();
     renderDashboard();
     setStatus(text("status.connected", fallbackCopy.status.connected), "success");
   } catch {
-    liveMarket = appStore.getState().marketCacheDisabled ? null : readJson(MARKET_CACHE_KEY, null);
+    const cacheDisabledNow = appStore.getState().marketCacheDisabled;
+    lastKnownMarket = cacheDisabledNow ? null : readJson(MARKET_CACHE_KEY, null);
+    const cachedHistory = lastKnownMarket && typeof lastKnownMarket === "object" ? lastKnownMarket : null;
+    liveMarket = cachedHistory ? {
+      ...cachedHistory,
+      assets: {},
+      funds: {},
+      diagnostics: null,
+      _cachedFallbackOnly: true,
+      _currentQuotesUnavailableAt: new Date().toISOString(),
+    } : null;
     appStore.setState({ market: liveMarket, marketStatus: liveMarket ? "cached" : "unavailable" });
-    renderMarket(liveMarket);
+    renderMarket(liveMarket, lastKnownMarket);
     renderHistory();
     renderPortfolio();
     renderDashboard();
@@ -1843,11 +1875,27 @@ function bindEvents() {
   $("#settings-market-cache").addEventListener("change", (event) => {
     const disabled = event.currentTarget.checked;
     appStore.setState({ marketCacheDisabled: disabled });
-    if (disabled) localStorage.removeItem(MARKET_CACHE_KEY);
+    if (disabled) {
+      localStorage.removeItem(MARKET_CACHE_KEY);
+      lastKnownMarket = null;
+      if (liveMarket?._cachedFallbackOnly || appStore.getState().marketStatus === "cached") {
+        liveMarket = null;
+        appStore.setState({ market: null, marketStatus: "unavailable" });
+      }
+      renderMarket(liveMarket, null);
+      renderDashboard();
+    }
     setStatus(disabled ? "ذخیره بازار خاموش است" : text("status.connected", fallbackCopy.status.connected), disabled ? "warning" : "success");
   });
   $("#settings-clear-market-cache").addEventListener("click", () => {
     localStorage.removeItem(MARKET_CACHE_KEY);
+    lastKnownMarket = null;
+    if (liveMarket?._cachedFallbackOnly) {
+      liveMarket = null;
+      appStore.setState({ market: null, marketStatus: "unavailable" });
+    }
+    renderMarket(liveMarket, null);
+    renderDashboard();
     setTransferStatus("داده بازار ذخیره‌شده حذف شد.", "success");
   });
   $("#settings-export-data").addEventListener("click", exportHistory);

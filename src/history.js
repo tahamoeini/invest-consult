@@ -46,7 +46,7 @@ function sanitizeSnapshot(snapshot, fallbackDate) {
           sourceCount: dependencySourceCount !== null && dependencySourceCount >= 0 ? dependencySourceCount : 0,
           unit: typeof dependency.unit === "string" ? dependency.unit.slice(0, 20) : "",
           source: typeof dependency.source === "string" ? dependency.source.slice(0, 100) : "",
-          status: ["healthy", "degraded", "conflicted", "unavailable"].includes(dependency.status) ? dependency.status : "unavailable",
+          status: ["healthy", "degraded", "provisional", "conflicted", "unavailable"].includes(dependency.status) ? dependency.status : "unavailable",
           confidence: ["high", "medium", "low", "none"].includes(dependency.confidence) ? dependency.confidence : "none",
           observedAt: validDate(dependency.observedAt),
           retrievedAt: validDate(dependency.retrievedAt),
@@ -64,7 +64,7 @@ function sanitizeSnapshot(snapshot, fallbackDate) {
         };
       }).filter(Boolean);
       if (["direct", "derived", "mixed"].includes(source.quoteType)) item.quoteType = source.quoteType;
-      if (["healthy", "degraded", "conflicted", "unavailable"].includes(source.status)) item.status = source.status;
+      if (["healthy", "degraded", "provisional", "conflicted", "unavailable"].includes(source.status)) item.status = source.status;
       if (["high", "medium", "low", "none"].includes(source.confidence)) item.confidence = source.confidence;
       if (typeof source.consensusPolicyVersion === "string") item.consensusPolicyVersion = source.consensusPolicyVersion.slice(0, 60);
       if (typeof source.consensusCalibrated === "boolean") item.consensusCalibrated = source.consensusCalibrated;

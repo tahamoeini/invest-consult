@@ -16,11 +16,11 @@ const fundPages = { fixedIncome: "https://charisma.ir/funds/fixedincomefund" };
 const UPSTREAM_TIMEOUT_MS = 1800;
 const INTERACTIVE_BUDGET_MS = 3500;
 const CONSENSUS_POLICY = Object.freeze({
-  version: "quote-consensus-v1",
+  version: "quote-consensus-v2-provisional",
   calibrated: false,
-  agreementTolerancePct: Object.freeze({ fx: null, gold: null, commodities: null, crypto: null, iranEquity: null }),
+  agreementTolerancePct: Object.freeze({ fx: 0.25, gold: 0.10, commodities: null, crypto: null, iranEquity: null }),
 });
-const CONFIGURED_SOURCE_COUNTS = Object.freeze({ dollar: 3, gold: 5, silver: 3, bitcoin: 2, ethereum: 2, tether: 1, platinum: 2, palladium: 2, copper: 2, bourseIndex: 1 });
+const CONFIGURED_SOURCE_COUNTS = Object.freeze({ dollar: 3, gold: 5, silver: 3, bitcoin: 2, ethereum: 2, tether: 1, platinum: 2, palladium: 2, copper: 2, bourseIndex: 2 });
 const DEFAULT_MARKET_ASSETS = Object.freeze(["dollar", "gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper", "bourseIndex", "fixedIncome"]);
 const headers = {
   "User-Agent": "invest-consult/2.0 (+https://github.com/tahamoeini/invest-consult)",
@@ -79,6 +79,10 @@ function quote(asset, price, source, metadata = {}) {
   };
 }
 
+function isPositiveNumber(value) {
+  return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
 async function fetchContent(url, options = {}, read = (response) => response.text()) {
   const { requestTimeoutMs = UPSTREAM_TIMEOUT_MS, ...requestOptions } = options;
   const controller = new AbortController();
@@ -114,15 +118,14 @@ async function providerA(requested = Object.keys(sourcePages)) {
     const changePct = firstNumberAfter(html, 'data-col="info.last_trade.last_change_percentage"', 300);
     const revision = html.match(/data-revision="([^"]+)"/);
     const serverTime = html.match(/id="server-time"[^>]+data-value="([^"]+)"/);
-    const item = quote(asset, price / 10, "Provider A", { changePct, sourceUrl: TGJU_BASE + page, sourceTime: serverTime ? serverTime[1] : null, sourceRevision: revision ? revision[1] : null });
-    if (!item) throw new Error(`No normalized quote for ${asset}`);
-    return { item, history: normalizeTgjuHistory(extractTgjuChartData(html)) };
+    const item = quote(asset, price === null ? null : price / 10, "Provider A", { changePct, sourceUrl: TGJU_BASE + page, sourceTime: serverTime ? serverTime[1] : null, sourceRevision: revision ? revision[1] : null });
+    return { asset, item, history: normalizeTgjuHistory(extractTgjuChartData(html)) };
   }));
   const fulfilled = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
   if (!fulfilled.length) throw new Error("No TGJU quote pages responded");
   return {
-    quotes: fulfilled.map((result) => result.item),
-    history: Object.fromEntries(fulfilled.map((result) => [result.item.asset, result.history])),
+    quotes: fulfilled.map((result) => result.item).filter(Boolean),
+    history: Object.fromEntries(fulfilled.map((result) => [result.asset, result.history])),
   };
 }
 
@@ -140,7 +143,7 @@ async function providerB() {
     requestTimeoutMs: 800,
     cf: { cacheTtl: 60, cacheEverything: true },
   });
-  if (data.rest || !data.usd1) throw new Error("Quote response was incomplete");
+  if (data.rest) throw new Error("Quote response was incomplete");
   const sourceTime = data.last_modified || data.created || null;
   return [
     quote("dollar", parseNumber(data.usd1), "Provider B", { sourceUrl: BONBAST_BASE + "/", sourceTime }),
@@ -283,7 +286,7 @@ async function providerYahooMetals(requested = ["platinum", "palladium", "copper
 async function providerTsetmc() {
   const data = await fetchJson(TSETMC_INDEX_URL);
   const current = nestedNumber(data, ["xNivIn", "indexValue", "currentValue", "lastValue", "value"]);
-  if (!Number.isFinite(current) || current <= 0) throw new Error("TSETMC index value not found");
+  if (!Number.isFinite(current) || current <= 0) return [];
   const previous = nestedNumber(data, ["xNivInPre", "previousValue", "yesterdayValue", "prevValue"]);
   const changePct = Number.isFinite(previous) && previous > 0 ? (current / previous - 1) * 100 : null;
   return [quote("bourseIndex", current, "TSETMC", {
@@ -292,6 +295,26 @@ async function providerTsetmc() {
     unit: "point",
     currency: "INDEX",
   })];
+}
+
+async function providerTgjuIndex() {
+  const url = TGJU_BASE + "gc30";
+  const html = await fetchText(url, { requestTimeoutMs: 500 });
+  const current = firstNumberAfter(html, 'data-col="info.last_trade.PDrCotVal"', 500);
+  const series = normalizeHistorySeries(extractTgjuChartData(html));
+  const history = series.map((point) => ({ ...point, value: Math.round(point.value) }));
+  if (!Number.isFinite(current) || current <= 0) return { quotes: [], history: { bourseIndex: history } };
+  const serverTime = html.match(/id="server-time"[^>]+data-value="([^"]+)"/);
+  const indexQuote = quote("bourseIndex", current, "TGJU", {
+    sourceUrl: url,
+    sourceTime: serverTime ? serverTime[1] : null,
+    unit: "point",
+    currency: "INDEX",
+  });
+  return {
+    quotes: indexQuote ? [indexQuote] : [],
+    history: { bourseIndex: history },
+  };
 }
 
 function normalizeHistorySeries(value) {
@@ -386,11 +409,12 @@ export function aggregate(asset, quotes) {
   if (!valid.length) return null;
   const sleeveId = INSTRUMENT_REGISTRY[asset]?.sleeveId || "commodities";
   const configuredTolerance = CONSENSUS_POLICY.agreementTolerancePct[sleeveId];
-  const agreementTolerancePct = CONSENSUS_POLICY.calibrated && Number.isFinite(configuredTolerance) ? configuredTolerance : 0;
+  const hasAgreementTolerance = Number.isFinite(configuredTolerance);
+  const agreementTolerancePct = hasAgreementTolerance ? configuredTolerance : 0;
   const allPrices = valid.map((item) => Number(item.price));
   const center = median(allPrices);
   const mad = median(allPrices.map((price) => Math.abs(price - center)));
-  const outlierLimit = Math.max(3 * 1.4826 * (mad || 0), center * agreementTolerancePct / 100);
+  const outlierLimit = 3 * 1.4826 * (mad || 0);
   const accepted = valid.length >= 3
     ? valid.filter((item) => Math.abs(Number(item.price) - center) <= outlierLimit)
     : valid;
@@ -400,12 +424,13 @@ export function aggregate(asset, quotes) {
     : 0;
   const conflicted = accepted.length >= 2 && spreadPct > agreementTolerancePct;
   const usable = conflicted ? [] : accepted;
+  const provisional = !CONSENSUS_POLICY.calibrated && hasAgreementTolerance && accepted.length >= 2 && !conflicted;
   const changes = valid
     .map((item) => item.changePct)
     .filter((value) => value !== null && value !== undefined && value !== "")
     .map(Number)
     .filter(Number.isFinite);
-  const sourceTimes = valid.map((item) => item.observedAt || item.sourceTime).filter(Boolean).sort((left, right) => {
+  const sourceTimes = (usable.length ? usable : accepted).map((item) => item.observedAt || item.sourceTime).filter(Boolean).sort((left, right) => {
     const leftTime = new Date(left).getTime();
     const rightTime = new Date(right).getTime();
     if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
@@ -415,9 +440,9 @@ export function aggregate(asset, quotes) {
   const quoteTypes = new Set(usable.map((item) => item.quoteType === "derived" ? "derived" : "direct"));
   const conversionDependencies = [...new Map(valid.flatMap((item) => item.conversionDependencies || []).map((dependency) => [JSON.stringify(dependency), dependency])).values()];
   const degradedDependency = conversionDependencies.some((dependency) => dependency.status !== "healthy");
-  const status = conflicted ? "conflicted" : usable.length === 1 || accepted.length < valid.length || degradedDependency ? "degraded" : "healthy";
+  const status = conflicted ? "conflicted" : provisional ? "provisional" : usable.length === 1 || accepted.length < valid.length || degradedDependency ? "degraded" : "healthy";
   const confidenceRank = { none: 0, low: 1, medium: 2, high: 3 };
-  let confidence = conflicted ? "none" : usable.length >= 3 && accepted.length === valid.length ? "high" : usable.length >= 2 ? "medium" : "low";
+  let confidence = conflicted ? "none" : provisional ? "medium" : usable.length >= 3 && accepted.length === valid.length ? "high" : usable.length >= 2 ? "medium" : "low";
   conversionDependencies.forEach((dependency) => {
     if ((confidenceRank[dependency.confidence] ?? 1) < confidenceRank[confidence]) confidence = dependency.confidence || "low";
   });
@@ -437,7 +462,8 @@ export function aggregate(asset, quotes) {
     spreadPct: Number(spreadPct.toFixed(3)),
     consensusPolicyVersion: CONSENSUS_POLICY.version,
     consensusCalibrated: CONSENSUS_POLICY.calibrated,
-    agreementTolerancePct: CONSENSUS_POLICY.calibrated ? agreementTolerancePct : null,
+    agreementTolerancePct: hasAgreementTolerance ? agreementTolerancePct : null,
+    consensusProvisional: provisional,
     sources: usable.map((item) => item.source),
     sourceValues: valid.map((item) => ({ source: item.source, price: Math.round(item.price), quoteType: item.quoteType, observedAt: item.observedAt || item.sourceTime || null })),
     observedAt: sourceTimes.at(-1) || null,
@@ -539,6 +565,18 @@ export async function onRequestGet(context = {}) {
   settledProviders.forEach((result, index) => {
     providerResults.set(activeDefinitions[index].id, result);
   });
+  const tsetmcOutcome = providerResults.get("tsetmc");
+  const tsetmcQuotes = tsetmcOutcome?.status === "fulfilled" ? tsetmcOutcome.value.quotes : [];
+  let tgjuIndexOutcome = { status: "skipped" };
+  if (selected.has("bourseIndex") && !tsetmcQuotes.some((item) => item.asset === "bourseIndex")) {
+    try {
+      const result = await providerTgjuIndex();
+      tgjuIndexOutcome = { status: "fulfilled", value: { quotes: result.quotes || [], history: result.history || {} } };
+    } catch {
+      tgjuIndexOutcome = { status: "rejected" };
+    }
+  }
+  providerResults.set("tgjuIndex", tgjuIndexOutcome);
   const primaryQuotes = ["providerA", "providerB"].flatMap((id) => {
     const result = providerResults.get(id);
     return result?.status === "fulfilled" ? result.value.quotes : [];
@@ -568,18 +606,33 @@ export async function onRequestGet(context = {}) {
     .filter((item) => item.currency === "USD")
     .map((item) => item.asset));
   const globalQuotes = convertedGlobalQuotes.filter(Boolean);
-  const referenceQuotes = providerResults.get("tsetmc")?.status === "fulfilled" ? providerResults.get("tsetmc").value.quotes : [];
+  const referenceQuotes = ["tsetmc", "tgjuIndex"].flatMap((id) => {
+    const result = providerResults.get(id);
+    return result?.status === "fulfilled" ? result.value.quotes : [];
+  });
   const quotes = [...primaryQuotes, ...globalQuotes, ...referenceQuotes];
-  const auxiliaryAssets = ["gold", "silver"].filter((asset) => selected.has(asset) && aggregate(asset, quotes)?.status !== "healthy");
+  const auxiliaryAssets = ["gold", "silver"].filter((asset) => {
+    if (!selected.has(asset)) return false;
+    const status = aggregate(asset, quotes)?.status;
+    return status !== "healthy" && status !== "provisional";
+  });
   let auxiliaryResult = { status: "skipped", quoteCount: 0 };
   const auxiliary = auxiliaryAssets.length ? await getAuxiliaryMetalData().catch(() => null) : null;
-  if (auxiliaryAssets.length) auxiliaryResult = { status: auxiliary ? "fulfilled" : "rejected", quoteCount: 0 };
+  const auxiliaryRawQuotes = [];
+  if (auxiliaryAssets.length) {
+    if (auxiliary && auxiliaryAssets.includes("gold") && isPositiveNumber(auxiliary.goldUsdPerGram)) {
+      auxiliaryRawQuotes.push({ asset: "gold", price: auxiliary.goldUsdPerGram, source: "Auxiliary metal source", currency: "USD" });
+    }
+    if (auxiliary && auxiliaryAssets.includes("silver") && isPositiveNumber(auxiliary.silverUsdPerGram)) {
+      auxiliaryRawQuotes.push({ asset: "silver", price: auxiliary.silverUsdPerGram, source: "Auxiliary metal source", currency: "USD" });
+    }
+    auxiliaryResult = { status: auxiliary ? "fulfilled" : "rejected", quoteCount: auxiliaryRawQuotes.length };
+  }
   if (auxiliary && !preliminaryDollar?.price) {
-    if (auxiliaryAssets.includes("gold") && Number.isFinite(auxiliary.goldUsdPerGram)) currencyBlockedAssets.add("gold");
-    if (auxiliaryAssets.includes("silver") && Number.isFinite(auxiliary.silverUsdPerGram)) currencyBlockedAssets.add("silver");
+    auxiliaryRawQuotes.forEach((item) => currencyBlockedAssets.add(item.asset));
   }
   if (auxiliary && preliminaryDollar?.price) {
-    if (selected.has("gold") && auxiliaryAssets.includes("gold") && Number.isFinite(auxiliary.goldUsdPerGram)) {
+    if (selected.has("gold") && auxiliaryAssets.includes("gold") && isPositiveNumber(auxiliary.goldUsdPerGram)) {
       const item = quote("gold", auxiliary.goldUsdPerGram * preliminaryDollar.price * 0.75, "Auxiliary metal source", {
         sourceUrl: CHART_GOLD_URL,
         sourceTime: auxiliary.sourceTime,
@@ -587,9 +640,9 @@ export async function onRequestGet(context = {}) {
         derivedFrom: ["XAU/USD", "USD/TOMAN"],
         conversionDependencies: [conversionDependency(preliminaryDollar)],
       });
-      if (item) { quotes.push(item); auxiliaryResult.quoteCount += 1; }
+      if (item) quotes.push(item);
     }
-    if (selected.has("silver") && auxiliaryAssets.includes("silver") && Number.isFinite(auxiliary.silverUsdPerGram)) {
+    if (selected.has("silver") && auxiliaryAssets.includes("silver") && isPositiveNumber(auxiliary.silverUsdPerGram)) {
       const item = quote("silver", auxiliary.silverUsdPerGram * preliminaryDollar.price, "Auxiliary metal source", {
         sourceUrl: CHART_GOLD_URL,
         sourceTime: auxiliary.sourceTime,
@@ -597,7 +650,7 @@ export async function onRequestGet(context = {}) {
         derivedFrom: ["XAG/USD", "USD/TOMAN"],
         conversionDependencies: [conversionDependency(preliminaryDollar)],
       });
-      if (item) { quotes.push(item); auxiliaryResult.quoteCount += 1; }
+      if (item) quotes.push(item);
     }
   }
 
@@ -614,6 +667,10 @@ export async function onRequestGet(context = {}) {
       : { status: "skipped", quoteCount: 0 };
   });
   providerDiagnostics.providerC = fallbackResult;
+  providerDiagnostics.tgjuIndex = {
+    status: tgjuIndexOutcome.status,
+    quoteCount: tgjuIndexOutcome.status === "fulfilled" ? tgjuIndexOutcome.value.quotes.length : 0,
+  };
   providerDiagnostics.auxiliary = auxiliaryResult;
   providerDiagnostics.fixedIncome = {
     status: fixedIncomeOutcome.status,
@@ -628,6 +685,12 @@ export async function onRequestGet(context = {}) {
     const series = tgjuHistory[asset] || [];
     if (selected.has(asset) && series.length) history[asset] = series.map((point) => ({ date: point.date, price: Math.round(point.value), source: "Provider A" }));
   });
+  const tgjuIndexHistory = providerResults.get("tgjuIndex")?.status === "fulfilled"
+    ? providerResults.get("tgjuIndex").value.history?.bourseIndex || []
+    : [];
+  if (selected.has("bourseIndex") && tgjuIndexHistory.length) {
+    history.bourseIndex = tgjuIndexHistory.map((point) => ({ date: point.date, price: Math.round(point.value), source: "TGJU" }));
+  }
   const funds = fixedIncome ? { fixedIncome } : {};
   const diagnostics = {
     consensusPolicyVersion: CONSENSUS_POLICY.version,
@@ -636,9 +699,9 @@ export async function onRequestGet(context = {}) {
     responseTimeMs: Date.now() - startedAt,
     providers: providerDiagnostics,
     assets: Object.fromEntries([...selected].filter((asset) => asset !== "fixedIncome").map((asset) => [asset, {
-      attempted: [...quotes, ...excludedCurrencyQuotes].filter((item) => item.asset === asset).length,
+      attempted: [...quotes, ...excludedCurrencyQuotes, ...(!preliminaryDollar?.price ? auxiliaryRawQuotes : [])].filter((item) => item.asset === asset).length,
       successful: assets[asset]?.sourceCount || 0,
-      excludedForCurrency: excludedCurrencyQuotes.filter((item) => item.asset === asset).length,
+      excludedForCurrency: [...excludedCurrencyQuotes, ...(!preliminaryDollar?.price ? auxiliaryRawQuotes : [])].filter((item) => item.asset === asset).length,
       status: assets[asset]?.status || "unavailable",
       reason: !assets[asset] && currencyBlockedAssets.has(asset)
         ? preliminaryDollar?.status === "conflicted" ? "currency_conflicted" : "currency_unavailable"
@@ -671,6 +734,7 @@ export async function onRequestGet(context = {}) {
         { id: "metalsLive", name: "Metals.live", url: METALS_LIVE_URL },
         { id: "yahooMetals", name: "Yahoo Finance futures chart", url: YAHOO_METAL_CHART_BASE },
         { id: "tsetmc", name: "TSETMC", url: TSETMC_INDEX_URL },
+        { id: "tgjuIndex", name: "TGJU Tehran general index", url: TGJU_BASE + "gc30" },
       ],
       fixedIncome: "https://charisma.ir/",
       history: "https://www.tgju.org/",

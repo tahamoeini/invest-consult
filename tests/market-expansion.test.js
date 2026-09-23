@@ -6,7 +6,10 @@ import {
   calculatePortfolio,
   createEmptyPortfolio,
   createTransaction,
+  marketPriceAt,
 } from "../src/portfolio.js";
+import { lastKnownMarketQuote } from "../src/market/last-known.js";
+import { createHistoryExport, parseHistoryExport } from "../src/history.js";
 
 test("un-calibrated two-source disagreements are conflicted instead of averaged", () => {
   const result = aggregate("bitcoin", [
@@ -42,6 +45,94 @@ test("three-source aggregation rejects a strong outlier", () => {
   assert.equal(result.sourceCount, 3);
   assert.equal(result.status, "degraded");
   assert.equal(result.sources.includes("Outlier"), false);
+});
+
+test("attached FX and gold readings use provisional bands after outlier filtering", () => {
+  const dollar = aggregate("dollar", [
+    { asset: "dollar", price: 231705, source: "TGJU", unit: "TOMAN" },
+    { asset: "dollar", price: 231500, source: "Bonbast", unit: "TOMAN" },
+    { asset: "dollar", price: 232000, source: "Navasan", unit: "TOMAN" },
+  ]);
+  assert.equal(dollar.price, 231705);
+  assert.equal(dollar.status, "provisional");
+  assert.equal(dollar.confidence, "medium");
+  assert.equal(dollar.sourceCount, 3);
+  assert.equal(dollar.agreementTolerancePct, 0.25);
+  assert.equal(dollar.consensusCalibrated, false);
+
+  const gold = aggregate("gold", [
+    { asset: "gold", price: 23765900, source: "TGJU", unit: "gram" },
+    { asset: "gold", price: 23883835, source: "Bonbast", unit: "gram" },
+    { asset: "gold", price: 23777640, source: "Navasan", unit: "gram" },
+  ]);
+  assert.equal(gold.price, 23771770);
+  assert.equal(gold.status, "provisional");
+  assert.equal(gold.confidence, "medium");
+  assert.equal(gold.sourceCount, 2);
+  assert.equal(gold.agreementTolerancePct, 0.1);
+  assert.equal(gold.sources.includes("Bonbast"), false);
+
+  const beyondBand = aggregate("dollar", [
+    { asset: "dollar", price: 231705, source: "A", unit: "TOMAN" },
+    { asset: "dollar", price: 232300, source: "B", unit: "TOMAN" },
+  ]);
+  assert.equal(beyondBand.status, "conflicted");
+  assert.equal(beyondBand.price, null);
+
+  const now = new Date().toISOString();
+  const provisionalMarket = { updatedAt: now, assets: { gold: { ...gold, retrievedAt: now } }, history: {} };
+  assert.equal(marketPriceAt(provisionalMarket, "gold", now), 23771770);
+});
+
+test("last-known market quotes require a valid observation time and stay separate from current valuation", () => {
+  const now = "2026-09-23T18:00:00.000Z";
+  const market = {
+    updatedAt: now,
+    assets: { gold: { price: null, status: "conflicted", observedAt: now } },
+    history: { gold: [{ date: "2026-09-23T17:30:00.000Z", price: 23770000, source: "TGJU" }, { price: 999, source: "Unknown time" }] },
+  };
+  const cached = { assets: { gold: { price: 23765000, status: "provisional", observedAt: "2026-09-23T17:45:00.000Z", retrievedAt: now } } };
+  const fallback = lastKnownMarketQuote("gold", market, cached, new Date(now).getTime());
+  assert.equal(fallback.price, 23765000);
+  assert.equal(fallback.observedAt, "2026-09-23T17:45:00.000Z");
+
+  assert.equal(lastKnownMarketQuote("gold", market, null, new Date(now).getTime()).price, 23770000);
+  assert.equal(lastKnownMarketQuote("bitcoin", { history: { bitcoin: [{ price: 10 }] } }, null, new Date(now).getTime()), null);
+  assert.equal(marketPriceAt({ updatedAt: now, assets: {}, history: { gold: market.history.gold } }, "gold", now), null);
+  assert.equal(marketPriceAt({ updatedAt: now, assets: {}, history: { gold: market.history.gold } }, "gold", "2026-09-23T17:45:00.000Z"), 23770000);
+
+  const offlineMarket = { ...cached, updatedAt: now, assets: {}, history: market.history, diagnostics: null, _currentQuotesUnavailableAt: now };
+  assert.equal(lastKnownMarketQuote("gold", offlineMarket, cached, new Date(now).getTime()).price, 23765000);
+  assert.equal(marketPriceAt(offlineMarket, "gold", now), null);
+});
+
+test("history exports preserve provisional quote and currency dependency status", () => {
+  const record = {
+    createdAt: "2026-09-23T18:00:00.000Z",
+    total: 1000,
+    contributionRate: 20,
+    weights: { fixed: 70, gold: 20, currency: 8, silver: 2 },
+    marketSnapshot: {
+      capturedAt: "2026-09-23T18:00:00.000Z",
+      assets: {
+        gold: {
+          price: 23771770,
+          status: "provisional",
+          confidence: "medium",
+          consensusPolicyVersion: "quote-consensus-v2-provisional",
+          consensusCalibrated: false,
+          agreementTolerancePct: 0.1,
+          dependencies: [{ instrumentId: "dollar", status: "provisional", confidence: "medium" }],
+        },
+      },
+    },
+  };
+  const exported = createHistoryExport([record]);
+  const parsed = parseHistoryExport(JSON.parse(JSON.stringify(exported)));
+  const quote = parsed.records[0].marketSnapshot.assets.gold;
+  assert.equal(quote.status, "provisional");
+  assert.equal(quote.dependencies[0].status, "provisional");
+  assert.equal(quote.agreementTolerancePct, 0.1);
 });
 
 test("market-priced crypto can be added to the immutable portfolio ledger", () => {
