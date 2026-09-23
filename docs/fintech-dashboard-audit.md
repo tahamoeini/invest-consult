@@ -1,4 +1,4 @@
-# Invest Consult — fintech dashboard audit
+# Synthora — fintech dashboard audit
 
 Branch: `feat/dashboard-trust-hardening`
 

@@ -1919,7 +1919,7 @@ function exportHistory() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `invest-consult-history-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `synthora-history-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();

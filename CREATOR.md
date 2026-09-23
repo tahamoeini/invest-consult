@@ -1,6 +1,6 @@
 # Creator
 
-Invest Consult is created by **Taha Moeini**.
+Synthora is created by **Taha Moeini**.
 
 Website: https://taha.one
 

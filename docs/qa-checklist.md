@@ -1,4 +1,4 @@
-# Invest Consult — final QA checklist
+# Synthora — final QA checklist
 
 ## Automated checks
 

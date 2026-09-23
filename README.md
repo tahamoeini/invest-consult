@@ -1,6 +1,6 @@
-# invest-consult
+# Synthora
 
-`invest-consult` is a free, transparent, browser-first investment planning tool for conservative personal portfolios in Iran.
+`Synthora` is a free, transparent, browser-first investment planning tool for conservative personal portfolios in Iran.
 
 It is a mathematical decision-support engine. It does not use an AI model to predict markets, make promises, or generate opaque recommendations.
 
