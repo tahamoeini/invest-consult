@@ -383,6 +383,32 @@
                     </select>
                   </div>
                 </div>
+                <fieldset class="recommendation-assets">
+                  <legend>دارایی‌های اضافه در پیشنهاد</legend>
+                  <p>به‌صورت پیش‌فرض خاموش‌اند. طلا، ارز، درآمد ثابت و نقره در ترکیب پایه باقی می‌مانند.</p>
+                  <div class="field-grid">
+                    <label class="check-line"
+                      ><input type="checkbox" data-recommendation-asset="copper" /> <span>مس</span></label
+                    >
+                    <label class="check-line"
+                      ><input type="checkbox" data-recommendation-asset="platinum" /> <span>پلاتین</span></label
+                    >
+                    <label class="check-line"
+                      ><input type="checkbox" data-recommendation-asset="palladium" /> <span>پالادیوم</span></label
+                    >
+                    <label class="check-line"
+                      ><input type="checkbox" data-recommendation-asset="bitcoin" /> <span>بیت‌کوین</span></label
+                    >
+                    <label class="check-line"
+                      ><input type="checkbox" data-recommendation-asset="ethereum" /> <span>اتریوم</span></label
+                    >
+                  </div>
+                  <small
+                    >فلزات سهم بخش کالایی را بر پایه‌ی نوسان تاریخی یا فرض تنظیمات تقسیم می‌کنند. هدف رمزارز در سطح ریسک
+                    محافظه‌کارانه، متعادل و رشدپذیر به‌ترتیب ۱٪، ۳٪ و ۵٪ است و از ۵٪ بیشتر نمی‌شود؛ تتر فقط در شبیه‌سازی
+                    دستی قابل انتخاب است.</small
+                  >
+                </fieldset>
                 <details class="profile-settings">
                   <summary>شخصی‌سازی بیشتر، اختیاری</summary>
                   <div class="field-grid">
@@ -423,7 +449,7 @@
                     </div>
                   </div>
                 </details>
-                <button class="primary-button" type="submit"><span>برنامه این ماه را بساز</span><b>←</b></button>
+                <button class="primary-button" type="submit"><span>پیش‌نمایش پیشنهاد</span><b>←</b></button>
               </form>
 
               <section id="plan-output" class="panel output-panel is-hidden">
@@ -435,7 +461,7 @@
                   <span id="profile-label" class="profile-chip">محافظه‌کارانه</span>
                 </div>
                 <div id="plan-preview-status" class="transfer-status transfer-neutral" aria-live="polite">
-                  با تغییر ورودی‌ها پیش‌نمایش به‌روز می‌شود؛ برای ثبت در تاریخچه، برنامه را بساز.
+                  پیش‌نمایش پس از واردکردن حقوق ساخته می‌شود؛ بعد از بازبینی می‌توانی همین نسخه را ذخیره کنی.
                 </div>
                 <div class="output-summary">
                   <div>
@@ -445,6 +471,12 @@
                   <div><small>نرخ از حقوق</small><strong id="monthly-rate">—</strong><span>قابل تغییر</span></div>
                 </div>
                 <div id="allocation-list" class="allocation-list"></div>
+                <p class="small-note">
+                  درصدها قابل ویرایش‌اند؛ وزن‌ها خودکار به ۱۰۰٪ می‌رسند و سقف رمزارز رعایت می‌شود.
+                </p>
+                <button id="save-plan-result" class="primary-button" type="button" disabled>
+                  ذخیره‌ی همین پیشنهاد در سابقه
+                </button>
                 <div class="output-columns">
                   <div>
                     <h3>دلیل این ترکیب</h3>
@@ -526,32 +558,10 @@
               </div>
               <fieldset class="simulation-weights">
                 <legend>وزن هر دارایی (مجموع به‌صورت خودکار نرمال می‌شود)</legend>
-                <div class="field-grid">
-                  <div class="field">
-                    <label for="sim-weight-fixed">درآمد ثابت</label>
-                    <div class="unit-input">
-                      <input id="sim-weight-fixed" type="number" min="0" max="100" value="72" /><span>٪</span>
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label for="sim-weight-gold">طلا</label>
-                    <div class="unit-input">
-                      <input id="sim-weight-gold" type="number" min="0" max="100" value="18" /><span>٪</span>
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label for="sim-weight-currency">ارز</label>
-                    <div class="unit-input">
-                      <input id="sim-weight-currency" type="number" min="0" max="100" value="8" /><span>٪</span>
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label for="sim-weight-silver">نقره</label>
-                    <div class="unit-input">
-                      <input id="sim-weight-silver" type="number" min="0" max="100" value="2" /><span>٪</span>
-                    </div>
-                  </div>
-                </div>
+                <div id="simulation-weight-grid" class="field-grid"></div>
+                <p class="small-note">
+                  تتر فقط برای سناریوی دستی است. مدل تتر ریسک قطع پیوند با دلار را پیش‌بینی نمی‌کند.
+                </p>
               </fieldset>
               <div class="field-grid">
                 <div class="field">
@@ -1134,56 +1144,11 @@
                   ><input id="settings-rebalancing" type="checkbox" checked />
                   <span>بازتنظیم دوره‌ای پیش‌فرض روشن باشد</span></label
                 >
-                <div class="settings-assumption-grid">
-                  <div><strong>دارایی</strong><strong>بازده سالانه</strong><strong>نوسان سالانه</strong></div>
-                  <div>
-                    <span>درآمد ثابت</span
-                    ><input
-                      id="settings-return-fixed"
-                      aria-label="بازده فرضی درآمد ثابت"
-                      type="number"
-                      min="-99"
-                      max="300"
-                    /><input
-                      id="settings-vol-fixed"
-                      aria-label="نوسان فرضی درآمد ثابت"
-                      type="number"
-                      min="0"
-                      max="300"
-                    />
-                  </div>
-                  <div>
-                    <span>طلا</span
-                    ><input
-                      id="settings-return-gold"
-                      aria-label="بازده فرضی طلا"
-                      type="number"
-                      min="-99"
-                      max="300"
-                    /><input id="settings-vol-gold" aria-label="نوسان فرضی طلا" type="number" min="0" max="300" />
-                  </div>
-                  <div>
-                    <span>ارز</span
-                    ><input
-                      id="settings-return-currency"
-                      aria-label="بازده فرضی ارز"
-                      type="number"
-                      min="-99"
-                      max="300"
-                    /><input id="settings-vol-currency" aria-label="نوسان فرضی ارز" type="number" min="0" max="300" />
-                  </div>
-                  <div>
-                    <span>نقره</span
-                    ><input
-                      id="settings-return-silver"
-                      aria-label="بازده فرضی نقره"
-                      type="number"
-                      min="-99"
-                      max="300"
-                    /><input id="settings-vol-silver" aria-label="نوسان فرضی نقره" type="number" min="0" max="300" />
-                  </div>
-                </div>
-                <p class="small-note">مقادیر بازده و نوسان، فرض مدل هستند و تضمین عملکرد نیستند.</p>
+                <div id="settings-assumption-grid" class="settings-assumption-grid"></div>
+                <p class="small-note">
+                  این اعداد فرض مدل‌اند، نه بازده تضمینی. با کمتر از ۲۴ بازده ماهانه‌ی مشاهده‌شده، فرض تنظیم‌شده مبنای
+                  برآورد ریسک و بازده می‌شود.
+                </p>
                 <button class="primary-button" type="submit">ذخیره‌ی پیش‌فرض‌ها</button>
                 <div
                   id="settings-model-status"

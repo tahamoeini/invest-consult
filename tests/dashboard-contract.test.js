@@ -24,8 +24,13 @@ test("all internal views remain sibling sections", () => {
   assert.deepEqual(views, ["dashboard", "plan", "simulation", "history", "portfolio", "assets", "settings"]);
 });
 
-test("plan editing uses a non-persisting live preview path", () => {
-  assert.match(app, /renderPlan\(\{ saveHistoryRecord: false, scrollIntoView: false, validate: false \}\)/);
+test("proposal previews wait for an explicit action before saving plan history", () => {
+  assert.match(app, /renderPlan\(\{ scrollIntoView: false, validate: false \}\)/);
   assert.match(app, /function calculatePlan\(inputs\)/);
+  assert.match(index, /id="save-plan-result"/);
+  assert.match(app, /function savePlanPreview\(\)/);
+  const preview = app.slice(app.indexOf("function renderPlan("), app.indexOf("function saveHistory("));
+  assert.doesNotMatch(preview, /saveHistory\(/);
+  assert.match(app, /addEventListener\("click", savePlanPreview\)/);
   assert.match(app, /Object\.keys\(result\.assets \|\| \{\}\)/);
 });

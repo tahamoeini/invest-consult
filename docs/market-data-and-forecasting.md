@@ -26,26 +26,21 @@ No new provider has been added in this implementation. Before enabling one, revi
 
 The catalog separates priceable instruments from strategic sleeves. It defines cash/liquidity, fixed income, gold, FX, Iran equity, global equity, crypto, and commodities. Existing planning keys remain compatible and map as follows: `fixed` to fixed income, `gold` to gold, `currency` to FX, and `silver` to commodities.
 
-The recommendation, simulation, and backtest engine currently model only the original four planning assets:
+The shared planning catalog maps stable IDs to the fixed-income, gold, FX, crypto, and commodity sleeves. The default recommendation remains the original four assets: fixed income, gold, currency, and silver. Copper, platinum, palladium, bitcoin, and ethereum can be opted into each recommendation independently. Selected metals divide the existing commodity allocation by inverse estimated volatility. Selected crypto receives a 1%, 3%, or 5% target for conservative, balanced, or growth profiles; bitcoin and ethereum divide that target by inverse volatility, and their combined weight never exceeds 5%. Tether is available only in the manually weighted simulation; the Tehran index is an indicator, not an investable instrument.
 
-- fixed income
-- gold
-- currency
-- silver
+Simulation accepts all catalog planning assets plus Tether, with newly added assets at zero weight by default. It uses the per-asset expected-return and volatility assumptions stored in model settings when observed history is insufficient. These are editable scenario inputs, not asserted forecasts. Existing portfolio assets and old recommendation records are preserved; assets introduced after an older record are treated as zero weight. Recommendations are previews until the user explicitly saves one. They only allocate new monthly contributions and do not sell or modify holdings or transactions.
 
-The expanded assets are optional portfolio assets. A user can record market-priced quantities for bitcoin, ethereum, tether, platinum, palladium, copper, gold, silver, and currency. The ledger stores the transaction and captured quote provenance, while missing or conflicted market prices prevent valuation rather than creating a synthetic value. Net worth, investable capital, liquid assets, and emergency-fund coverage are reported separately. Assets in other sleeves remain visible but are excluded from recommendation drift and goal simulation until those sleeves have adequate history or a versioned assumption. The Tehran index remains a reference indicator and is not offered as an owned holding.
-
-New monthly contributions are directed toward underweight planning assets; the recommendation does not tell the user to sell holdings. Drift is shown in percentage points. Assets outside the four modeled planning categories are called out explicitly.
+Backtests use observed monthly price history only. Modeled fallback returns are never presented as historical data. A selected asset with missing or discontinuous observations makes the requested backtest unavailable, and the UI identifies the missing coverage rather than filling it with assumptions. Long crypto backtests may therefore be unavailable when the provider does not offer enough historical data.
 
 ## Forecasting and Hugging Face
 
 Hugging Face models and datasets can support research and an explicitly labeled forecasting experiment, but they are not authoritative quote sources. Forecast output must never replace a current market quote, a transaction price, or the portfolio valuation used for profit/loss.
 
-The current production path does not call a hosted model, require a hidden token, or present model output as a prediction. Return and risk fallback assumptions carry the `ir-planning-v1` version. Historical covariance uses only overlapping observed monthly returns; short paired samples shrink correlations toward zero, and imputed returns never enter covariance.
+The current production path does not call a hosted model, require a hidden token, or present model output as a prediction. Return and risk fallback assumptions carry the `ir-planning-v2` version and can be overridden per run without changing the saved defaults. Historical covariance uses only overlapping observed monthly returns; short paired samples shrink correlations toward zero, and imputed returns never enter covariance.
 
 The existing Gaussian Monte Carlo baseline remains available. Additional versioned methods include 12-month-half-life EWMA volatility (`mc-ewma-v1`) and a three-month moving-block bootstrap (`mc-block-bootstrap-v1`). Walk-forward comparisons use a 24-month training window and require at least 24 out-of-sample forecasts before enabling either method. Otherwise, the baseline stays active. These are implementation gates, not a claim that the models predict future returns.
 
-Simulation and backtest run only after the analysis view is opened and execute in a browser Web Worker. Navigation and changed planning inputs cancel stale work. Goal planning uses the same simulation model for success probability, P10/P50/P90, inflation-adjusted target, and a binary search for required monthly contributions. Goal projections use only the four currently modeled portfolio categories; other investable holdings are shown as excluded.
+Simulation and backtest run only after the analysis view is opened and execute in a browser Web Worker. Navigation and changed planning inputs cancel stale work. Goal planning uses the same simulation model for success probability, P10/P50/P90, inflation-adjusted target, and a binary search for required monthly contributions. Goal projections use planning assets; unsupported personal holdings are shown as excluded.
 
 A future Hugging Face integration should be optional, server-side, rate-limited, and return:
 

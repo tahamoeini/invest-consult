@@ -33,9 +33,29 @@ test("analysis task matches the pure simulation engine and returns walk-forward 
 });
 
 test("instrument and sleeve catalogs keep decision categories separate", async () => {
-  const { INSTRUMENT_REGISTRY, PLANNING_ASSET_TO_SLEEVE, SLEEVE_REGISTRY } = await import("../src/market/catalog.js");
+  const {
+    INSTRUMENT_REGISTRY,
+    OPTIONAL_RECOMMENDATION_ASSETS,
+    PLAN_ASSET_KEYS,
+    PLANNING_ASSET_TO_SLEEVE,
+    SIMULATION_ASSET_KEYS,
+    SLEEVE_REGISTRY,
+  } = await import("../src/market/catalog.js");
   assert.equal(INSTRUMENT_REGISTRY.bitcoin.sleeveId, "crypto");
   assert.equal(INSTRUMENT_REGISTRY.bourseIndex.tradable, false);
   assert.equal(PLANNING_ASSET_TO_SLEEVE.silver, "commodities");
   assert.equal(SLEEVE_REGISTRY.globalEquity.recommendationEligible, false);
+  assert.equal(SLEEVE_REGISTRY.crypto.recommendationEligible, true);
+  assert.equal(INSTRUMENT_REGISTRY.tether.simulationOnly, true);
+  assert.equal(INSTRUMENT_REGISTRY.bitcoin.recommendationOptional, true);
+  assert.deepEqual(OPTIONAL_RECOMMENDATION_ASSETS, ["bitcoin", "ethereum", "platinum", "palladium", "copper"]);
+  assert.deepEqual(PLAN_ASSET_KEYS.slice(0, 4), ["fixed", "gold", "currency", "silver"]);
+  assert.ok(
+    ["bitcoin", "ethereum", "copper", "platinum", "palladium"].every((assetId) =>
+      SIMULATION_ASSET_KEYS.includes(assetId),
+    ),
+  );
+  assert.ok(SIMULATION_ASSET_KEYS.includes("tether"));
+  assert.equal(OPTIONAL_RECOMMENDATION_ASSETS.includes("tether"), false);
+  assert.equal(OPTIONAL_RECOMMENDATION_ASSETS.includes("bourseIndex"), false);
 });

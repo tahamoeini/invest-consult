@@ -2,6 +2,7 @@
 
 import {
   ASSET_KEYS,
+  DEFAULT_ALLOCATION,
   DEFAULT_ASSUMPTIONS,
   clamp,
   contributionRebalance,
@@ -22,7 +23,13 @@ import {
   normalizePortfolio,
   portfolioSeries,
 } from "./src/portfolio.js";
-import { INSTRUMENT_REGISTRY } from "./src/market/catalog.js";
+import {
+  CORE_PLAN_ASSET_KEYS,
+  OPTIONAL_RECOMMENDATION_ASSETS,
+  PLAN_ASSET_KEYS,
+  SIMULATION_ASSET_KEYS,
+  INSTRUMENT_REGISTRY,
+} from "./src/market/catalog.js";
 import { marketCacheAge } from "./src/market/cache.js";
 import { prepareHistoricalAnalysis } from "./src/market/history.js";
 import { lastKnownMarketQuote } from "./src/market/last-known.js";
@@ -575,7 +582,13 @@ function getPlanInputs() {
     contributionRate,
     monthlyContribution: (salary * contributionRate) / 100,
     profile,
+    selectedAssets: $$("[data-recommendation-asset]:checked").map((input) => input.dataset.recommendationAsset),
   };
+}
+
+function selectedPlanAssetKeys(selectedAssets = []) {
+  const selected = new Set(selectedAssets);
+  return [...CORE_PLAN_ASSET_KEYS, ...OPTIONAL_RECOMMENDATION_ASSETS.filter((assetId) => selected.has(assetId))];
 }
 
 function syncPlanState() {
@@ -991,7 +1004,7 @@ function renderDashboardAllocation(result, plan, portfolio) {
         : "هنوز تخصیصی برای نمایش نیست.",
   });
   const target = plan?.recommendation?.weights || {};
-  const rowAssetIds = [...new Set([...ASSET_KEYS, ...actual.map((item) => item.assetId)])];
+  const rowAssetIds = [...new Set([...PLAN_ASSET_KEYS, ...actual.map((item) => item.assetId)])];
   const rows = rowAssetIds
     .filter((assetId) => actual.some((item) => item.assetId === assetId) || Number(target[assetId]) > 0)
     .map((assetId) => {
@@ -1373,13 +1386,18 @@ function portfolioUnitLabel(assetId, unit) {
   return text(`portfolio.units.${assetId}`, unit || text("currencyUnit"));
 }
 
-function allocationRows(allocation, amounts = null) {
-  return ASSET_KEYS.map((key) => {
-    const meta = assetMeta(key);
-    const weight = Number(allocation[key]) || 0;
-    const amount = amounts ? amounts[key] : 0;
-    return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(meta.description)}</small></div></div><div class="allocation-numbers"><strong>${formatPercent(weight)}</strong><small>${formatIRR(amount)} ${escapeHTML(text("currencyUnit"))}</small></div></div>`;
-  }).join("");
+function allocationRows(allocation, amounts = null, assetIds = CORE_PLAN_ASSET_KEYS, editable = false) {
+  return assetIds
+    .map((key) => {
+      const meta = assetMeta(key);
+      const weight = Number(allocation[key]) || 0;
+      const amount = amounts ? amounts[key] : 0;
+      const weightControl = editable
+        ? `<label class="allocation-weight-input"><input type="number" min="0" max="100" step="0.1" data-plan-weight="${escapeHTML(key)}" aria-label="وزن پیشنهادی ${escapeHTML(meta.title)}" value="${weight}"><span>٪</span></label>`
+        : "";
+      return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(meta.description)}</small></div></div>${weightControl}<div class="allocation-numbers"><strong>${formatPercent(weight)}</strong><small>${formatIRR(amount)} ${escapeHTML(text("currencyUnit"))}</small></div></div>`;
+    })
+    .join("");
 }
 
 function renderReasons(profile, historyPortfolio) {
@@ -1397,13 +1415,15 @@ function renderReasons(profile, historyPortfolio) {
     .join("");
 }
 
-function renderContributionPlan(plan) {
-  const rows = ASSET_KEYS.map((key) => {
-    const meta = assetMeta(key);
-    const drift = Number(plan.drift?.[key]) || 0;
-    const driftLabel = `${drift > 0 ? "+" : ""}${formatPercent(drift)} ${text("allocation.percentagePoints")}`;
-    return `<div class="contribution-row"><span><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span>${escapeHTML(meta.title)}<small>${escapeHTML(text("allocation.current"))} ${formatPercent(plan.currentWeights?.[key] || 0)} · ${escapeHTML(text("allocation.target"))} ${formatPercent(plan.weights[key])} · ${escapeHTML(text("allocation.drift"))} ${escapeHTML(driftLabel)}</small></span><strong>${formatIRR(plan.amounts[key])} ${escapeHTML(text("currencyUnit"))}</strong></div>`;
-  }).join("");
+function renderContributionPlan(plan, assetIds = CORE_PLAN_ASSET_KEYS) {
+  const rows = assetIds
+    .map((key) => {
+      const meta = assetMeta(key);
+      const drift = Number(plan.drift?.[key]) || 0;
+      const driftLabel = `${drift > 0 ? "+" : ""}${formatPercent(drift)} ${text("allocation.percentagePoints")}`;
+      return `<div class="contribution-row"><span><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span>${escapeHTML(meta.title)}<small>${escapeHTML(text("allocation.current"))} ${formatPercent(plan.currentWeights?.[key] || 0)} · ${escapeHTML(text("allocation.target"))} ${formatPercent(plan.weights[key])} · ${escapeHTML(text("allocation.drift"))} ${escapeHTML(driftLabel)}</small></span><strong>${formatIRR(plan.amounts[key])} ${escapeHTML(text("currencyUnit"))}</strong></div>`;
+    })
+    .join("");
   const excluded = Number(plan.excludedInvestableTotal) || 0;
   const note =
     excluded > 0
@@ -1574,12 +1594,14 @@ function populatePortfolioAssetOptions() {
 
 function defaultModelSettings() {
   return {
-    version: 1,
+    version: 2,
     inflationRate: 0.3,
     contributionGrowth: 0,
     paths: 2000,
     rebalance: true,
-    assumptions: Object.fromEntries(ASSET_KEYS.map((assetId) => [assetId, { ...DEFAULT_ASSUMPTIONS[assetId] }])),
+    assumptions: Object.fromEntries(
+      SIMULATION_ASSET_KEYS.map((assetId) => [assetId, { ...DEFAULT_ASSUMPTIONS[assetId] }]),
+    ),
     inflationSource: null,
     inflationPeriod: null,
     inflationFetchedAt: null,
@@ -1589,7 +1611,7 @@ function defaultModelSettings() {
 function normalizeModelSettings(raw = {}) {
   const defaults = defaultModelSettings();
   const assumptions = Object.fromEntries(
-    ASSET_KEYS.map((assetId) => {
+    SIMULATION_ASSET_KEYS.map((assetId) => {
       const supplied = raw.assumptions?.[assetId] || {};
       const fallback = defaults.assumptions[assetId];
       const annualReturn = Number(supplied.annualReturn);
@@ -1648,7 +1670,7 @@ function saveModelSettings(next) {
 function saveModelSettingsForm(event) {
   event.preventDefault();
   const assumptions = Object.fromEntries(
-    ASSET_KEYS.map((assetId) => [
+    SIMULATION_ASSET_KEYS.map((assetId) => [
       assetId,
       {
         annualReturn: clamp(numberFromInput($("#settings-return-" + assetId)?.value), -99, 300) / 100,
@@ -1714,8 +1736,28 @@ function applyModelSettingsToSimulation() {
   if (rebalance) rebalance.checked = modelSettings.rebalance;
 }
 
+function renderSimulationWeightInputs() {
+  const grid = $("#simulation-weight-grid");
+  if (!grid || grid.dataset.rendered === "true") return;
+  grid.innerHTML = SIMULATION_ASSET_KEYS.map((assetId) => {
+    const meta = assetMeta(assetId);
+    return `<div class="field"><label for="sim-weight-${escapeHTML(assetId)}">${escapeHTML(meta.title)}</label><div class="unit-input"><input id="sim-weight-${escapeHTML(assetId)}" type="number" min="0" max="100" step="0.1" value="${Number(DEFAULT_ALLOCATION[assetId]) || 0}"><span>٪</span></div></div>`;
+  }).join("");
+  grid.dataset.rendered = "true";
+}
+
 function renderSettingsAssumptions() {
   if (!modelSettings) return;
+  const assumptionGrid = $("#settings-assumption-grid");
+  if (assumptionGrid && assumptionGrid.dataset.rendered !== "true") {
+    assumptionGrid.innerHTML =
+      `<div><strong>دارایی</strong><strong>بازده سالانه</strong><strong>نوسان سالانه</strong></div>` +
+      SIMULATION_ASSET_KEYS.map((assetId) => {
+        const title = assetMeta(assetId).title;
+        return `<div><span>${escapeHTML(title)}</span><input id="settings-return-${escapeHTML(assetId)}" aria-label="بازده فرضی ${escapeHTML(title)}" type="number" min="-99" max="300"><input id="settings-vol-${escapeHTML(assetId)}" aria-label="نوسان فرضی ${escapeHTML(title)}" type="number" min="0" max="300"></div>`;
+      }).join("");
+    assumptionGrid.dataset.rendered = "true";
+  }
   const scalarValues = {
     "settings-inflation-rate": modelSettings.inflationRate * 100,
     "settings-contribution-growth": modelSettings.contributionGrowth * 100,
@@ -1728,7 +1770,7 @@ function renderSettingsAssumptions() {
     if (input.type === "checkbox") input.checked = Boolean(value);
     else input.value = String(value);
   });
-  ASSET_KEYS.forEach((assetId) => {
+  SIMULATION_ASSET_KEYS.forEach((assetId) => {
     const assumptions = modelSettings.assumptions[assetId];
     const returnInput = $("#settings-return-" + assetId);
     const volInput = $("#settings-vol-" + assetId);
@@ -2070,7 +2112,7 @@ function renderSimulation(simulation, monteCarlo, validation = null) {
   const validationStatus = validation?.available
     ? text("analysis.validationPassed")
     : text("analysis.validationInsufficient");
-  const assumptionVersion = monteCarlo.model?.fixed?.assumptionVersion || "ir-planning-v1";
+  const assumptionVersion = monteCarlo.model?.fixed?.assumptionVersion || "ir-planning-v2";
   $("#analysis-method-note").textContent =
     `${text("analysis.modelVersion")}: ${methodNames[monteCarlo.method] || methodNames.gaussian} · ${text("analysis.monteCarloVersion")}: ${monteCarlo.modelVersion} · ${text("analysis.modelAssumptionVersion")}: ${assumptionVersion} · ${text("analysis.validation")}: ${validationStatus}`;
   const scenarioEl = $("#scenario-comparison");
@@ -2092,14 +2134,8 @@ function renderSimulation(simulation, monteCarlo, validation = null) {
 function renderBacktest(result) {
   if (!result || !result.available) {
     const missing = result?.unobservedAssets || [];
-    const names = {
-      fixed: "درآمد ثابت (تاریخچه‌ی مشاهده‌شده در این منبع موجود نیست)",
-      gold: "طلا",
-      currency: "ارز",
-      silver: "نقره",
-    };
     const missingText = missing.length
-      ? ` داده‌ی مشاهده‌شده برای ${missing.map((asset) => names[asset] || asset).join("، ")} وجود ندارد.`
+      ? ` داده‌ی مشاهده‌شده برای ${missing.map((asset) => (asset === "fixed" ? "درآمد ثابت" : assetMeta(asset).title)).join("، ")} وجود ندارد.`
       : "";
     const observed = result?.observations
       ? ` ${formatIRR(result.observations)} ماه داده‌ی ماهانه‌ی قابل استفاده موجود است.`
@@ -2127,12 +2163,14 @@ function renderHistory() {
   const history = readHistory();
   appStore.setState({ history });
   const portfolio = portfolioFromHistory(history, liveMarket);
-  const categories = ASSET_KEYS.map((key) => {
-    const meta = assetMeta(key);
-    const category = portfolio.categories[key];
-    const gain = category.value - category.invested;
-    return `<div class="portfolio-row"><div><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><strong>${escapeHTML(meta.title)}</strong></div><div><strong>${formatIRR(category.value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("history.current"))}</small></div><div class="${gain >= 0 ? "positive" : "negative"}"><strong>${gain >= 0 ? "+" : ""}${formatIRR(gain)}</strong><small>${escapeHTML(text("history.gain"))}</small></div></div>`;
-  }).join("");
+  const categories = PLAN_ASSET_KEYS.filter((key) => portfolio.categories[key].invested > 0)
+    .map((key) => {
+      const meta = assetMeta(key);
+      const category = portfolio.categories[key];
+      const gain = category.value - category.invested;
+      return `<div class="portfolio-row"><div><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><strong>${escapeHTML(meta.title)}</strong></div><div><strong>${formatIRR(category.value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("history.current"))}</small></div><div class="${gain >= 0 ? "positive" : "negative"}"><strong>${gain >= 0 ? "+" : ""}${formatIRR(gain)}</strong><small>${escapeHTML(text("history.gain"))}</small></div></div>`;
+    })
+    .join("");
   historySummaryEl.innerHTML = [
     [text("history.invested"), formatIRR(portfolio.totalInvested)],
     [text("history.value"), formatIRR(portfolio.currentValue)],
@@ -2540,19 +2578,29 @@ function bindChartTooltips() {
 }
 
 function calculatePlan(inputs) {
-  const recommendation = recommendAllocation(inputs.profile);
+  const assetKeys = selectedPlanAssetKeys(inputs.selectedAssets);
+  const recommendation = recommendAllocation(inputs.profile, {
+    enabledAssets: inputs.selectedAssets,
+    assumptions: modelSettings?.assumptions || DEFAULT_ASSUMPTIONS,
+    market: liveMarket || {},
+  });
   const history = readHistory();
   const portfolio = portfolioFromHistory(history, liveMarket);
   const ledger = calculatePortfolio(readPortfolio(), liveMarket || {});
   const currentHoldings = ledger.transactions.length
-    ? Object.fromEntries(ASSET_KEYS.map((asset) => [asset, Math.max(0, Number(ledger.values[asset]?.value) || 0)]))
-    : Object.fromEntries(ASSET_KEYS.map((key) => [key, portfolio.categories[key].value]));
-  const contribution = contributionRebalance(currentHoldings, recommendation.weights, inputs.monthlyContribution);
+    ? Object.fromEntries(PLAN_ASSET_KEYS.map((asset) => [asset, Math.max(0, Number(ledger.values[asset]?.value) || 0)]))
+    : Object.fromEntries(PLAN_ASSET_KEYS.map((key) => [key, portfolio.categories[key].value]));
+  const contribution = contributionRebalance(
+    currentHoldings,
+    recommendation.weights,
+    inputs.monthlyContribution,
+    assetKeys,
+  );
   contribution.excludedInvestableTotal = ledger.transactions.length
     ? Math.max(0, ledger.investableTotal - Object.values(currentHoldings).reduce((total, value) => total + value, 0))
     : 0;
   contribution.excludedMissingCount = ledger.transactions.length ? ledger.missingPrices.length : 0;
-  return { inputs, recommendation, contribution, portfolio };
+  return { inputs, recommendation, contribution, portfolio, currentHoldings, assetKeys };
 }
 
 function cancelAnalysisWorker() {
@@ -2599,12 +2647,14 @@ function renderPlanOutput(plan) {
     `profileLabels.${inputs.profile.riskTolerance}`,
     text("profileLabels.conservative"),
   );
-  allocationListEl.innerHTML = allocationRows(recommendation.weights, contribution.amounts);
-  renderContributionPlan(contribution);
+  allocationListEl.innerHTML = allocationRows(recommendation.weights, contribution.amounts, plan.assetKeys, true);
+  renderContributionPlan(contribution, plan.assetKeys);
   renderReasons(inputs.profile, portfolio);
+  const saveButton = $("#save-plan-result");
+  if (saveButton) saveButton.disabled = Boolean(plan.saved);
 }
 
-function renderPlan({ saveHistoryRecord = true, scrollIntoView = true, validate = true } = {}) {
+function renderPlan({ scrollIntoView = true, validate = true } = {}) {
   const inputs = getPlanInputs();
   if (!(inputs.salary > 0)) {
     if (validate) {
@@ -2617,19 +2667,14 @@ function renderPlan({ saveHistoryRecord = true, scrollIntoView = true, validate 
   $("#salary").setCustomValidity("");
   persistProfile();
   lastPlan = calculatePlan(inputs);
+  lastPlan.saved = false;
   renderPlanOutput(lastPlan);
   appStore.setState({ profile: inputs.profile, monthlyInvestment: inputs.monthlyContribution, plan: lastPlan });
   resultPanel.classList.remove("is-hidden");
   const previewStatus = $("#plan-preview-status");
   if (previewStatus) {
-    previewStatus.textContent = saveHistoryRecord
-      ? "این برنامه در تاریخچه همین دستگاه ذخیره شد."
-      : "پیش‌نمایش زنده است؛ برای ثبت این نسخه در تاریخچه، برنامه را بساز.";
-    previewStatus.className = `transfer-status ${saveHistoryRecord ? "transfer-success" : "transfer-neutral"}`;
-  }
-  if (saveHistoryRecord) {
-    saveHistory(inputs, lastPlan.recommendation, lastPlan.contribution);
-    renderHistory();
+    previewStatus.textContent = "پیش‌نمایش ذخیره نشده است؛ وزن‌ها را بازبینی و سپس همین نسخه را ثبت کن.";
+    previewStatus.className = "transfer-status transfer-neutral";
   }
   renderDashboard();
   if (scrollIntoView) resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2646,9 +2691,109 @@ function saveHistory(inputs, recommendation, contribution) {
     weights: recommendation.weights,
     contributionPlan: contribution.amounts,
     profile: inputs.profile,
+    selectedAssets: inputs.selectedAssets,
     marketSnapshot: marketSnapshot(liveMarket),
   };
-  writeJson(HISTORY_KEY, mergeHistory([entry], history, HISTORY_LIMIT));
+  return writeJson(HISTORY_KEY, mergeHistory([entry], history, HISTORY_LIMIT));
+}
+
+function savePlanPreview() {
+  if (!lastPlan || lastPlan.saved) return;
+  const previewStatus = $("#plan-preview-status");
+  const cryptoWeight =
+    (Number(lastPlan.recommendation.weights.bitcoin) || 0) + (Number(lastPlan.recommendation.weights.ethereum) || 0);
+  if (cryptoWeight > 5 + 1e-6) {
+    if (previewStatus) {
+      previewStatus.textContent = "وزن مجموع بیت‌کوین و اتریوم نباید از ۵٪ بیشتر شود.";
+      previewStatus.className = "transfer-status transfer-warning";
+    }
+    return;
+  }
+  if (!saveHistory(lastPlan.inputs, lastPlan.recommendation, lastPlan.contribution)) {
+    if (previewStatus) {
+      previewStatus.textContent = "این پیشنهاد ذخیره نشد؛ فضای ذخیره‌سازی مرورگر را بررسی کن.";
+      previewStatus.className = "transfer-status transfer-warning";
+    }
+    return;
+  }
+  lastPlan.saved = true;
+  appStore.setState({ plan: lastPlan });
+  renderHistory();
+  renderDashboard();
+  if (previewStatus) {
+    previewStatus.textContent = "همین نسخه‌ی پیشنهادی در سابقه‌ی این دستگاه ذخیره شد؛ دارایی و تراکنشی تغییر نکرد.";
+    previewStatus.className = "transfer-status transfer-success";
+  }
+  const saveButton = $("#save-plan-result");
+  if (saveButton) saveButton.disabled = true;
+}
+
+function updatePlanWeights(event) {
+  const input = event.target.closest?.("[data-plan-weight]");
+  if (!input || !lastPlan) return;
+  const assetKeys = lastPlan.assetKeys;
+  const raw = Object.fromEntries(
+    assetKeys.map((assetId) => [assetId, Number($(`[data-plan-weight="${assetId}"]`)?.value)]),
+  );
+  if (Object.values(raw).some((weight) => !Number.isFinite(weight) || weight < 0)) {
+    const previewStatus = $("#plan-preview-status");
+    if (previewStatus) {
+      previewStatus.textContent = "وزن‌ها باید عددی و نامنفی باشند.";
+      previewStatus.className = "transfer-status transfer-warning";
+    }
+    const saveButton = $("#save-plan-result");
+    if (saveButton) saveButton.disabled = true;
+    return;
+  }
+  const total = Object.values(raw).reduce((sum, weight) => sum + weight, 0);
+  const previewStatus = $("#plan-preview-status");
+  const saveButton = $("#save-plan-result");
+  if (total <= 0) {
+    if (previewStatus) {
+      previewStatus.textContent = "حداقل وزن یک دارایی باید بیشتر از صفر باشد.";
+      previewStatus.className = "transfer-status transfer-warning";
+    }
+    if (saveButton) saveButton.disabled = true;
+    return;
+  }
+  const weights = Object.fromEntries(assetKeys.map((assetId) => [assetId, (raw[assetId] / total) * 100]));
+  const roundingKey = assetKeys
+    .filter((assetId) => !["bitcoin", "ethereum"].includes(assetId))
+    .sort((left, right) => weights[right] - weights[left])[0];
+  assetKeys.forEach((assetId) => {
+    weights[assetId] = Math.round(weights[assetId] * 10) / 10;
+  });
+  if (roundingKey) {
+    const roundingDelta = Math.round((100 - Object.values(weights).reduce((sum, weight) => sum + weight, 0)) * 10) / 10;
+    weights[roundingKey] = Math.max(0, weights[roundingKey] + roundingDelta);
+  }
+  const cryptoWeight = (weights.bitcoin || 0) + (weights.ethereum || 0);
+  if (cryptoWeight > 5 + 1e-6) {
+    if (previewStatus) {
+      previewStatus.textContent = "وزن مجموع بیت‌کوین و اتریوم حداکثر ۵٪ است؛ سهم آن‌ها را کاهش بده.";
+      previewStatus.className = "transfer-status transfer-warning";
+    }
+    if (saveButton) saveButton.disabled = true;
+    return;
+  }
+  lastPlan.recommendation.weights = normalizeAllocation(weights, DEFAULT_ALLOCATION, assetKeys);
+  const contribution = contributionRebalance(
+    lastPlan.currentHoldings,
+    lastPlan.recommendation.weights,
+    lastPlan.inputs.monthlyContribution,
+    assetKeys,
+  );
+  contribution.excludedInvestableTotal = lastPlan.contribution.excludedInvestableTotal;
+  contribution.excludedMissingCount = lastPlan.contribution.excludedMissingCount;
+  lastPlan.contribution = contribution;
+  lastPlan.saved = false;
+  renderPlanOutput(lastPlan);
+  if (previewStatus) {
+    previewStatus.textContent = "وزن‌ها به ۱۰۰٪ نرمال شدند؛ این پیشنهاد هنوز ذخیره نشده است.";
+    previewStatus.className = "transfer-status transfer-neutral";
+  }
+  appStore.setState({ plan: lastPlan });
+  renderDashboard();
 }
 
 function handleMarketAssetSubmit(event) {
@@ -2846,7 +2991,7 @@ function previewPlanIfVisible() {
   }
   window.clearTimeout(planPreviewTimer);
   planPreviewTimer = window.setTimeout(() => {
-    renderPlan({ saveHistoryRecord: false, scrollIntoView: false, validate: false });
+    renderPlan({ scrollIntoView: false, validate: false });
   }, 180);
 }
 
@@ -2960,7 +3105,16 @@ async function runBacktest() {
   backtestEl.innerHTML = `<div class="empty-state">${escapeHTML(text("backtest.running"))}</div>`;
   let historicalMarket;
   try {
-    const assetForPlanningKey = { gold: "gold", currency: "dollar", silver: "silver", fixed: "fixedIncome" };
+    const assetForPlanningKey = Object.fromEntries(
+      ASSET_KEYS.map((assetId) => [
+        assetId,
+        assetId === "fixed"
+          ? "fixedIncome"
+          : assetId === "currency"
+            ? "dollar"
+            : INSTRUMENT_REGISTRY[assetId]?.marketKey,
+      ]),
+    );
     const historicalAssets = ASSET_KEYS.filter((assetId) => inputs.allocation[assetId] > 0).map(
       (assetId) => assetForPlanningKey[assetId],
     );
@@ -2975,13 +3129,15 @@ async function runBacktest() {
     );
     if (!response.ok) throw new Error("history-api-unavailable");
     const data = await response.json();
+    const history = Object.fromEntries(
+      ASSET_KEYS.filter((assetId) => assetId !== "fixed").map((assetId) => {
+        const marketKey = assetForPlanningKey[assetId];
+        return [marketKey, data.assets?.[marketKey]?.points || []];
+      }),
+    );
     historicalMarket = {
       funds: liveMarket?.funds || {},
-      history: {
-        gold: data.assets?.gold?.points || [],
-        dollar: data.assets?.dollar?.points || [],
-        silver: data.assets?.silver?.points || [],
-      },
+      history,
     };
   } catch {
     backtestEl.innerHTML = `<div class="empty-state">تاریخچه‌ی مشاهده‌شده دریافت نشد؛ بعدا دوباره تلاش کن.</div>`;
@@ -3009,13 +3165,13 @@ async function runBacktest() {
 
 function getSimulationInputs() {
   const rawAllocation = Object.fromEntries(
-    ASSET_KEYS.map((assetId) => [assetId, Math.max(0, numberFromInput($("#sim-weight-" + assetId)?.value))]),
+    SIMULATION_ASSET_KEYS.map((assetId) => [assetId, Math.max(0, numberFromInput($("#sim-weight-" + assetId)?.value))]),
   );
   const totalWeight = Object.values(rawAllocation).reduce((sum, value) => sum + value, 0);
   const horizonYears = clamp(numberFromInput($("#simulation-horizon")?.value), 1, 50);
   return {
     valid: totalWeight > 0 && horizonYears >= 1,
-    allocation: normalizeAllocation(rawAllocation),
+    allocation: normalizeAllocation(rawAllocation, DEFAULT_ALLOCATION, SIMULATION_ASSET_KEYS),
     initialInvestment: Math.max(0, numberFromInput($("#simulation-initial")?.value)),
     monthlyContribution: Math.max(0, numberFromInput($("#simulation-monthly")?.value)),
     horizonYears,
@@ -3156,6 +3312,8 @@ function bindEvents() {
     event.preventDefault();
     renderPlan();
   });
+  $("#save-plan-result")?.addEventListener("click", savePlanPreview);
+  allocationListEl?.addEventListener("change", updatePlanWeights);
   $$("[data-go-view]").forEach((button) =>
     button.addEventListener("click", () => navigationController.goTo(button.dataset.goView)),
   );
@@ -3357,6 +3515,7 @@ async function init() {
   migrateStoredCurrencyToToman();
   modelSettings = loadModelSettings();
   restoreProviderApiKey();
+  renderSimulationWeightInputs();
   renderSettingsAssumptions();
   applyModelSettingsToSimulation();
   restoreProfile();

@@ -7,10 +7,15 @@
  * DOM, network, storage, or provider-specific code.
  */
 
-import { PLANNING_ASSET_TO_SLEEVE } from "./market/catalog.js";
+import {
+  OPTIONAL_RECOMMENDATION_ASSETS,
+  INSTRUMENT_REGISTRY,
+  PLAN_ASSET_KEYS,
+  SIMULATION_ASSET_KEYS,
+} from "./market/catalog.js";
 
-export const ASSET_KEYS = Object.freeze(Object.keys(PLANNING_ASSET_TO_SLEEVE));
-export const MODEL_ASSUMPTION_VERSION = "ir-planning-v1";
+export const ASSET_KEYS = SIMULATION_ASSET_KEYS;
+export const MODEL_ASSUMPTION_VERSION = "ir-planning-v2";
 export const MONTE_CARLO_MODEL_VERSION = "mc-gaussian-v1";
 export const BOOTSTRAP_MODEL_VERSION = "mc-block-bootstrap-v1";
 export const MIN_PAIRED_MONTHS = 24;
@@ -23,6 +28,12 @@ export const DEFAULT_ALLOCATION = Object.freeze({
   gold: 18,
   currency: 8,
   silver: 2,
+  bitcoin: 0,
+  ethereum: 0,
+  platinum: 0,
+  palladium: 0,
+  copper: 0,
+  tether: 0,
 });
 
 export const DEFAULT_ASSUMPTIONS = Object.freeze({
@@ -30,6 +41,12 @@ export const DEFAULT_ASSUMPTIONS = Object.freeze({
   gold: { annualReturn: 0.25, annualVolatility: 0.24 },
   currency: { annualReturn: 0.25, annualVolatility: 0.22 },
   silver: { annualReturn: 0.28, annualVolatility: 0.34 },
+  bitcoin: { annualReturn: 0.25, annualVolatility: 0.8 },
+  ethereum: { annualReturn: 0.25, annualVolatility: 0.95 },
+  tether: { annualReturn: 0.25, annualVolatility: 0.25 },
+  platinum: { annualReturn: 0.25, annualVolatility: 0.3 },
+  palladium: { annualReturn: 0.25, annualVolatility: 0.42 },
+  copper: { annualReturn: 0.25, annualVolatility: 0.35 },
 });
 
 export const GOALS = Object.freeze({
@@ -95,27 +112,34 @@ export function percentile(values, probability) {
   return valid[lower] + (valid[upper] - valid[lower]) * (position - lower);
 }
 
-export function normalizeAllocation(input, fallback = DEFAULT_ALLOCATION) {
+export function normalizeAllocation(input, fallback = DEFAULT_ALLOCATION, assetKeys = ASSET_KEYS) {
   const raw = {};
-  ASSET_KEYS.forEach((key) => {
+  assetKeys.forEach((key) => {
     raw[key] = Math.max(0, Number(input && input[key]) || 0);
   });
   const total = sum(Object.values(raw));
-  if (total <= EPSILON) return { ...fallback };
+  if (total <= EPSILON) {
+    const fallbackAllocation = Object.fromEntries(
+      assetKeys.map((key) => [key, Math.max(0, Number(fallback && fallback[key]) || 0)]),
+    );
+    const fallbackTotal = sum(Object.values(fallbackAllocation));
+    if (fallbackTotal <= EPSILON) return fallbackAllocation;
+    return Object.fromEntries(assetKeys.map((key) => [key, (fallbackAllocation[key] / fallbackTotal) * 100]));
+  }
   const normalized = {};
-  ASSET_KEYS.forEach((key) => {
+  assetKeys.forEach((key) => {
     normalized[key] = (raw[key] / total) * 100;
   });
   return normalized;
 }
 
-export function roundAllocation(input) {
-  const normalized = normalizeAllocation(input);
-  const rounded = Object.fromEntries(ASSET_KEYS.map((key) => [key, Math.floor(normalized[key])]));
+export function roundAllocation(input, assetKeys = ASSET_KEYS) {
+  const normalized = normalizeAllocation(input, DEFAULT_ALLOCATION, assetKeys);
+  const rounded = Object.fromEntries(assetKeys.map((key) => [key, Math.floor(normalized[key])]));
   let remaining = 100 - sum(Object.values(rounded));
-  const order = ASSET_KEYS.slice().sort(
-    (left, right) => normalized[right] - rounded[right] - (normalized[left] - rounded[left]),
-  );
+  const order = assetKeys
+    .slice()
+    .sort((left, right) => normalized[right] - rounded[right] - (normalized[left] - rounded[left]));
   for (let index = 0; index < remaining; index += 1) rounded[order[index % order.length]] += 1;
   return rounded;
 }
@@ -164,7 +188,17 @@ function emergencyValue(value) {
  * Build a conservative allocation from the user's situation.
  * This is a rule system, not a market forecast.
  */
-export function recommendAllocation(profile = {}) {
+function inverseVolatilityWeights(assetKeys, budget, model) {
+  const inverseVolatility = Object.fromEntries(
+    assetKeys.map((assetId) => [assetId, 1 / Math.max(Number(model[assetId]?.annualVolatility) || 0, 0.01)]),
+  );
+  const total = sum(Object.values(inverseVolatility));
+  return Object.fromEntries(
+    assetKeys.map((assetId) => [assetId, total > EPSILON ? (budget * inverseVolatility[assetId]) / total : 0]),
+  );
+}
+
+export function recommendAllocation(profile = {}, options = {}) {
   const age = Number.isFinite(Number(profile.age)) && Number(profile.age) > 0 ? clamp(profile.age, 18, 90) : null;
   const horizon = clamp(profile.horizonYears || 5, 1, 50);
   const goal = GOALS[profile.goal] || GOALS.preservation;
@@ -182,15 +216,73 @@ export function recommendAllocation(profile = {}) {
   const goldShare = clamp(0.54 - risk * 0.06 + (horizon <= 3 ? 0.05 : 0), 0.38, 0.62);
   const currencyShare = clamp(0.31 + risk * 0.02, 0.22, 0.36);
   const silverShare = 1 - goldShare - currencyShare;
-  const weights = roundAllocation({
+  const weights = {
+    ...Object.fromEntries(PLAN_ASSET_KEYS.map((assetId) => [assetId, 0])),
     fixed,
     gold: nonFixed * goldShare,
     currency: nonFixed * currencyShare,
     silver: Math.max(1, nonFixed * silverShare),
+  };
+  const enabledAssets = new Set(
+    (Array.isArray(options.enabledAssets) ? options.enabledAssets : []).filter((assetId) =>
+      OPTIONAL_RECOMMENDATION_ASSETS.includes(assetId),
+    ),
+  );
+  const assumptions = options.assumptions || DEFAULT_ASSUMPTIONS;
+  const returnModel =
+    options.returnModel ||
+    (enabledAssets.size ? estimateReturnModel(options.market || {}, assumptions).model : assumptions);
+  const enabledCommodities = [
+    "silver",
+    ...["copper", "platinum", "palladium"].filter((assetId) => enabledAssets.has(assetId)),
+  ];
+  const commodityWeights = inverseVolatilityWeights(enabledCommodities, weights.silver, returnModel);
+  enabledCommodities.forEach((assetId) => {
+    weights[assetId] = commodityWeights[assetId];
   });
 
+  const enabledCrypto = ["bitcoin", "ethereum"].filter((assetId) => enabledAssets.has(assetId));
+  const cryptoTargets = { conservative: 1, balanced: 3, growth: 5 };
+  const cryptoBudget = enabledCrypto.length ? Math.min(cryptoTargets[profile.riskTolerance] || 1, 5) : 0;
+  let cryptoWeights = {};
+  if (cryptoBudget > 0) {
+    const nonFixedAssets = PLAN_ASSET_KEYS.filter((assetId) => assetId !== "fixed" && !enabledCrypto.includes(assetId));
+    const nonFixedBudget = sum(nonFixedAssets.map((assetId) => weights[assetId]));
+    const remainingBudget = Math.max(0, nonFixedBudget - cryptoBudget);
+    const reduction = nonFixedBudget > EPSILON ? remainingBudget / nonFixedBudget : 0;
+    nonFixedAssets.forEach((assetId) => {
+      weights[assetId] *= reduction;
+    });
+    const rawCryptoWeights = inverseVolatilityWeights(enabledCrypto, cryptoBudget, returnModel);
+    const roundedCryptoWeights = Object.fromEntries(
+      enabledCrypto.map((assetId) => [assetId, Math.floor(rawCryptoWeights[assetId])]),
+    );
+    let remainingCryptoWeight = cryptoBudget - sum(Object.values(roundedCryptoWeights));
+    const cryptoRemainderOrder = enabledCrypto
+      .slice()
+      .sort(
+        (left, right) =>
+          rawCryptoWeights[right] - roundedCryptoWeights[right] - (rawCryptoWeights[left] - roundedCryptoWeights[left]),
+      );
+    for (let index = 0; index < remainingCryptoWeight; index += 1)
+      roundedCryptoWeights[cryptoRemainderOrder[index % cryptoRemainderOrder.length]] += 1;
+    cryptoWeights = roundedCryptoWeights;
+    Object.assign(weights, rawCryptoWeights);
+  }
+
+  const roundedWeights = roundAllocation(weights, PLAN_ASSET_KEYS);
+  if (cryptoBudget > 0) {
+    const currentCryptoWeight = sum(enabledCrypto.map((assetId) => roundedWeights[assetId]));
+    const nonCryptoAsset = PLAN_ASSET_KEYS.filter((assetId) => !enabledCrypto.includes(assetId)).sort(
+      (left, right) => roundedWeights[right] - roundedWeights[left],
+    )[0];
+    if (nonCryptoAsset) roundedWeights[nonCryptoAsset] += currentCryptoWeight - cryptoBudget;
+    Object.assign(roundedWeights, cryptoWeights);
+  }
+
   return {
-    weights,
+    weights: roundedWeights,
+    enabledAssets: [...enabledAssets],
     facts: {
       age,
       horizon,
@@ -202,6 +294,8 @@ export function recommendAllocation(profile = {}) {
     guardrails: {
       monthlyRateMin: profile.emergencyFund === "complete" ? 15 : 10,
       monthlyRateMax: profile.emergencyFund === "none" ? 20 : 25,
+      cryptoWeightCap: 5,
+      cryptoWeight: cryptoBudget,
     },
   };
 }
@@ -249,7 +343,12 @@ function seriesReturns(series) {
 
 /** Align observed returns with modeled fallbacks while retaining observation flags. */
 export function buildHistoricalReturns(market, assumptions = DEFAULT_ASSUMPTIONS) {
-  const marketKeys = { fixed: null, gold: "gold", currency: "dollar", silver: "silver" };
+  const marketKeys = Object.fromEntries(
+    ASSET_KEYS.map((assetId) => [
+      assetId,
+      assetId === "fixed" ? null : assetId === "currency" ? "dollar" : INSTRUMENT_REGISTRY[assetId]?.marketKey || null,
+    ]),
+  );
   const actual = {};
   const months = new Set();
   ASSET_KEYS.forEach((asset) => {
@@ -263,13 +362,14 @@ export function buildHistoricalReturns(market, assumptions = DEFAULT_ASSUMPTIONS
   const rows = orderedMonths.map((month, index) => {
     const row = { month, returns: {}, observed: {} };
     ASSET_KEYS.forEach((asset) => {
+      const assumption = assumptions[asset] || DEFAULT_ASSUMPTIONS[asset];
       if (asset === "fixed") {
-        row.returns[asset] = annualToMonthlyRate(assumptions.fixed.annualReturn);
+        row.returns[asset] = annualToMonthlyRate(assumption.annualReturn);
         row.observed[asset] = false;
         return;
       }
       const point = actual[asset].find((candidate) => candidate.month === month);
-      row.returns[asset] = point ? point.value : annualToMonthlyRate(assumptions[asset].annualReturn);
+      row.returns[asset] = point ? point.value : annualToMonthlyRate(assumption.annualReturn);
       row.observed[asset] = Boolean(point);
     });
     row.index = index;
@@ -662,20 +762,25 @@ export function backtestHistorical(options = {}) {
   };
 }
 
-export function contributionRebalance(currentHoldings, targetAllocation, monthlyContribution) {
+export function contributionRebalance(
+  currentHoldings,
+  targetAllocation,
+  monthlyContribution,
+  assetKeys = PLAN_ASSET_KEYS,
+) {
   const contribution = Math.max(0, Number(monthlyContribution) || 0);
   const current = Object.fromEntries(
-    ASSET_KEYS.map((asset) => [asset, Math.max(0, Number(currentHoldings && currentHoldings[asset]) || 0)]),
+    assetKeys.map((asset) => [asset, Math.max(0, Number(currentHoldings && currentHoldings[asset]) || 0)]),
   );
-  const target = normalizeAllocation(targetAllocation);
+  const target = normalizeAllocation(targetAllocation, DEFAULT_ALLOCATION, assetKeys);
   const currentTotal = portfolioTotal(current);
   const currentWeights = Object.fromEntries(
-    ASSET_KEYS.map((asset) => [asset, currentTotal > EPSILON ? (current[asset] / currentTotal) * 100 : 0]),
+    assetKeys.map((asset) => [asset, currentTotal > EPSILON ? (current[asset] / currentTotal) * 100 : 0]),
   );
-  const drift = Object.fromEntries(ASSET_KEYS.map((asset) => [asset, currentWeights[asset] - target[asset]]));
+  const drift = Object.fromEntries(assetKeys.map((asset) => [asset, currentWeights[asset] - target[asset]]));
   if (currentTotal <= EPSILON)
     return {
-      amounts: ASSET_KEYS.reduce((result, asset) => ({ ...result, [asset]: (contribution * target[asset]) / 100 }), {}),
+      amounts: assetKeys.reduce((result, asset) => ({ ...result, [asset]: (contribution * target[asset]) / 100 }), {}),
       weights: target,
       current,
       currentTotal,
@@ -685,16 +790,23 @@ export function contributionRebalance(currentHoldings, targetAllocation, monthly
 
   const desiredAfterContribution = currentTotal + contribution;
   const deficits = {};
-  ASSET_KEYS.forEach((asset) => {
+  assetKeys.forEach((asset) => {
     deficits[asset] = Math.max(0, (desiredAfterContribution * target[asset]) / 100 - current[asset]);
   });
   const deficitTotal = sum(Object.values(deficits));
   const amounts = {};
-  ASSET_KEYS.forEach((asset) => {
+  assetKeys.forEach((asset) => {
     amounts[asset] =
       deficitTotal > EPSILON ? (contribution * deficits[asset]) / deficitTotal : (contribution * target[asset]) / 100;
   });
-  return { amounts, weights: normalizeAllocation(amounts), current, currentTotal, currentWeights, drift };
+  return {
+    amounts,
+    weights: normalizeAllocation(amounts, DEFAULT_ALLOCATION, assetKeys),
+    current,
+    currentTotal,
+    currentWeights,
+    drift,
+  };
 }
 
 function correlatedDraws(model, covariance, random) {
@@ -895,14 +1007,14 @@ export function evaluateGoal(options = {}) {
 
 export function portfolioFromHistory(history, currentMarket, now = Date.now()) {
   const categories = Object.fromEntries(
-    ASSET_KEYS.map((asset) => [asset, { invested: 0, value: 0, priced: 0, entries: 0 }]),
+    PLAN_ASSET_KEYS.map((asset) => [asset, { invested: 0, value: 0, priced: 0, entries: 0 }]),
   );
   const current = currentMarket && currentMarket.assets ? currentMarket.assets : {};
   let totalInvested = 0;
   (Array.isArray(history) ? history : []).forEach((entry) => {
     const total = Math.max(0, Number(entry.total) || 0);
     totalInvested += total;
-    ASSET_KEYS.forEach((asset) => {
+    PLAN_ASSET_KEYS.forEach((asset) => {
       const invested = (total * (Number(entry.weights && entry.weights[asset]) || 0)) / 100;
       categories[asset].invested += invested;
       categories[asset].entries += invested > 0 ? 1 : 0;

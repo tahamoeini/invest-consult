@@ -750,6 +750,56 @@ input[type="range"] {
   color: var(--muted);
   font-size: max(12px, 0.62rem);
 }
+.allocation-weight-input {
+  display: grid;
+  grid-template-columns: minmax(68px, 92px) auto;
+  align-items: center;
+  gap: 5px;
+  margin-right: auto;
+  margin-left: 12px;
+  color: var(--muted);
+  font-size: max(12px, 0.62rem);
+}
+.allocation-weight-input input {
+  min-width: 0;
+  padding: 7px 8px;
+  text-align: left;
+}
+.recommendation-assets {
+  min-width: 0;
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.recommendation-assets legend {
+  padding: 0 6px;
+  color: var(--primary-dark);
+  font-size: max(12px, 0.7rem);
+  font-weight: 800;
+}
+.recommendation-assets p,
+.recommendation-assets > small {
+  display: block;
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: max(12px, 0.62rem);
+}
+.recommendation-assets .field-grid {
+  margin: 8px 0;
+}
+.recommendation-assets .check-line {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #e8eeee;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.plan-output .primary-button,
+#plan-output > .primary-button {
+  max-width: 280px;
+  margin-top: 10px;
+}
 .output-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3373,6 +3423,7 @@ summary {
   grid-template-columns: minmax(100px, 1fr) repeat(2, minmax(90px, 0.65fr));
   align-items: center;
   gap: 9px;
+  padding: 3px 0;
 }
 .settings-assumption-grid input {
   padding: 7px 9px;

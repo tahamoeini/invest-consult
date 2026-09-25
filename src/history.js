@@ -1,10 +1,11 @@
 // @ts-check
 
-import { ASSET_KEYS, clamp, normalizeAllocation } from "./engine.js";
+import { clamp, normalizeAllocation } from "./engine.js";
+import { OPTIONAL_RECOMMENDATION_ASSETS, PLAN_ASSET_KEYS } from "./market/catalog.js";
 import { PORTFOLIO_SCHEMA, PORTFOLIO_VERSION, normalizePortfolio } from "./portfolio.js";
 
 export const HISTORY_SCHEMA = "invest-consult-history";
-export const HISTORY_VERSION = 2;
+export const HISTORY_VERSION = 3;
 
 const MARKET_ASSETS = [
   "dollar",
@@ -160,11 +161,16 @@ function sanitizeProfile(profile) {
 function sanitizeAmounts(amounts) {
   if (!amounts || typeof amounts !== "object") return undefined;
   const result = {};
-  ASSET_KEYS.forEach((key) => {
+  PLAN_ASSET_KEYS.forEach((key) => {
     const amount = finite(amounts[key]);
     if (amount !== null && amount >= 0) result[key] = amount;
   });
   return Object.keys(result).length ? result : undefined;
+}
+
+function sanitizeSelectedAssets(assets) {
+  if (!Array.isArray(assets)) return [];
+  return [...new Set(assets.filter((assetId) => OPTIONAL_RECOMMENDATION_ASSETS.includes(assetId)))];
 }
 
 /**
@@ -178,15 +184,17 @@ export function sanitizeHistoryEntry(entry) {
   const contributionRate = finite(entry.contributionRate ?? entry.rate);
   const rawWeights = entry.weights && typeof entry.weights === "object" ? entry.weights : null;
   if (!createdAt || total === null || total <= 0 || contributionRate === null || !rawWeights) return null;
-  const rawWeightTotal = ASSET_KEYS.reduce((sum, key) => sum + Math.max(0, finite(rawWeights[key]) || 0), 0);
+  const rawWeightTotal = PLAN_ASSET_KEYS.reduce((sum, key) => sum + Math.max(0, finite(rawWeights[key]) || 0), 0);
   if (rawWeightTotal <= 0) return null;
 
   const result = {
     createdAt,
     total,
     contributionRate: clamp(contributionRate, 0, 100),
-    weights: normalizeAllocation(rawWeights),
+    weights: normalizeAllocation(rawWeights, undefined, PLAN_ASSET_KEYS),
   };
+  const selectedAssets = sanitizeSelectedAssets(entry.selectedAssets);
+  if (selectedAssets.length) result.selectedAssets = selectedAssets;
   const salary = finite(entry.salary);
   if (salary !== null && salary >= 0) result.salary = salary;
   const contributionPlan = sanitizeAmounts(entry.contributionPlan);

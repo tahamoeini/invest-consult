@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ASSET_KEYS,
+  DEFAULT_ALLOCATION,
   DEFAULT_ASSUMPTIONS,
   annualToMonthlyRate,
   buildHistoricalReturns,
@@ -44,17 +45,67 @@ const market = {
 };
 
 test("recommendation stays normalized and defensive for a conservative profile", () => {
-  const result = recommendAllocation({
+  const profile = {
     age: 45,
     horizonYears: 5,
     goal: "preservation",
     riskTolerance: "conservative",
     incomeStability: "mixed",
     emergencyFund: "partial",
-  });
+  };
+  const result = recommendAllocation(profile);
   assert.equal(Math.round(Object.values(result.weights).reduce((sum, value) => sum + value, 0)), 100);
+  assert.deepEqual(
+    Object.fromEntries(["fixed", "gold", "currency", "silver"].map((assetId) => [assetId, result.weights[assetId]])),
+    { fixed: 80, gold: 11, currency: 6, silver: 3 },
+  );
   assert.ok(result.weights.fixed >= 60);
   assert.ok(result.weights.silver >= 1);
+  ["bitcoin", "ethereum", "platinum", "palladium", "copper"].forEach((assetId) => {
+    assert.equal(result.weights[assetId], 0);
+  });
+  assert.equal(Object.hasOwn(result.weights, "tether"), false);
+});
+
+test("optional recommendation assets use volatility-weighted sleeves and the profile crypto cap", () => {
+  const assumptions = {
+    ...DEFAULT_ASSUMPTIONS,
+    silver: { annualReturn: 0.25, annualVolatility: 0.2 },
+    copper: { annualReturn: 0.25, annualVolatility: 0.4 },
+    bitcoin: { annualReturn: 0.25, annualVolatility: 0.4 },
+    ethereum: { annualReturn: 0.25, annualVolatility: 0.8 },
+  };
+  const profile = { riskTolerance: "growth", horizonYears: 10, goal: "growth" };
+  const base = recommendAllocation(profile, { assumptions });
+  const result = recommendAllocation(profile, {
+    enabledAssets: ["copper", "bitcoin", "ethereum", "tether", "bourseIndex"],
+    assumptions,
+  });
+  const total = Object.values(result.weights).reduce((sum, value) => sum + value, 0);
+  assert.equal(Math.round(total), 100);
+  assert.equal(result.weights.bitcoin + result.weights.ethereum, 5);
+  assert.ok(result.weights.bitcoin > result.weights.ethereum);
+  assert.ok(result.weights.silver > result.weights.copper);
+  assert.ok(result.weights.silver + result.weights.copper < base.weights.silver);
+  assert.ok(result.weights.silver + result.weights.copper > 0);
+  assert.equal(Object.hasOwn(result.weights, "tether"), false);
+  assert.equal(Object.hasOwn(result.weights, "bourseIndex"), false);
+});
+
+test("crypto recommendation targets follow the profile and never exceed five percent", () => {
+  [
+    ["conservative", 1],
+    ["balanced", 3],
+    ["growth", 5],
+  ].forEach(([riskTolerance, expected]) => {
+    const recommendation = recommendAllocation(
+      { riskTolerance, horizonYears: 10 },
+      { enabledAssets: ["bitcoin", "ethereum"] },
+    );
+    const cryptoWeight = recommendation.weights.bitcoin + recommendation.weights.ethereum;
+    assert.equal(cryptoWeight, expected);
+    assert.ok(cryptoWeight <= 5);
+  });
 });
 
 test("deterministic simulation accounts for contribution growth and inflation", () => {
@@ -71,6 +122,36 @@ test("deterministic simulation accounts for contribution growth and inflation", 
   assert.ok(result.totalInvested > 1000 + 24 * 100);
   assert.equal(result.finalValue, result.totalInvested);
   assert.ok(result.finalRealValue < result.finalValue);
+});
+
+test("simulation supports registered assets including Tether without adding them to recommendations", () => {
+  ["bitcoin", "ethereum", "copper", "platinum", "palladium", "tether"].forEach((assetId) => {
+    assert.equal(DEFAULT_ALLOCATION[assetId], 0, `${assetId} should be opt-in for simulation`);
+  });
+  const result = simulatePlan({
+    initialInvestment: 1000,
+    monthlyContribution: 0,
+    horizonYears: 1,
+    allocation: { tether: 100 },
+    annualReturns: { tether: { annualReturn: 0.12 } },
+    rebalance: true,
+  });
+  assert.equal(result.holdings.tether, result.finalValue);
+  assert.ok(result.finalValue > 1000);
+  assert.equal(recommendAllocation({}).weights.tether, undefined);
+});
+
+test("each optional recommendation asset is available as a weighted simulation scenario", () => {
+  ["bitcoin", "ethereum", "copper", "platinum", "palladium"].forEach((assetId) => {
+    const result = simulatePlan({
+      initialInvestment: 1000,
+      horizonYears: 1,
+      allocation: { [assetId]: 100 },
+      annualReturns: { [assetId]: { annualReturn: 0.12 } },
+    });
+    assert.equal(result.holdings[assetId], result.finalValue, `${assetId} should retain the full scenario value`);
+    assert.ok(result.finalValue > 1000, `${assetId} should use its configured scenario return`);
+  });
 });
 
 test("new contributions close allocation gaps without selling", () => {
@@ -101,6 +182,28 @@ test("historical backtest returns requested risk metrics", () => {
   assert.ok(Number.isFinite(result.median.cagr));
   assert.ok(Number.isFinite(result.median.maxDrawdown));
   assert.equal(Object.keys(result.coverage).length, ASSET_KEYS.length);
+});
+
+test("backtest uses observed copper history and refuses assumption-filled crypto history", () => {
+  const copperMarket = { history: { copper: series(100, 0.02, 36) } };
+  const observed = backtestHistorical({
+    market: copperMarket,
+    allocation: { copper: 100 },
+    initialInvestment: 1000,
+    horizonYears: 1,
+  });
+  assert.equal(observed.available, true);
+  assert.equal(observed.estimated, false);
+
+  const missing = backtestHistorical({
+    market,
+    allocation: { bitcoin: 100 },
+    initialInvestment: 1000,
+    horizonYears: 1,
+  });
+  assert.equal(missing.available, false);
+  assert.equal(missing.estimated, false);
+  assert.deepEqual(missing.unobservedAssets, ["bitcoin"]);
 });
 
 test("Monte Carlo returns ordered percentile outputs", () => {
@@ -224,7 +327,7 @@ test("goal planner calculates probability and required contribution deterministi
   assert.ok(result.requiredMonthlyContribution >= 83.3);
   assert.ok(result.requiredMonthlyContribution <= 83.4);
   assert.equal(result.targetNominal, 2000);
-  assert.equal(result.modelAssumptionVersion, "ir-planning-v1");
+  assert.equal(result.modelAssumptionVersion, "ir-planning-v2");
 });
 
 test("history export preserves quote provenance while accepting legacy snapshots", () => {
@@ -233,6 +336,7 @@ test("history export preserves quote provenance while accepting legacy snapshots
     total: 1000,
     contributionRate: 20,
     weights: { fixed: 70, gold: 20, currency: 8, silver: 2 },
+    selectedAssets: ["bitcoin", "copper", "tether"],
     salary: 5000,
     marketSnapshot: {
       capturedAt: "2026-01-01T00:00:00.000Z",
@@ -285,6 +389,8 @@ test("history export preserves quote provenance while accepting legacy snapshots
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.sleeveId, "fx");
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.sourceValues[0].price, 499000);
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.consensusCalibrated, false);
+  assert.deepEqual(parsed.records[0].selectedAssets, ["bitcoin", "copper"]);
+  assert.equal(parsed.records[0].weights.bitcoin, 0);
   assert.deepEqual(parsed.records[0].marketSnapshot.assets.dollar.dependencies, [
     {
       instrumentId: "dollar",
@@ -308,6 +414,7 @@ test("history export preserves quote provenance while accepting legacy snapshots
     },
   ]);
   assert.equal(oldSnapshot.records[0].marketSnapshot.assets.dollar.price, 500000);
+  assert.equal(oldSnapshot.records[0].weights.ethereum, 0);
 });
 
 test("legacy rate records are accepted and invalid records are skipped", () => {
