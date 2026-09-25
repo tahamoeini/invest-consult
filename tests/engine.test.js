@@ -15,12 +15,7 @@ import {
   simulatePlan,
   walkForwardValidation,
 } from "../src/engine.js";
-import {
-  createHistoryExport,
-  mergeHistory,
-  parseHistoryExport,
-  sanitizeHistoryEntry,
-} from "../src/history.js";
+import { createHistoryExport, mergeHistory, parseHistoryExport, sanitizeHistoryEntry } from "../src/history.js";
 import {
   appendTransactions,
   calculatePortfolio,
@@ -49,21 +44,41 @@ const market = {
 };
 
 test("recommendation stays normalized and defensive for a conservative profile", () => {
-  const result = recommendAllocation({ age: 45, horizonYears: 5, goal: "preservation", riskTolerance: "conservative", incomeStability: "mixed", emergencyFund: "partial" });
+  const result = recommendAllocation({
+    age: 45,
+    horizonYears: 5,
+    goal: "preservation",
+    riskTolerance: "conservative",
+    incomeStability: "mixed",
+    emergencyFund: "partial",
+  });
   assert.equal(Math.round(Object.values(result.weights).reduce((sum, value) => sum + value, 0)), 100);
   assert.ok(result.weights.fixed >= 60);
   assert.ok(result.weights.silver >= 1);
 });
 
 test("deterministic simulation accounts for contribution growth and inflation", () => {
-  const result = simulatePlan({ initialInvestment: 1000, monthlyContribution: 100, contributionGrowth: 0.1, inflationRate: 0.2, horizonYears: 2, allocation: { fixed: 100 }, annualReturns: { fixed: { annualReturn: 0 } }, rebalance: true });
+  const result = simulatePlan({
+    initialInvestment: 1000,
+    monthlyContribution: 100,
+    contributionGrowth: 0.1,
+    inflationRate: 0.2,
+    horizonYears: 2,
+    allocation: { fixed: 100 },
+    annualReturns: { fixed: { annualReturn: 0 } },
+    rebalance: true,
+  });
   assert.ok(result.totalInvested > 1000 + 24 * 100);
   assert.equal(result.finalValue, result.totalInvested);
   assert.ok(result.finalRealValue < result.finalValue);
 });
 
 test("new contributions close allocation gaps without selling", () => {
-  const plan = contributionRebalance({ fixed: 900, gold: 100, currency: 0, silver: 0 }, { fixed: 50, gold: 30, currency: 15, silver: 5 }, 100);
+  const plan = contributionRebalance(
+    { fixed: 900, gold: 100, currency: 0, silver: 0 },
+    { fixed: 50, gold: 30, currency: 15, silver: 5 },
+    100,
+  );
   assert.equal(Math.round(Object.values(plan.amounts).reduce((sum, value) => sum + value, 0)), 100);
   assert.ok(plan.amounts.gold > plan.amounts.fixed);
   assert.ok(plan.amounts.currency > 0);
@@ -71,7 +86,16 @@ test("new contributions close allocation gaps without selling", () => {
 });
 
 test("historical backtest returns requested risk metrics", () => {
-  const result = backtestHistorical({ market, allocation: { fixed: 60, gold: 20, currency: 15, silver: 5 }, initialInvestment: 1000, monthlyContribution: 100, contributionGrowth: 0, inflationRate: 0.2, horizonYears: 2, rebalance: true });
+  const result = backtestHistorical({
+    market,
+    allocation: { fixed: 60, gold: 20, currency: 15, silver: 5 },
+    initialInvestment: 1000,
+    monthlyContribution: 100,
+    contributionGrowth: 0,
+    inflationRate: 0.2,
+    horizonYears: 2,
+    rebalance: true,
+  });
   assert.equal(result.available, true);
   assert.ok(result.best && result.worst);
   assert.ok(Number.isFinite(result.median.cagr));
@@ -81,8 +105,20 @@ test("historical backtest returns requested risk metrics", () => {
 
 test("Monte Carlo returns ordered percentile outputs", () => {
   let state = 17;
-  const random = () => { state = (state * 9301 + 49297) % 233280; return state / 233280; };
-  const result = runMonteCarlo({ market, allocation: { fixed: 60, gold: 20, currency: 15, silver: 5 }, initialInvestment: 0, monthlyContribution: 100, horizonYears: 3, inflationRate: 0.2, paths: 1000, random });
+  const random = () => {
+    state = (state * 9301 + 49297) % 233280;
+    return state / 233280;
+  };
+  const result = runMonteCarlo({
+    market,
+    allocation: { fixed: 60, gold: 20, currency: 15, silver: 5 },
+    initialInvestment: 0,
+    monthlyContribution: 100,
+    horizonYears: 3,
+    inflationRate: 0.2,
+    paths: 1000,
+    random,
+  });
   assert.equal(result.paths, 1000);
   assert.ok(result.nominal.p10 <= result.nominal.p50);
   assert.ok(result.nominal.p50 <= result.nominal.p90);
@@ -122,7 +158,10 @@ test("covariance uses observed overlaps only and shrinks short samples", () => {
 
 test("modeled fallback returns never become observed history or estimated covariance", () => {
   const historical = buildHistoricalReturns({ history: { gold: series(100, 0.01, 36) } });
-  assert.equal(historical.rows.every((row) => row.observed.currency === false), true);
+  assert.equal(
+    historical.rows.every((row) => row.observed.currency === false),
+    true,
+  );
   const result = estimateReturnModel({ history: { gold: series(100, 0.01, 36) } });
   assert.equal(result.model.currency.observed, false);
   assert.equal(result.model.currency.annualReturn, DEFAULT_ASSUMPTIONS.currency.annualReturn);
@@ -141,11 +180,15 @@ test("advanced forecast methods require 24 walk-forward forecasts after their tr
 });
 
 test("block bootstrap falls back to versioned assumptions for assets with fewer than 24 observed returns", () => {
-  const market = { history: { gold: [
-    { date: "2025-01-01", value: 100 },
-    { date: "2025-02-01", value: 500 },
-    { date: "2025-03-01", value: 100 },
-  ] } };
+  const market = {
+    history: {
+      gold: [
+        { date: "2025-01-01", value: 100 },
+        { date: "2025-02-01", value: 500 },
+        { date: "2025-03-01", value: 100 },
+      ],
+    },
+  };
   const result = runMonteCarlo({
     market,
     allocation: { fixed: 0, gold: 100, currency: 0, silver: 0 },
@@ -185,12 +228,56 @@ test("goal planner calculates probability and required contribution deterministi
 });
 
 test("history export preserves quote provenance while accepting legacy snapshots", () => {
-  const record = { createdAt: "2026-01-01T00:00:00.000Z", total: 1000, contributionRate: 20, weights: { fixed: 70, gold: 20, currency: 8, silver: 2 }, salary: 5000, marketSnapshot: { capturedAt: "2026-01-01T00:00:00.000Z", assets: { dollar: { price: 500000, sleeveId: "fx", quoteType: "derived", derivedFrom: ["USD/EUR", "EUR/TOMAN"], sourceValues: [{ source: "A", price: 499000, quoteType: "direct", observedAt: "2025-12-31T23:54:00.000Z" }], dependencies: [{ instrumentId: "dollar", source: "A, B", sourceCount: 2, status: "degraded", confidence: "medium", observedAt: "2025-12-31T23:55:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z" }], observedAt: "2025-12-31T23:55:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z", sourceCount: 2, sources: ["A", "B"], status: "degraded", confidence: "medium", consensusPolicyVersion: "quote-consensus-v1", consensusCalibrated: false } }, funds: { fixedIncome: { effectiveAnnualReturn: 25 } } } };
+  const record = {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    total: 1000,
+    contributionRate: 20,
+    weights: { fixed: 70, gold: 20, currency: 8, silver: 2 },
+    salary: 5000,
+    marketSnapshot: {
+      capturedAt: "2026-01-01T00:00:00.000Z",
+      assets: {
+        dollar: {
+          price: 500000,
+          sleeveId: "fx",
+          quoteType: "derived",
+          derivedFrom: ["USD/EUR", "EUR/TOMAN"],
+          sourceValues: [{ source: "A", price: 499000, quoteType: "direct", observedAt: "2025-12-31T23:54:00.000Z" }],
+          dependencies: [
+            {
+              instrumentId: "dollar",
+              source: "A, B",
+              sourceCount: 2,
+              status: "degraded",
+              confidence: "medium",
+              observedAt: "2025-12-31T23:55:00.000Z",
+              retrievedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          observedAt: "2025-12-31T23:55:00.000Z",
+          retrievedAt: "2026-01-01T00:00:00.000Z",
+          sourceCount: 2,
+          sources: ["A", "B"],
+          status: "degraded",
+          confidence: "medium",
+          consensusPolicyVersion: "quote-consensus-v1",
+          consensusCalibrated: false,
+        },
+      },
+      funds: { fixedIncome: { effectiveAnnualReturn: 25 } },
+    },
+  };
   const exported = createHistoryExport([record]);
   const parsed = parseHistoryExport(JSON.parse(JSON.stringify(exported)));
   assert.equal(exported.schema, "invest-consult-history");
   assert.equal(parsed.records.length, 1);
-  assert.equal(parsed.records[0].weights.fixed + parsed.records[0].weights.gold + parsed.records[0].weights.currency + parsed.records[0].weights.silver, 100);
+  assert.equal(
+    parsed.records[0].weights.fixed +
+      parsed.records[0].weights.gold +
+      parsed.records[0].weights.currency +
+      parsed.records[0].weights.silver,
+    100,
+  );
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.quoteType, "derived");
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.observedAt, "2025-12-31T23:55:00.000Z");
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.retrievedAt, "2026-01-01T00:00:00.000Z");
@@ -198,13 +285,38 @@ test("history export preserves quote provenance while accepting legacy snapshots
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.sleeveId, "fx");
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.sourceValues[0].price, 499000);
   assert.equal(parsed.records[0].marketSnapshot.assets.dollar.consensusCalibrated, false);
-  assert.deepEqual(parsed.records[0].marketSnapshot.assets.dollar.dependencies, [{ instrumentId: "dollar", price: null, sourceCount: 2, unit: "", source: "A, B", status: "degraded", confidence: "medium", observedAt: "2025-12-31T23:55:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z" }]);
-  const oldSnapshot = parseHistoryExport([{ createdAt: "2026-01-01T00:00:00.000Z", total: 1000, rate: 20, weights: { fixed: 70, gold: 20, currency: 8, silver: 2 }, marketSnapshot: { assets: { dollar: { price: 500000 } } } }]);
+  assert.deepEqual(parsed.records[0].marketSnapshot.assets.dollar.dependencies, [
+    {
+      instrumentId: "dollar",
+      price: null,
+      sourceCount: 2,
+      unit: "",
+      source: "A, B",
+      status: "degraded",
+      confidence: "medium",
+      observedAt: "2025-12-31T23:55:00.000Z",
+      retrievedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
+  const oldSnapshot = parseHistoryExport([
+    {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      total: 1000,
+      rate: 20,
+      weights: { fixed: 70, gold: 20, currency: 8, silver: 2 },
+      marketSnapshot: { assets: { dollar: { price: 500000 } } },
+    },
+  ]);
   assert.equal(oldSnapshot.records[0].marketSnapshot.assets.dollar.price, 500000);
 });
 
 test("legacy rate records are accepted and invalid records are skipped", () => {
-  const legacy = { createdAt: "2026-02-01", total: 2000, rate: 15, weights: { fixed: 80, gold: 15, currency: 5, silver: 0 } };
+  const legacy = {
+    createdAt: "2026-02-01",
+    total: 2000,
+    rate: 15,
+    weights: { fixed: 80, gold: 15, currency: 5, silver: 0 },
+  };
   assert.equal(sanitizeHistoryEntry(legacy).contributionRate, 15);
   const parsed = parseHistoryExport({ schema: "invest-consult-history", version: 1, history: [legacy, { total: -2 }] });
   assert.equal(parsed.records.length, 1);
@@ -228,12 +340,43 @@ test("portfolio ledger replays cash flows and values holdings from market data",
   };
   let portfolio = createEmptyPortfolio("2025-01-01T00:00:00.000Z");
   const transactions = [
-    createTransaction({ type: "OPENING", assetId: "fixed", quantity: 100, date: "2025-01-01" }, portfolioMarket, "2025-01-01T00:00:00.000Z"),
-    createTransaction({ type: "BUY", assetId: "fixed", quantity: 50, unitPrice: 1, date: "2025-02-01" }, portfolioMarket, "2025-02-01T00:00:00.000Z"),
-    createTransaction({ type: "SELL", assetId: "fixed", quantity: 20, unitPrice: 1, date: "2025-03-01" }, portfolioMarket, "2025-03-01T00:00:00.000Z"),
-    createTransaction({ type: "TRANSFER", assetId: "fixed", quantity: 10, targetAssetId: "cash", targetQuantity: 10, date: "2025-04-01" }, portfolioMarket, "2025-04-01T00:00:00.000Z"),
-    createTransaction({ type: "DEPOSIT", assetId: "cash", amount: 10, date: "2025-05-01" }, portfolioMarket, "2025-05-01T00:00:00.000Z"),
-    createTransaction({ type: "DIVIDEND", assetId: "fixed", amount: 5, date: "2025-06-01" }, portfolioMarket, "2025-06-01T00:00:00.000Z"),
+    createTransaction(
+      { type: "OPENING", assetId: "fixed", quantity: 100, date: "2025-01-01" },
+      portfolioMarket,
+      "2025-01-01T00:00:00.000Z",
+    ),
+    createTransaction(
+      { type: "BUY", assetId: "fixed", quantity: 50, unitPrice: 1, date: "2025-02-01" },
+      portfolioMarket,
+      "2025-02-01T00:00:00.000Z",
+    ),
+    createTransaction(
+      { type: "SELL", assetId: "fixed", quantity: 20, unitPrice: 1, date: "2025-03-01" },
+      portfolioMarket,
+      "2025-03-01T00:00:00.000Z",
+    ),
+    createTransaction(
+      {
+        type: "TRANSFER",
+        assetId: "fixed",
+        quantity: 10,
+        targetAssetId: "cash",
+        targetQuantity: 10,
+        date: "2025-04-01",
+      },
+      portfolioMarket,
+      "2025-04-01T00:00:00.000Z",
+    ),
+    createTransaction(
+      { type: "DEPOSIT", assetId: "cash", amount: 10, date: "2025-05-01" },
+      portfolioMarket,
+      "2025-05-01T00:00:00.000Z",
+    ),
+    createTransaction(
+      { type: "DIVIDEND", assetId: "fixed", amount: 5, date: "2025-06-01" },
+      portfolioMarket,
+      "2025-06-01T00:00:00.000Z",
+    ),
   ];
   portfolio = appendTransactions(portfolio, transactions, { action: "test-ledger", affectsHistory: true }).portfolio;
   const result = calculatePortfolio(portfolio, portfolioMarket, "2026-01-01T00:00:00.000Z");
@@ -247,15 +390,26 @@ test("portfolio ledger replays cash flows and values holdings from market data",
 test("portfolio versions preserve the prior ledger when tracking restarts", () => {
   const portfolioMarket = { assets: { gold: { price: 100 } }, history: { gold: [{ date: "2025-01-01", value: 100 }] } };
   let portfolio = createEmptyPortfolio("2025-01-01T00:00:00.000Z");
-  const first = createTransaction({ type: "OPENING", assetId: "gold", quantity: 2, date: "2025-01-01" }, portfolioMarket, "2025-01-01T00:00:00.000Z");
+  const first = createTransaction(
+    { type: "OPENING", assetId: "gold", quantity: 2, date: "2025-01-01" },
+    portfolioMarket,
+    "2025-01-01T00:00:00.000Z",
+  );
   portfolio = appendTransactions(portfolio, [first], { action: "opening", affectsHistory: true }).portfolio;
-  const second = createTransaction({ type: "OPENING", assetId: "fixed", quantity: 300, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z");
+  const second = createTransaction(
+    { type: "OPENING", assetId: "fixed", quantity: 300, date: "2026-01-01" },
+    portfolioMarket,
+    "2026-01-01T00:00:00.000Z",
+  );
   const versioned = createPortfolioVersion(portfolio, [second], "Restart", "2026-01-01T00:00:00.000Z");
   assert.equal(versioned.validation.valid, true);
   assert.equal(versioned.portfolio.versions.length, 2);
   assert.equal(versioned.portfolio.versions[0].transactions.length, 1);
   assert.equal(calculatePortfolio(versioned.portfolio, portfolioMarket, "2026-01-01T00:00:00.000Z").holdings.gold, 0);
-  assert.equal(calculatePortfolio(versioned.portfolio, portfolioMarket, "2026-01-01T00:00:00.000Z").holdings.fixed, 300);
+  assert.equal(
+    calculatePortfolio(versioned.portfolio, portfolioMarket, "2026-01-01T00:00:00.000Z").holdings.fixed,
+    300,
+  );
 });
 
 test("portfolio history leaves missing market periods blank", () => {
@@ -265,7 +419,11 @@ test("portfolio history leaves missing market periods blank", () => {
     history: { gold: [{ date: "2025-07-01", value: 170 }] },
   };
   let portfolio = createEmptyPortfolio("2025-01-01T00:00:00.000Z");
-  const opening = createTransaction({ type: "OPENING", assetId: "gold", quantity: 1, unitPrice: 100, date: "2025-01-01" }, portfolioMarket, "2025-01-01T00:00:00.000Z");
+  const opening = createTransaction(
+    { type: "OPENING", assetId: "gold", quantity: 1, unitPrice: 100, date: "2025-01-01" },
+    portfolioMarket,
+    "2025-01-01T00:00:00.000Z",
+  );
   portfolio = appendTransactions(portfolio, [opening]).portfolio;
   const series = portfolioSeries(portfolio, portfolioMarket, "2025-01-01", "2025-08-01");
   assert.equal(series[0].value, null);
@@ -275,7 +433,11 @@ test("portfolio history leaves missing market periods blank", () => {
 test("history export round-trips the portfolio ledger", () => {
   const portfolioMarket = { assets: { gold: { price: 100 } }, history: { gold: [{ date: "2026-01-01", value: 100 }] } };
   let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
-  const opening = createTransaction({ type: "OPENING", assetId: "gold", quantity: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z");
+  const opening = createTransaction(
+    { type: "OPENING", assetId: "gold", quantity: 1, date: "2026-01-01" },
+    portfolioMarket,
+    "2026-01-01T00:00:00.000Z",
+  );
   portfolio = appendTransactions(portfolio, [opening]).portfolio;
   const exported = createHistoryExport([], portfolio);
   const parsed = parseHistoryExport(JSON.parse(JSON.stringify(exported)));
@@ -286,13 +448,31 @@ test("history export round-trips the portfolio ledger", () => {
 test("named stock accounts stay separate from a global stock bucket", () => {
   const portfolioMarket = { assets: {}, history: {} };
   let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
-  const steel = createPortfolioAsset(portfolio, { title: "فولاد", kind: "stock", unit: "TOMAN" }, "2026-01-01T00:00:00.000Z");
+  const steel = createPortfolioAsset(
+    portfolio,
+    { title: "فولاد", kind: "stock", unit: "TOMAN" },
+    "2026-01-01T00:00:00.000Z",
+  );
   portfolio = steel.portfolio;
-  const refinery = createPortfolioAsset(portfolio, { title: "شپنا", kind: "stock", unit: "TOMAN" }, "2026-01-01T00:00:00.000Z");
+  const refinery = createPortfolioAsset(
+    portfolio,
+    { title: "شپنا", kind: "stock", unit: "TOMAN" },
+    "2026-01-01T00:00:00.000Z",
+  );
   portfolio = refinery.portfolio;
   const transactions = [
-    createTransaction({ type: "OPENING", assetId: steel.asset.id, quantity: 1000000, unitPrice: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
-    createTransaction({ type: "OPENING", assetId: refinery.asset.id, quantity: 2000000, unitPrice: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
+    createTransaction(
+      { type: "OPENING", assetId: steel.asset.id, quantity: 1000000, unitPrice: 1, date: "2026-01-01" },
+      portfolioMarket,
+      "2026-01-01T00:00:00.000Z",
+      portfolio,
+    ),
+    createTransaction(
+      { type: "OPENING", assetId: refinery.asset.id, quantity: 2000000, unitPrice: 1, date: "2026-01-01" },
+      portfolioMarket,
+      "2026-01-01T00:00:00.000Z",
+      portfolio,
+    ),
   ];
   portfolio = appendTransactions(portfolio, transactions).portfolio;
   const result = calculatePortfolio(portfolio, portfolioMarket, "2026-01-02T00:00:00.000Z");
@@ -307,7 +487,11 @@ test("portfolio series never invents history before tracking starts", () => {
   assert.deepEqual(portfolioSeries(empty, portfolioMarket, "2025-01-01", "2026-02-01"), []);
 
   let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
-  const opening = createTransaction({ type: "OPENING", assetId: "gold", quantity: 1, unitPrice: 100, date: "2026-01-15" }, portfolioMarket, "2026-01-15T00:00:00.000Z");
+  const opening = createTransaction(
+    { type: "OPENING", assetId: "gold", quantity: 1, unitPrice: 100, date: "2026-01-15" },
+    portfolioMarket,
+    "2026-01-15T00:00:00.000Z",
+  );
   portfolio = appendTransactions(portfolio, [opening]).portfolio;
   const series = portfolioSeries(portfolio, portfolioMarket, "2025-01-01", "2026-02-01");
   assert.equal(series[0].date.slice(0, 10), "2026-01-15");
@@ -323,17 +507,46 @@ test("invalid transaction asset identifiers are rejected instead of becoming cas
 test("a restarted portfolio baseline can preserve named holdings", () => {
   const portfolioMarket = { assets: { gold: { price: 100 } }, history: { gold: [{ date: "2026-01-01", value: 100 }] } };
   let portfolio = createEmptyPortfolio("2026-01-01T00:00:00.000Z");
-  const created = createPortfolioAsset(portfolio, { title: "فولاد", kind: "stock", unit: "TOMAN" }, "2026-01-01T00:00:00.000Z");
+  const created = createPortfolioAsset(
+    portfolio,
+    { title: "فولاد", kind: "stock", unit: "TOMAN" },
+    "2026-01-01T00:00:00.000Z",
+  );
   portfolio = created.portfolio;
   const transactions = [
-    createTransaction({ type: "OPENING", assetId: "gold", quantity: 2, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
-    createTransaction({ type: "OPENING", assetId: created.asset.id, quantity: 500000, unitPrice: 1, date: "2026-01-01" }, portfolioMarket, "2026-01-01T00:00:00.000Z", portfolio),
+    createTransaction(
+      { type: "OPENING", assetId: "gold", quantity: 2, date: "2026-01-01" },
+      portfolioMarket,
+      "2026-01-01T00:00:00.000Z",
+      portfolio,
+    ),
+    createTransaction(
+      { type: "OPENING", assetId: created.asset.id, quantity: 500000, unitPrice: 1, date: "2026-01-01" },
+      portfolioMarket,
+      "2026-01-01T00:00:00.000Z",
+      portfolio,
+    ),
   ];
   portfolio = appendTransactions(portfolio, transactions).portfolio;
-  const restart = createPortfolioVersion(portfolio, [
-    createTransaction({ type: "OPENING", assetId: "gold", quantity: 2, date: "2026-02-01" }, portfolioMarket, "2026-02-01T00:00:00.000Z", portfolio),
-    createTransaction({ type: "OPENING", assetId: created.asset.id, quantity: 500000, unitPrice: 1, date: "2026-02-01" }, portfolioMarket, "2026-02-01T00:00:00.000Z", portfolio),
-  ], "Restart", "2026-02-01T00:00:00.000Z");
+  const restart = createPortfolioVersion(
+    portfolio,
+    [
+      createTransaction(
+        { type: "OPENING", assetId: "gold", quantity: 2, date: "2026-02-01" },
+        portfolioMarket,
+        "2026-02-01T00:00:00.000Z",
+        portfolio,
+      ),
+      createTransaction(
+        { type: "OPENING", assetId: created.asset.id, quantity: 500000, unitPrice: 1, date: "2026-02-01" },
+        portfolioMarket,
+        "2026-02-01T00:00:00.000Z",
+        portfolio,
+      ),
+    ],
+    "Restart",
+    "2026-02-01T00:00:00.000Z",
+  );
   const result = calculatePortfolio(restart.portfolio, portfolioMarket, "2026-02-02T00:00:00.000Z");
   assert.equal(result.holdings.gold, 2);
   assert.equal(result.holdings[created.asset.id], 500000);

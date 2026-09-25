@@ -6,34 +6,43 @@
     <meta name="author" content="Taha Moeini" />
     <meta name="creator" content="Taha Moeini" />
     <meta property="og:title" content="Synthora | برنامه‌ریزی سرمایه‌گذاری" />
-    <meta property="og:description" content="Synthora ابزار شفاف برنامه‌ریزی و پایش شخصی سرمایه‌گذاری است؛ با داده‌های روشن، سناریوهای قابل بررسی و محاسبه روی دستگاه شما." />
+    <meta
+      property="og:description"
+      content="Synthora ابزار شفاف برنامه‌ریزی و پایش شخصی سرمایه‌گذاری است؛ با داده‌های روشن، سناریوهای قابل بررسی و محاسبه روی دستگاه شما."
+    />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://investcons.negar.team/" />
     <meta property="og:site_name" content="Synthora" />
     <link rel="canonical" href="https://investcons.negar.team/" />
     <meta name="theme-color" content="#102b36" />
     <meta name="application-name" content="Synthora" />
-    <meta name="description" content="Synthora ابزار شفاف برنامه‌ریزی و پایش شخصی سرمایه‌گذاری است؛ با داده‌های روشن، سناریوهای قابل بررسی و محاسبه روی دستگاه شما." />
+    <meta
+      name="description"
+      content="Synthora ابزار شفاف برنامه‌ریزی و پایش شخصی سرمایه‌گذاری است؛ با داده‌های روشن، سناریوهای قابل بررسی و محاسبه روی دستگاه شما."
+    />
     <link rel="icon" type="image/svg+xml" href="assets/synthora-mark.svg" />
     <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Synthora",
-      "description": "ابزار شفاف برنامه‌ریزی و پایش شخصی سرمایه‌گذاری با محاسبه محلی و سناریوهای قابل بررسی.",
-      "url": "https://investcons.negar.team/",
-      "applicationCategory": "FinanceApplication",
-      "creator": {
-        "@type": "Person",
-        "name": "Taha Moeini",
-        "url": "https://taha.one"
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Synthora",
+        "description": "ابزار شفاف برنامه‌ریزی و پایش شخصی سرمایه‌گذاری با محاسبه محلی و سناریوهای قابل بررسی.",
+        "url": "https://investcons.negar.team/",
+        "applicationCategory": "FinanceApplication",
+        "creator": {
+          "@type": "Person",
+          "name": "Taha Moeini",
+          "url": "https://taha.one"
+        }
       }
-    }
     </script>
     <title>Synthora | برنامه‌ریزی سرمایه‌گذاری</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="app.js" defer></script>
   </head>
@@ -41,230 +50,1259 @@
     <div id="app-shell" class="app-shell">
       <aside id="app-sidebar" class="app-sidebar" aria-label="ناوبری برنامه">
         <div class="sidebar-header">
-          <a class="brand" href="./" aria-label="Synthora"><span class="brand-mark" aria-hidden="true"><img src="assets/synthora-mark.svg" alt="" /></span><span class="brand-copy"><strong>Synthora</strong><small>برنامه‌ریزی سرمایه‌گذاری</small></span></a>
-          <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="باز و بسته کردن منو" aria-controls="app-sidebar" aria-expanded="true" title="باز و بسته کردن منو"><span>‹</span></button>
+          <a class="brand" href="./" aria-label="Synthora"
+            ><span class="brand-mark" aria-hidden="true"><img src="assets/synthora-mark.svg" alt="" /></span
+            ><span class="brand-copy"><strong>Synthora</strong><small>برنامه‌ریزی سرمایه‌گذاری</small></span></a
+          >
+          <button
+            id="sidebar-toggle"
+            class="sidebar-toggle"
+            type="button"
+            aria-label="باز و بسته کردن منو"
+            aria-controls="app-sidebar"
+            aria-expanded="true"
+            title="باز و بسته کردن منو"
+          >
+            <span>‹</span>
+          </button>
         </div>
         <nav id="app-navigation" class="app-navigation" aria-label="بخش‌های برنامه">
-          <button type="button" data-nav-view="dashboard"><span class="nav-icon">⌂</span><span class="nav-copy"><strong>داشبورد</strong><small>خلاصه وضعیت و اقدام بعدی</small></span></button>
-          <button type="button" data-nav-view="plan"><span class="nav-icon">↗</span><span class="nav-copy"><strong>برنامه سرمایه‌گذاری</strong><small>ساخت برنامه ماهانه</small></span></button>
-          <button type="button" data-nav-view="portfolio"><span class="nav-icon">◫</span><span class="nav-copy"><strong>پرتفوی من</strong><small>دارایی‌ها و دفتر تراکنش</small></span></button>
-          <button type="button" data-nav-view="simulation"><span class="nav-icon">◌</span><span class="nav-copy"><strong>شبیه‌سازی و بک‌تست</strong><small>سناریو و بررسی گذشته</small></span></button>
-          <button type="button" data-nav-view="history"><span class="nav-icon">◷</span><span class="nav-copy"><strong>تحلیل تاریخی</strong><small>سابقه برنامه‌های تو</small></span></button>
-          <button type="button" data-nav-view="assets"><span class="nav-icon">◇</span><span class="nav-copy"><strong>دارایی‌ها و بازار</strong><small>قیمت‌های چندمنبعی</small></span></button>
-          <button type="button" data-nav-view="settings"><span class="nav-icon">⚙</span><span class="nav-copy"><strong>تنظیمات</strong><small>داده محلی و ظاهر برنامه</small></span></button>
+          <button type="button" data-nav-view="dashboard">
+            <span class="nav-icon">⌂</span
+            ><span class="nav-copy"><strong>داشبورد</strong><small>خلاصه وضعیت و اقدام بعدی</small></span>
+          </button>
+          <button type="button" data-nav-view="plan">
+            <span class="nav-icon">↗</span
+            ><span class="nav-copy"><strong>برنامه سرمایه‌گذاری</strong><small>ساخت برنامه ماهانه</small></span>
+          </button>
+          <button type="button" data-nav-view="portfolio">
+            <span class="nav-icon">◫</span
+            ><span class="nav-copy"><strong>پرتفوی من</strong><small>دارایی‌ها و دفتر تراکنش</small></span>
+          </button>
+          <button type="button" data-nav-view="simulation">
+            <span class="nav-icon">◌</span
+            ><span class="nav-copy"><strong>شبیه‌سازی و بک‌تست</strong><small>سناریو و بررسی گذشته</small></span>
+          </button>
+          <button type="button" data-nav-view="history">
+            <span class="nav-icon">◷</span
+            ><span class="nav-copy"><strong>تحلیل تاریخی</strong><small>سابقه برنامه‌های تو</small></span>
+          </button>
+          <button type="button" data-nav-view="assets">
+            <span class="nav-icon">◇</span
+            ><span class="nav-copy"><strong>دارایی‌ها و بازار</strong><small>قیمت‌های چندمنبعی</small></span>
+          </button>
+          <button type="button" data-nav-view="settings">
+            <span class="nav-icon">⚙</span
+            ><span class="nav-copy"><strong>تنظیمات</strong><small>داده محلی و ظاهر برنامه</small></span>
+          </button>
         </nav>
-        <div class="sidebar-footer"><span class="privacy"><i></i> محاسبه روی همین دستگاه</span><small>نسخه رایگان و شفاف</small></div>
+        <div class="sidebar-footer">
+          <span class="privacy"><i></i> محاسبه روی همین دستگاه</span><small>نسخه رایگان و شفاف</small>
+        </div>
       </aside>
-      <button id="sidebar-overlay" class="sidebar-overlay" type="button" aria-label="بستن منو" aria-hidden="true"></button>
+      <button
+        id="sidebar-overlay"
+        class="sidebar-overlay"
+        type="button"
+        aria-label="بستن منو"
+        aria-hidden="true"
+      ></button>
       <div class="app-main">
         <header class="topbar">
-          <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" aria-label="باز کردن منو" aria-controls="app-sidebar" aria-expanded="false">☰</button>
-          <div class="topbar-title"><span>Synthora</span><h1 id="current-view-title">داشبورد</h1></div>
-          <div class="topbar-meta"><span id="live-status" class="status-pill status-loading">در حال دریافت داده</span></div>
+          <button
+            id="mobile-menu-toggle"
+            class="mobile-menu-toggle"
+            type="button"
+            aria-label="باز کردن منو"
+            aria-controls="app-sidebar"
+            aria-expanded="false"
+          >
+            ☰
+          </button>
+          <div class="topbar-title">
+            <span>Synthora</span>
+            <h1 id="current-view-title">داشبورد</h1>
+          </div>
+          <div class="topbar-meta">
+            <span id="live-status" class="status-pill status-loading">در حال دریافت داده</span>
+          </div>
         </header>
 
-      <div id="app-error" class="app-error" role="alert" aria-live="assertive" hidden></div>
+        <div id="app-error" class="app-error" role="alert" aria-live="assertive" hidden></div>
 
-      <main id="app-content" class="app-content">
-        <section data-app-view="dashboard" class="app-view dashboard-view is-active" aria-labelledby="dashboard-title">
-          <div class="dashboard-welcome"><div><span class="eyebrow">تصمیم‌یار ریاضی، نه پیشگوی بازار</span><h2 id="dashboard-title">سلام. وضعیت پولت را یکجا ببین.</h2><p>عددهای واقعی، فرض‌های روشن و اقدام بعدی؛ بدون امتیاز مصنوعی یا وعده بازده.</p></div><div class="dashboard-welcome-actions"><span class="dashboard-local-chip"><i></i> محاسبه روی همین دستگاه</span><button class="secondary-button" data-go-view="settings" type="button">مدیریت داده‌ها</button></div></div>
-
-          <div id="dashboard-onboarding" class="dashboard-onboarding is-hidden"><div class="dashboard-icon">↗</div><div><strong>برای شروع، برنامه یا موجودی واقعی‌ات را ثبت کن</strong><p>بدون داده شخصی هم می‌توانی بازار را ببینی؛ برای خلاصه پرتفوی، دفتر دارایی‌ها لازم است.</p></div><button class="primary-button dashboard-action" data-go-view="plan" type="button"><span>ساخت برنامه ماهانه</span><b>←</b></button></div>
-
-          <section class="dashboard-summary-grid" aria-label="خلاصه مالی" aria-live="polite">
-            <article class="summary-card"><span class="summary-label">ارزش فعلی پرتفوی</span><strong id="dashboard-current-value">—</strong><small id="dashboard-current-value-note">هنوز دفتر پرتفوی ثبت نشده</small></article>
-            <article class="summary-card"><span class="summary-label">کل سرمایه‌گذاری خالص</span><strong id="dashboard-invested">—</strong><small id="dashboard-invested-note">از دفتر تراکنش‌ها</small></article>
-            <article class="summary-card"><span class="summary-label">سود یا زیان</span><strong id="dashboard-profit-loss">—</strong><small id="dashboard-profit-loss-note">وقتی ارزش‌گذاری کامل باشد</small></article>
-            <article class="summary-card"><span class="summary-label">سود یا زیان درصدی</span><strong id="dashboard-profit-loss-percent">—</strong><small id="dashboard-profit-loss-percent-note">نسبت به سرمایه خالص</small></article>
-            <article class="summary-card"><span class="summary-label">واریز ماهانه برنامه</span><strong id="dashboard-monthly-contribution">—</strong><small id="dashboard-monthly-contribution-note">هنوز برنامه‌ای ذخیره نشده</small></article>
-            <article class="summary-card"><span class="summary-label">مدت پیگیری</span><strong id="dashboard-tracking-duration">—</strong><small id="dashboard-tracking-duration-note">از شروع دفتر پرتفوی</small></article>
-            <article class="summary-card summary-card-wide"><span class="summary-label">تخصیص فعلی</span><strong id="dashboard-allocation-summary">—</strong><small id="dashboard-allocation-summary-note">برای نمایش، موجودی و قیمت لازم است</small></article>
-          </section>
-
-          <section class="dashboard-main-grid">
-            <article class="dashboard-card performance-card"><div class="section-heading"><div><span class="kicker">روند ارزش</span><h3>پرتفوی در طول زمان</h3></div><div class="range-switch" role="group" aria-label="بازه نمودار"><button type="button" data-dashboard-range="1M">۱ ماه</button><button type="button" data-dashboard-range="6M">۶ ماه</button><button type="button" data-dashboard-range="1Y">۱ سال</button><button type="button" data-dashboard-range="ALL" class="is-active">همه</button></div></div><p class="chart-explanation">ارزش اسمی و ارزش پس از تورم را با سرمایه خالص ثبت‌شده مقایسه کن. جاهای خالی یعنی قیمت معتبر برای آن تاریخ پیدا نشده است.</p><div id="dashboard-performance-chart" class="chart-box chart-box-large"><div class="empty-state">بعد از ثبت دارایی و دریافت قیمت تاریخی، روند اینجا نمایش داده می‌شود.</div></div><div class="chart-footnote"><span><i class="legend-invested"></i>سرمایه خالص</span><span><i class="legend-value"></i>ارزش اسمی</span><span><i class="legend-real"></i>ارزش پس از تورم مدل</span></div></article>
-            <article class="dashboard-card allocation-card"><div class="section-heading"><div><span class="kicker">ترکیب سبد</span><h3>فعلی در برابر هدف</h3></div><button class="secondary-button" data-go-view="portfolio" type="button">مدیریت</button></div><p class="chart-explanation">درصد فعلی از ارزش‌گذاری امروز می‌آید؛ هدف از آخرین برنامه ذخیره‌شده خوانده می‌شود. اختلاف‌های ۱۰ واحد درصدی یا بیشتر هشدار هستند.</p><div id="dashboard-allocation-chart" class="dashboard-donut"><div class="empty-state">هنوز تخصیصی برای نمایش نیست.</div></div><div class="allocation-compare-header" aria-hidden="true"><span>دارایی</span><span>فعلی</span><span>هدف</span><span>اختلاف</span></div><div id="dashboard-allocation-list" class="allocation-compare-list"></div></article>
-          </section>
-
-          <section class="dashboard-secondary-grid">
-            <article class="dashboard-card health-card"><div class="section-heading"><div><span class="kicker">کنترل‌های شفاف</span><h3>سلامت برنامه</h3></div><span class="info-chip">قاعده‌محور</span></div><p class="chart-explanation">این‌ها امتیاز کلی نیستند؛ هر مورد فقط از داده‌هایی که خودت ثبت کرده‌ای و یک قاعده قابل توضیح ساخته می‌شود.</p><div id="dashboard-health-list" class="health-list"><div class="empty-state">با ثبت برنامه یا پرتفوی، شاخص‌های قابل توضیح ساخته می‌شوند.</div></div></article>
-            <article class="dashboard-card action-card"><div class="section-heading"><div><span class="kicker">اقدام ماه</span><h3>قدم بعدی پیشنهادی</h3></div><span class="info-chip">قابل ویرایش</span></div><div id="dashboard-action-content"><strong id="dashboard-action-amount">—</strong><p id="dashboard-action-suggestion">هنوز برنامه‌ای برای این ماه نداری.</p><div id="dashboard-action-allocation" class="action-allocation" aria-live="polite"></div><small id="dashboard-action-reason">دلیل پیشنهاد بعد از تکمیل برنامه نمایش داده می‌شود.</small><button class="primary-button" data-go-view="plan" type="button">ویرایش برنامه <b>←</b></button></div></article>
-          </section>
-
-          <section class="dashboard-card market-snapshot-card"><div class="section-heading"><div><span class="kicker">رصد بازار</span><h3>آخرین داده‌های در دسترس</h3></div><div class="dashboard-market-actions"><span id="dashboard-market-status" class="data-note">در حال دریافت داده بازار…</span><button class="secondary-button" data-go-view="assets" type="button">جزئیات بازار</button></div></div><div id="dashboard-market-snapshot" class="market-snapshot-grid"><div class="empty-state">در حال دریافت داده…</div></div></section>
-        </section>
-
-        <section data-app-view="plan" class="app-view" aria-labelledby="plan-view-title">
-          <div class="page-heading"><div><span class="kicker">برنامه‌ریزی</span><h2 id="plan-view-title">برنامه سرمایه‌گذاری ماهانه</h2><p>این صفحه می‌گوید این ماه چقدر کنار بگذاری و پول جدید را چطور پخش کنی.</p></div><span class="page-badge">بدون پیش‌بینی بازار</span></div>
-        <section class="hero">
-          <div>
-            <span class="eyebrow">تصمیم‌یار ریاضی، نه پیشگوی بازار</span>
-            <h1>برای آینده‌ات برنامه بچین، نه حدس.</h1>
-            <p>حقوق، هدف و شرایطت را وارد کن. Synthora با داده‌های چندمنبعی، سابقه ثبت‌شده و چند سناریوی شفاف می‌گوید این ماه چقدر کنار بگذاری و پول جدید را چطور پخش کنی.</p>
-            <div class="hero-points"><span>بدون وعده سود</span><span>بدون فروش اجباری</span><span>تاریخچه فقط روی دستگاه تو</span></div>
-          </div>
-          <div class="hero-card"><span>قاعده شروع</span><strong>۱۵٪ تا ۲۵٪</strong><small>از حقوق ماهانه، با امکان تغییر بر اساس شرایط واقعی تو</small><div><span>منطق</span><b>داده + سابقه + محدودیت ریسک</b></div><div><span>خروجی</span><b>مبلغ، وزن، دامنه و دلیل</b></div></div>
-        </section>
-
-        <section id="setup" class="plan-workspace">
-          <form id="plan-form" class="panel setup-panel">
-            <div class="section-heading"><div><span class="kicker">۱. مشخصات برنامه</span><h2>این ماه از کجا شروع می‌کنی؟</h2></div><span class="local-chip">محلی و قابل پاک‌کردن</span></div>
-            <div class="field full"><label for="salary">حقوق خالص ماهانه</label><div class="money-input"><input id="salary" type="text" inputmode="decimal" data-number-input placeholder="مثلا ۸۰٬۰۰۰٬۰۰۰" required /><span>تومان</span></div><small>عددها با جداکننده نمایش داده می‌شوند؛ حقوق و سابقه به سرور ارسال نمی‌شود.</small></div>
-            <div class="field rate-field"><label for="contribution-rate">درصد سرمایه‌گذاری ماهانه</label><div class="range-line"><input id="contribution-rate" type="range" min="5" max="40" step="1" value="20" /><output id="contribution-output">۲۰٪</output></div><small>با صندوق اضطراری ناقص، بهتر است نرخ را بی‌دلیل بالا نبری.</small></div>
-            <div class="field-grid primary-profile-fields">
-              <div class="field"><label for="horizon">افق برنامه</label><select id="horizon"><option value="3">۳ سال</option><option value="5" selected>۵ سال</option><option value="10">۱۰ سال</option><option value="15">۱۵ سال</option><option value="20">۲۰ سال</option></select></div>
-              <div class="field"><label for="goal">هدف اصلی</label><select id="goal"><option value="liquidity">نقدشوندگی</option><option value="preservation" selected>حفظ ارزش</option><option value="retirement">بازنشستگی</option><option value="growth">رشد بلندمدت</option></select></div>
-              <div class="field"><label for="risk-tolerance">تحمل ریسک</label><select id="risk-tolerance"><option value="conservative" selected>محافظه‌کارانه</option><option value="balanced">متعادل</option><option value="growth">رشدپذیر</option></select></div>
-            </div>
-            <details class="profile-settings"><summary>شخصی‌سازی بیشتر، اختیاری</summary><div class="field-grid"><div class="field"><label for="age">سن <span class="optional-label">اختیاری</span></label><input id="age" type="number" min="18" max="90" placeholder="مثلا ۳۵" /><small>فقط برای تخمین ظرفیت تحمل افت؛ پیش‌بینی بازار نیست.</small></div><div class="field"><label for="income-stability">ثبات درآمد</label><select id="income-stability"><option value="stable">پایدار</option><option value="mixed" selected>نسبتا پایدار</option><option value="unstable">ناپایدار</option></select></div><div class="field"><label for="essential-monthly-expenses">هزینه ضروری ماهانه</label><div class="unit-input"><input id="essential-monthly-expenses" type="text" inputmode="decimal" data-number-input placeholder="مثلا ۴۰٬۰۰۰٬۰۰۰" /><span>تومان</span></div><small>برای محاسبه پوشش صندوق اضطراری روی همین دستگاه استفاده می‌شود.</small></div><div class="field"><label>وضعیت صندوق اضطراری</label><output id="emergency-fund-status">برای محاسبه، هزینه ماهانه را وارد کن.</output></div></div></details>
-            <details class="advanced-settings"><summary>فرض‌های قابل تغییر مدل</summary><div class="field-grid"><div class="field"><label for="initial-investment">سرمایه اولیه</label><div class="unit-input"><input id="initial-investment" type="text" inputmode="decimal" data-number-input value="۰" /><span>تومان</span></div></div><div class="field"><label for="contribution-growth">رشد سالانه مبلغ واریز</label><div class="unit-input"><input id="contribution-growth" type="text" inputmode="decimal" data-number-input value="۰" min="-50" max="200" /><span>٪</span></div></div><div class="field"><label for="inflation-rate">تورم سالانه مدل</label><div class="unit-input"><input id="inflation-rate" type="text" inputmode="decimal" data-number-input value="۳۰" min="-20" max="300" /><span>٪</span></div></div><div class="field"><label for="simulation-paths">تعداد سناریو</label><select id="simulation-paths"><option value="1000">۱٬۰۰۰</option><option value="2000" selected>۲٬۰۰۰</option><option value="5000">۵٬۰۰۰</option><option value="10000">۱۰٬۰۰۰</option></select></div></div><label class="check-line"><input id="rebalancing" type="checkbox" checked /> <span>در شبیه‌سازی، سبد به‌صورت دوره‌ای به وزن هدف برگردد</span></label></details>
-            <button class="primary-button" type="submit"><span>برنامه این ماه را بساز</span><b>←</b></button>
-          </form>
-
-        <section id="plan-output" class="panel output-panel is-hidden">
-          <div class="section-heading"><div><span class="kicker">۲. پیشنهاد قابل اجرا</span><h2>این ماه پول جدیدت را این‌طور پخش کن</h2></div><span id="profile-label" class="profile-chip">محافظه‌کارانه</span></div>
-          <div id="plan-preview-status" class="transfer-status transfer-neutral" aria-live="polite">با تغییر ورودی‌ها پیش‌نمایش به‌روز می‌شود؛ برای ثبت در تاریخچه، برنامه را بساز.</div>
-          <div class="output-summary"><div><small>مبلغ سرمایه‌گذاری ماهانه</small><strong id="monthly-investment">—</strong><span>تومان</span></div><div><small>نرخ از حقوق</small><strong id="monthly-rate">—</strong><span>قابل تغییر</span></div><div><small>دامنه محتمل پایان برنامه</small><strong id="monthly-range">—</strong><span>از سناریوی محتاطانه تا خوش‌بینانه</span></div></div>
-          <div id="allocation-list" class="allocation-list"></div>
-          <div class="output-columns"><div><h3>دلیل این ترکیب</h3><ul id="reason-list" class="reason-list"></ul></div><div><h3>پیشنهاد خرید همین ماه</h3><div id="contribution-plan" class="contribution-plan"></div></div></div>
-        </section>
-
-        </section>
-
-        </section>
-
-        <section data-app-view="simulation" class="app-view" aria-labelledby="simulation-view-title">
-          <div class="page-heading"><div><span class="kicker">تحلیل سناریو</span><h2 id="simulation-view-title">شبیه‌سازی و بک‌تست</h2><p>نتایج مدل را در سناریوهای آینده و دوره‌های گذشته ببین؛ بدون ادعای پیش‌بینی بازار.</p></div><span class="page-badge">اختیاری</span></div>
-
-          <div class="analysis-disclosure-grid"><article class="disclosure-card"><span class="kicker">آنچه می‌بینی</span><strong>مدل و داده تاریخی کنار هم</strong><p>مونت‌کارلو و شبیه‌سازی از فرض‌های قابل تغییر استفاده می‌کنند. بک‌تست فقط روی دوره‌هایی اجرا می‌شود که داده بازارشان در دسترس است.</p></article><article class="disclosure-card"><span class="kicker">مرز تفسیر</span><strong>نتیجه گذشته، وعده آینده نیست</strong><p>هزینه، مالیات، اختلاف قیمت خرید و فروش و خطای منبع بازار ممکن است در نتیجه واقعی تو وجود داشته باشد اما این مدل همه آن‌ها را پوشش نمی‌دهد.</p></article></div>
-
-        <details id="analysis-section" class="panel collapsible-panel analysis-section"><summary class="section-heading collapsible-summary"><div><span class="kicker">۳. بررسی عمیق‌تر</span><h2>مسیر مدل و دامنه احتمالی</h2></div><span class="info-chip">اختیاری</span></summary><div class="collapsible-content">
-          <article class="panel goal-panel"><div class="section-heading"><div><span class="kicker">برنامه‌ریزی بر پایه هدف</span><h3>آیا به هدف مالی‌ات می‌رسی؟</h3></div><span class="info-chip">سناریو، نه تضمین</span></div><p class="small-note">در حال حاضر فقط درآمد ثابت، طلا، ارز و نقره در این برآورد مدل می‌شوند؛ دارایی‌های دیگر در محاسبه وارد نمی‌شوند.</p><form id="goal-form" class="field-grid goal-form"><div class="field"><label for="goal-target-today">مبلغ هدف به ارزش امروز</label><div class="unit-input"><input id="goal-target-today" type="text" inputmode="decimal" data-number-input required /><span>تومان</span></div></div><div class="field"><label for="goal-target-date">تاریخ هدف</label><input id="goal-target-date" type="date" required /></div><div class="field"><label for="goal-success-target">احتمال موفقیت هدف</label><select id="goal-success-target"><option value="0.6">۶۰٪</option><option value="0.75" selected>۷۵٪</option><option value="0.9">۹۰٪</option></select></div><button class="secondary-button" type="submit">محاسبه هدف</button></form><div id="goal-result" class="goal-result" aria-live="polite">مبلغ هدف و تاریخ را وارد کن تا دامنه سناریو و آورده لازم محاسبه شود.</div></article>
-          <p id="analysis-method-note" class="data-note">شبیه‌سازی فقط پس از بازکردن این بخش اجرا می‌شود.</p><p class="small-note">در حال حاضر فقط درآمد ثابت، طلا، ارز و نقره در شبیه‌سازی مدل می‌شوند؛ دارایی‌های دیگر به بازده این دسته‌ها نسبت داده نمی‌شوند.</p>
-          <div class="analysis-grid">
-          <article class="panel analysis-panel"><div class="section-heading"><div><span class="kicker">۳. شبیه‌سازی</span><h2>اگر همین برنامه را ادامه بدهی</h2></div><span class="info-chip">فرض مدل</span></div><div id="simulation-summary" class="metric-grid"></div><div id="simulation-chart" class="chart-box"><div class="empty-state">بعد از ساخت برنامه محاسبه می‌شود.</div></div><p class="small-note">عددها سناریوی برنامه‌اند، نه پیش‌بینی قطعی. مقدار واقعی به بازده، تورم، کارمزد و اجرای منظم بستگی دارد.</p></article>
-          <article class="panel analysis-panel"><div class="section-heading"><div><span class="kicker">۴. دامنه احتمالی</span><h2>مونت‌کارلو چه می‌گوید؟</h2></div><span class="info-chip">P10 · P50 · P90</span></div><div id="monte-carlo-output" class="range-grid"><div class="empty-state">بعد از ساخت برنامه محاسبه می‌شود.</div></div><div id="scenario-comparison" class="scenario-comparison"><div class="empty-state">سه دامنه مدل بعد از ساخت برنامه نمایش داده می‌شود.</div></div><p class="small-note">P10 یعنی ۱۰٪ سناریوها پایین‌تر از آن بوده‌اند؛ این عدد تضمین بدترین یا بهترین حالت نیست.</p></article>
-        </div></div></details>
-
-        <details id="backtest-section" class="panel collapsible-panel backtest-panel"><summary class="section-heading collapsible-summary"><div><span class="kicker">۵. نگاه به گذشته</span><h2>اگر این برنامه را در دوره‌های قبلی اجرا می‌کردی</h2></div><span class="info-chip">مشاهده تاریخی</span></summary><div class="collapsible-content"><div class="section-actions"><span class="panel-intro">روی تاریخچه عمومی موجود اجرا می‌شود و بخش‌های ناقص با برچسب فرض مدل نمایش داده می‌شوند.</span><button id="run-backtest" class="secondary-button" type="button">اجرای بک‌تست</button></div><div id="backtest-output"><div class="empty-state">برای شروع برنامه را بساز و بعد بک‌تست را اجرا کن.</div></div><div class="limitations-panel"><strong>محدودیت‌های بک‌تست</strong><p>بازه انتخاب‌شده، کیفیت تاریخچه هر دارایی و فرض اجرای منظم واریز روی نتیجه اثر می‌گذارد. داده ناقص حذف می‌شود؛ جای آن مقدار تخمینی اضافه نمی‌کنیم.</p></div></div></details>
-
-        </section>
-
-        <section data-app-view="history" class="app-view" aria-labelledby="history-view-title">
-          <div class="page-heading"><div><span class="kicker">سابقه و روند</span><h2 id="history-view-title">تحلیل تاریخی</h2><p>برنامه‌های ذخیره‌شده، خروجی پشتیبان و روند ارزش تقریبی را در یکجا ببین.</p></div><span class="page-badge">روی همین دستگاه</span></div>
-        <details id="history-section" class="panel collapsible-panel history-panel"><summary class="section-heading collapsible-summary"><div><span class="kicker">۵. سابقه شخصی</span><h2>برنامه‌ها و ارزش تقریبی سبد</h2></div><span class="info-chip">روی همین دستگاه</span></summary><div class="collapsible-content"><div class="section-actions"><span class="panel-intro">تاریخچه پیشنهادها و فایل پشتیبان را همین‌جا مدیریت کن.</span><div class="history-actions"><button id="export-history" class="secondary-button" type="button">خروجی</button><button id="import-history" class="secondary-button" type="button">ورود</button><button id="clear-history" class="text-button" type="button">پاک کردن برنامه‌ها</button><input id="history-file" type="file" accept="application/json,.json" hidden /></div></div><div id="history-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">فایل خروجی فقط روی همین دستگاه ساخته می‌شود؛ دفتر پرتفوی جداست.</div><div id="history-summary" class="metric-grid"></div><div id="history-chart" class="chart-box"><div class="empty-state">هنوز سابقه‌ای ثبت نشده.</div></div><div class="subheading"><strong>تفکیک دسته‌ها</strong><span>برآورد با قیمت فعلی و snapshot زمان خرید</span></div><div id="portfolio-breakdown" class="portfolio-breakdown"><div class="empty-state">با ثبت اولین برنامه، اینجا پر می‌شود.</div></div><div class="subheading"><strong>ماه‌های ثبت‌شده</strong><span>حداکثر ۱۵ مورد اخیر</span></div><div id="history-list" class="history-list"><div class="empty-state">هنوز برنامه‌ای ذخیره نشده.</div></div></div></details>
-
-        <article class="panel historical-comparison-panel"><div class="section-heading"><div><span class="kicker">مقایسه بر پایه داده موجود</span><h3>پرتفوی تو در برابر بازار</h3></div><span class="info-chip">شاخص شروع = ۱۰۰</span></div><p class="panel-intro">نمودار فقط مشاهده‌های واقعی را نشان می‌دهد. تاریخ‌های بدون داده به‌صورت فاصله می‌مانند؛ بازده، افت و پوشش هر دارایی زیر نمودار آمده است.</p><div class="history-chart-controls"><div class="history-range-switch" role="group" aria-label="بازه تاریخچه"><button type="button" data-history-range="1m" aria-pressed="false">۱ ماه</button><button type="button" data-history-range="6m" aria-pressed="false">۶ ماه</button><button type="button" data-history-range="1y" aria-pressed="true">۱ سال</button><button type="button" data-history-range="all" aria-pressed="false">همه</button></div><details class="history-asset-filter"><summary><span>دارایی‌های نمودار</span><span id="history-selected-count">۴ انتخاب</span></summary><fieldset id="history-asset-options" class="history-asset-options"><legend class="visually-hidden">انتخاب دارایی برای مقایسه</legend></fieldset></details></div><div id="historical-comparison-status" class="history-chart-status" role="status" aria-live="polite">برای دریافت تاریخچه، این بخش را باز کن.</div><div id="historical-comparison-chart" class="chart-box chart-box-large"><div class="empty-state">برای مقایسه، داده تاریخی کافی در دسترس نیست.</div></div><div id="historical-comparison-metrics" class="history-performance-grid"></div><div id="historical-comparison-list" class="benchmark-list"></div></article>
-
-        </section>
-
-        <section data-app-view="portfolio" class="app-view" aria-labelledby="portfolio-view-title">
-          <div class="page-heading"><div><span class="kicker">دفتر شخصی</span><h2 id="portfolio-view-title">پرتفوی من</h2><p>موجودی و تراکنش‌ها را ثبت کن تا ارزش امروز و روند واقعی سبدت شفاف بماند.</p></div><span class="page-badge">دفتر تغییرناپذیر</span></div>
-        <details id="portfolio-section" class="panel collapsible-panel portfolio-panel" open>
-          <summary class="section-heading collapsible-summary"><div><span class="kicker">۶. پرتفوی شخصی</span><h2>دارایی‌هایی که واقعا داری</h2></div><span id="portfolio-version-label" class="profile-chip">شروع اولیه</span></summary>
-          <div class="collapsible-content">
-          <p class="panel-intro">موجودی فقط از دفتر تراکنش‌ها محاسبه می‌شود. ورود ساده یک موجودی اولیه می‌سازد و هر تغییر بعدی قبل از ثبت، معنای آن را از تو می‌پرسد.</p>
-          <div id="portfolio-data-quality" class="data-note">هنوز دارایی‌ای در پرتفوی ثبت نشده.</div>
-          <div class="metric-grid portfolio-summary">
-            <div class="metric"><small>ارزش فعلی</small><strong id="portfolio-current-value">—</strong></div>
-            <div class="metric"><small>خالص سرمایه‌گذاری</small><strong id="portfolio-net-invested">—</strong></div>
-            <div class="metric"><small>سود یا زیان</small><strong id="portfolio-profit-loss">—</strong></div>
-            <div class="metric"><small>CAGR</small><strong id="portfolio-cagr">—</strong></div>
-            <div class="metric"><small>بازده پس از تورم</small><strong id="portfolio-real-return">—</strong></div>
-            <div class="metric"><small>شروع ردیابی</small><strong id="portfolio-start-date">—</strong></div>
-            <div class="metric"><small>خالص دارایی</small><strong id="portfolio-net-worth">—</strong></div>
-            <div class="metric"><small>سرمایه قابل‌سرمایه‌گذاری</small><strong id="portfolio-investable-total">—</strong></div>
-            <div class="metric"><small>دارایی نقدشونده</small><strong id="portfolio-liquid-total">—</strong></div>
-            <div class="metric"><small>پوشش ذخیره اضطراری</small><strong id="portfolio-emergency-coverage">—</strong></div>
-          </div>
-
-          <div class="portfolio-grid">
-            <form id="simple-portfolio-form" class="portfolio-simple-card">
-              <div class="subheading"><strong>ثبت ساده موجودی فعلی</strong><span>موجودی اولیه یا تغییر جدید</span></div>
-              <p class="small-note">طلا را به گرم و بقیه موارد را به تومان وارد کن. این مقدار به‌صورت یک رویداد شفاف در دفتر ثبت می‌شود.</p>
-              <div class="portfolio-field-grid">
-                <div class="field"><label for="portfolio-gold">طلا</label><div class="unit-input"><input id="portfolio-gold" type="text" inputmode="decimal" data-number-input placeholder="مثلا ۱۰۰" /><span>گرم</span></div></div>
-                <div class="field"><label for="portfolio-fixed">صندوق درآمد ثابت</label><div class="unit-input"><input id="portfolio-fixed" type="text" inputmode="decimal" data-number-input placeholder="مثلا ۳۰۰٬۰۰۰٬۰۰۰" /><span>تومان</span></div></div>
-                <div class="field"><label for="portfolio-cash">نقد</label><div class="unit-input"><input id="portfolio-cash" type="text" inputmode="decimal" data-number-input placeholder="موجودی نقد" /><span>تومان</span></div></div>
-                <div class="field"><label for="portfolio-other">سایر دارایی‌ها</label><div class="unit-input"><input id="portfolio-other" type="text" inputmode="decimal" data-number-input placeholder="ارزش دارایی" /><span>تومان</span></div></div>
+        <main id="app-content" class="app-content">
+          <section
+            data-app-view="dashboard"
+            class="app-view dashboard-view is-active"
+            aria-labelledby="dashboard-title"
+          >
+            <div class="dashboard-welcome">
+              <div>
+                <span class="eyebrow">تصمیم‌یار ریاضی، نه پیشگوی بازار</span>
+                <h2 id="dashboard-title">سلام. وضعیت پولت را یکجا ببین.</h2>
+                <p>عددهای واقعی، فرض‌های روشن و اقدام بعدی؛ بدون امتیاز مصنوعی یا وعده بازده.</p>
               </div>
-              <button class="primary-button" type="submit"><span>ثبت یا ویرایش موجودی</span><b>←</b></button>
+              <div class="dashboard-welcome-actions">
+                <span class="dashboard-local-chip"><i></i> محاسبه روی همین دستگاه</span
+                ><button class="secondary-button" data-go-view="settings" type="button">مدیریت داده‌ها</button>
+              </div>
+            </div>
+
+            <div id="dashboard-onboarding" class="dashboard-onboarding is-hidden">
+              <div class="dashboard-icon">↗</div>
+              <div>
+                <strong>برای شروع، برنامه یا موجودی واقعی‌ات را ثبت کن</strong>
+                <p>بدون داده شخصی هم می‌توانی بازار را ببینی؛ برای خلاصه پرتفوی، دفتر دارایی‌ها لازم است.</p>
+              </div>
+              <button class="primary-button dashboard-action" data-go-view="plan" type="button">
+                <span>ساخت برنامه ماهانه</span><b>←</b>
+              </button>
+            </div>
+
+            <section class="dashboard-summary-grid" aria-label="خلاصه مالی" aria-live="polite">
+              <article class="summary-card">
+                <span class="summary-label">ارزش فعلی پرتفوی</span><strong id="dashboard-current-value">—</strong
+                ><small id="dashboard-current-value-note">هنوز دفتر پرتفوی ثبت نشده</small>
+              </article>
+              <article class="summary-card">
+                <span class="summary-label">کل سرمایه‌گذاری خالص</span><strong id="dashboard-invested">—</strong
+                ><small id="dashboard-invested-note">از دفتر تراکنش‌ها</small>
+              </article>
+              <article class="summary-card">
+                <span class="summary-label">سود یا زیان</span><strong id="dashboard-profit-loss">—</strong
+                ><small id="dashboard-profit-loss-note">وقتی ارزش‌گذاری کامل باشد</small>
+              </article>
+              <article class="summary-card">
+                <span class="summary-label">سود یا زیان درصدی</span><strong id="dashboard-profit-loss-percent">—</strong
+                ><small id="dashboard-profit-loss-percent-note">نسبت به سرمایه خالص</small>
+              </article>
+              <article class="summary-card">
+                <span class="summary-label">واریز ماهانه برنامه</span
+                ><strong id="dashboard-monthly-contribution">—</strong
+                ><small id="dashboard-monthly-contribution-note">هنوز برنامه‌ای ذخیره نشده</small>
+              </article>
+              <article class="summary-card">
+                <span class="summary-label">مدت پیگیری</span><strong id="dashboard-tracking-duration">—</strong
+                ><small id="dashboard-tracking-duration-note">از شروع دفتر پرتفوی</small>
+              </article>
+              <article class="summary-card summary-card-wide">
+                <span class="summary-label">تخصیص فعلی</span><strong id="dashboard-allocation-summary">—</strong
+                ><small id="dashboard-allocation-summary-note">برای نمایش، موجودی و قیمت لازم است</small>
+              </article>
+            </section>
+
+            <section class="dashboard-main-grid">
+              <article class="dashboard-card performance-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">روند ارزش</span>
+                    <h3>پرتفوی در طول زمان</h3>
+                  </div>
+                  <div class="range-switch" role="group" aria-label="بازه نمودار">
+                    <button type="button" data-dashboard-range="1M">۱ ماه</button
+                    ><button type="button" data-dashboard-range="6M">۶ ماه</button
+                    ><button type="button" data-dashboard-range="1Y">۱ سال</button
+                    ><button type="button" data-dashboard-range="ALL" class="is-active">همه</button>
+                  </div>
+                </div>
+                <p class="chart-explanation">
+                  ارزش اسمی و ارزش پس از تورم را با سرمایه خالص ثبت‌شده مقایسه کن. جاهای خالی یعنی قیمت معتبر برای آن
+                  تاریخ پیدا نشده است.
+                </p>
+                <div id="dashboard-performance-chart" class="chart-box chart-box-large">
+                  <div class="empty-state">بعد از ثبت دارایی و دریافت قیمت تاریخی، روند اینجا نمایش داده می‌شود.</div>
+                </div>
+                <div class="chart-footnote">
+                  <span><i class="legend-invested"></i>سرمایه خالص</span
+                  ><span><i class="legend-value"></i>ارزش اسمی</span
+                  ><span><i class="legend-real"></i>ارزش پس از تورم مدل</span>
+                </div>
+              </article>
+              <article class="dashboard-card allocation-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">ترکیب سبد</span>
+                    <h3>فعلی در برابر هدف</h3>
+                  </div>
+                  <button class="secondary-button" data-go-view="portfolio" type="button">مدیریت</button>
+                </div>
+                <p class="chart-explanation">
+                  درصد فعلی از ارزش‌گذاری امروز می‌آید؛ هدف از آخرین برنامه ذخیره‌شده خوانده می‌شود. اختلاف‌های ۱۰ واحد
+                  درصدی یا بیشتر هشدار هستند.
+                </p>
+                <div id="dashboard-allocation-chart" class="dashboard-donut">
+                  <div class="empty-state">هنوز تخصیصی برای نمایش نیست.</div>
+                </div>
+                <div class="allocation-compare-header" aria-hidden="true">
+                  <span>دارایی</span><span>فعلی</span><span>هدف</span><span>اختلاف</span>
+                </div>
+                <div id="dashboard-allocation-list" class="allocation-compare-list"></div>
+              </article>
+            </section>
+
+            <section class="dashboard-secondary-grid">
+              <article class="dashboard-card health-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">کنترل‌های شفاف</span>
+                    <h3>سلامت برنامه</h3>
+                  </div>
+                  <span class="info-chip">قاعده‌محور</span>
+                </div>
+                <p class="chart-explanation">
+                  این‌ها امتیاز کلی نیستند؛ هر مورد فقط از داده‌هایی که خودت ثبت کرده‌ای و یک قاعده قابل توضیح ساخته
+                  می‌شود.
+                </p>
+                <div id="dashboard-health-list" class="health-list">
+                  <div class="empty-state">با ثبت برنامه یا پرتفوی، شاخص‌های قابل توضیح ساخته می‌شوند.</div>
+                </div>
+              </article>
+              <article class="dashboard-card action-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">اقدام ماه</span>
+                    <h3>قدم بعدی پیشنهادی</h3>
+                  </div>
+                  <span class="info-chip">قابل ویرایش</span>
+                </div>
+                <div id="dashboard-action-content">
+                  <strong id="dashboard-action-amount">—</strong>
+                  <p id="dashboard-action-suggestion">هنوز برنامه‌ای برای این ماه نداری.</p>
+                  <div id="dashboard-action-allocation" class="action-allocation" aria-live="polite"></div>
+                  <small id="dashboard-action-reason">دلیل پیشنهاد بعد از تکمیل برنامه نمایش داده می‌شود.</small
+                  ><button class="primary-button" data-go-view="plan" type="button">ویرایش برنامه <b>←</b></button>
+                </div>
+              </article>
+            </section>
+
+            <section class="dashboard-card market-snapshot-card">
+              <div class="section-heading">
+                <div>
+                  <span class="kicker">رصد بازار</span>
+                  <h3>آخرین داده‌های در دسترس</h3>
+                </div>
+                <div class="dashboard-market-actions">
+                  <span id="dashboard-market-status" class="data-note">در حال دریافت داده بازار…</span
+                  ><button class="secondary-button" data-go-view="assets" type="button">جزئیات بازار</button>
+                </div>
+              </div>
+              <div id="dashboard-market-snapshot" class="market-snapshot-grid">
+                <div class="empty-state">در حال دریافت داده…</div>
+              </div>
+            </section>
+          </section>
+
+          <section data-app-view="plan" class="app-view" aria-labelledby="plan-view-title">
+            <div class="page-heading">
+              <div>
+                <span class="kicker">برنامه‌ریزی</span>
+                <h2 id="plan-view-title">برنامه سرمایه‌گذاری ماهانه</h2>
+                <p>این صفحه می‌گوید این ماه چقدر کنار بگذاری و پول جدید را چطور پخش کنی.</p>
+              </div>
+              <span class="page-badge">بدون پیش‌بینی بازار</span>
+            </div>
+            <section class="hero">
+              <div>
+                <span class="eyebrow">تصمیم‌یار ریاضی، نه پیشگوی بازار</span>
+                <h1>برای آینده‌ات برنامه بچین، نه حدس.</h1>
+                <p>
+                  حقوق، هدف و شرایطت را وارد کن. Synthora با داده‌های چندمنبعی، سابقه ثبت‌شده و چند سناریوی شفاف می‌گوید
+                  این ماه چقدر کنار بگذاری و پول جدید را چطور پخش کنی.
+                </p>
+                <div class="hero-points">
+                  <span>بدون وعده سود</span><span>بدون فروش اجباری</span><span>تاریخچه فقط روی دستگاه تو</span>
+                </div>
+              </div>
+              <div class="hero-card">
+                <span>قاعده شروع</span><strong>۱۵٪ تا ۲۵٪</strong
+                ><small>از حقوق ماهانه، با امکان تغییر بر اساس شرایط واقعی تو</small>
+                <div><span>منطق</span><b>داده + سابقه + محدودیت ریسک</b></div>
+                <div><span>خروجی</span><b>مبلغ، وزن، دامنه و دلیل</b></div>
+              </div>
+            </section>
+
+            <section id="setup" class="plan-workspace">
+              <form id="plan-form" class="panel setup-panel">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">۱. مشخصات برنامه</span>
+                    <h2>این ماه از کجا شروع می‌کنی؟</h2>
+                  </div>
+                  <span class="local-chip">محلی و قابل پاک‌کردن</span>
+                </div>
+                <div class="field full">
+                  <label for="salary">حقوق خالص ماهانه</label>
+                  <div class="money-input">
+                    <input
+                      id="salary"
+                      type="text"
+                      inputmode="decimal"
+                      data-number-input
+                      placeholder="مثلا ۸۰٬۰۰۰٬۰۰۰"
+                      required
+                    /><span>تومان</span>
+                  </div>
+                  <small>عددها با جداکننده نمایش داده می‌شوند؛ حقوق و سابقه به سرور ارسال نمی‌شود.</small>
+                </div>
+                <div class="field rate-field">
+                  <label for="contribution-rate">درصد سرمایه‌گذاری ماهانه</label>
+                  <div class="range-line">
+                    <input id="contribution-rate" type="range" min="5" max="40" step="1" value="20" /><output
+                      id="contribution-output"
+                      >۲۰٪</output
+                    >
+                  </div>
+                  <small>با صندوق اضطراری ناقص، بهتر است نرخ را بی‌دلیل بالا نبری.</small>
+                </div>
+                <div class="field-grid primary-profile-fields">
+                  <div class="field">
+                    <label for="horizon">افق برنامه</label
+                    ><select id="horizon">
+                      <option value="3">۳ سال</option>
+                      <option value="5" selected>۵ سال</option>
+                      <option value="10">۱۰ سال</option>
+                      <option value="15">۱۵ سال</option>
+                      <option value="20">۲۰ سال</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="goal">هدف اصلی</label
+                    ><select id="goal">
+                      <option value="liquidity">نقدشوندگی</option>
+                      <option value="preservation" selected>حفظ ارزش</option>
+                      <option value="retirement">بازنشستگی</option>
+                      <option value="growth">رشد بلندمدت</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="risk-tolerance">تحمل ریسک</label
+                    ><select id="risk-tolerance">
+                      <option value="conservative" selected>محافظه‌کارانه</option>
+                      <option value="balanced">متعادل</option>
+                      <option value="growth">رشدپذیر</option>
+                    </select>
+                  </div>
+                </div>
+                <details class="profile-settings">
+                  <summary>شخصی‌سازی بیشتر، اختیاری</summary>
+                  <div class="field-grid">
+                    <div class="field">
+                      <label for="age">سن <span class="optional-label">اختیاری</span></label
+                      ><input id="age" type="number" min="18" max="90" placeholder="مثلا ۳۵" /><small
+                        >سن فقط در قاعده‌ی وزن‌دهی پیشنهادی اثر دارد؛ دارایی فعلی را تغییر نمی‌دهد.</small
+                      >
+                    </div>
+                    <div class="field">
+                      <label for="income-stability">ثبات درآمد</label
+                      ><select id="income-stability">
+                        <option value="stable">پایدار</option>
+                        <option value="mixed" selected>نسبتا پایدار</option>
+                        <option value="unstable">ناپایدار</option></select
+                      ><small>درآمد ناپایدار وزن پیشنهادی بخش باثبات را بیشتر می‌کند.</small>
+                    </div>
+                    <div class="field">
+                      <label for="essential-monthly-expenses">هزینه ضروری ماهانه</label>
+                      <div class="unit-input">
+                        <input
+                          id="essential-monthly-expenses"
+                          type="text"
+                          inputmode="decimal"
+                          data-number-input
+                          placeholder="مثلا ۴۰٬۰۰۰٬۰۰۰"
+                        /><span>تومان</span>
+                      </div>
+                      <small
+                        >برای سنجش تعداد ماه‌هایی استفاده می‌شود که دارایی نقدشونده هزینه‌های ضروری را پوشش
+                        می‌دهد.</small
+                      >
+                    </div>
+                    <div class="field">
+                      <label>وضعیت صندوق اضطراری</label
+                      ><output id="emergency-fund-status">برای محاسبه، هزینه ماهانه را وارد کن.</output
+                      ><small>۶ ماه یا بیشتر: کامل؛ ۱ تا کمتر از ۶ ماه: ناقص؛ کمتر از ۱ ماه: ناکافی.</small>
+                    </div>
+                  </div>
+                </details>
+                <button class="primary-button" type="submit"><span>برنامه این ماه را بساز</span><b>←</b></button>
+              </form>
+
+              <section id="plan-output" class="panel output-panel is-hidden">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">۲. پیشنهاد قابل اجرا</span>
+                    <h2>این ماه پول جدیدت را این‌طور پخش کن</h2>
+                  </div>
+                  <span id="profile-label" class="profile-chip">محافظه‌کارانه</span>
+                </div>
+                <div id="plan-preview-status" class="transfer-status transfer-neutral" aria-live="polite">
+                  با تغییر ورودی‌ها پیش‌نمایش به‌روز می‌شود؛ برای ثبت در تاریخچه، برنامه را بساز.
+                </div>
+                <div class="output-summary">
+                  <div>
+                    <small>مبلغ سرمایه‌گذاری ماهانه</small><strong id="monthly-investment">—</strong
+                    ><span>تومان پول جدید</span>
+                  </div>
+                  <div><small>نرخ از حقوق</small><strong id="monthly-rate">—</strong><span>قابل تغییر</span></div>
+                </div>
+                <div id="allocation-list" class="allocation-list"></div>
+                <div class="output-columns">
+                  <div>
+                    <h3>دلیل این ترکیب</h3>
+                    <ul id="reason-list" class="reason-list"></ul>
+                  </div>
+                  <div>
+                    <h3>پیشنهاد خرید همین ماه</h3>
+                    <div id="contribution-plan" class="contribution-plan"></div>
+                  </div>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section data-app-view="simulation" class="app-view" aria-labelledby="simulation-view-title">
+            <div class="page-heading">
+              <div>
+                <span class="kicker">تحلیل سناریو</span>
+                <h2 id="simulation-view-title">شبیه‌سازی و بک‌تست</h2>
+                <p>نتایج مدل را در سناریوهای آینده و دوره‌های گذشته ببین؛ بدون ادعای پیش‌بینی بازار.</p>
+              </div>
+              <span class="page-badge">اختیاری</span>
+            </div>
+
+            <div class="analysis-disclosure-grid">
+              <article class="disclosure-card">
+                <span class="kicker">آزمایش مستقل</span><strong>بدون استفاده از پرتفوی یا برنامه‌ی ذخیره‌شده</strong>
+                <p>
+                  مبلغ، دوره، ترکیب دارایی و واریز را همین‌جا انتخاب کن. اجرای شبیه‌سازی و بک‌تست فقط نتیجه می‌دهد و
+                  دفتر دارایی، برنامه‌ها یا تنظیمات را تغییر نمی‌دهد.
+                </p>
+              </article>
+              <article class="disclosure-card">
+                <span class="kicker">مرز داده</span><strong>گذشته‌ی مشاهده‌شده با آینده‌ی تخمینی فرق دارد</strong>
+                <p>
+                  بک‌تست تنها بازه‌هایی را گزارش می‌کند که تاریخچه‌ی واقعی دارند؛ پیش‌بینی آینده بر پایه‌ی سابقه‌ی موجود
+                  یا فرض‌های تنظیم‌شده برچسب می‌خورد.
+                </p>
+              </article>
+            </div>
+
+            <form id="simulation-form" class="panel setup-panel simulation-inputs">
+              <div class="section-heading">
+                <div>
+                  <span class="kicker">ورودی آزمایش</span>
+                  <h2>چه ترکیبی را بررسی کنیم؟</h2>
+                </div>
+                <span class="info-chip">فقط خواندنی</span>
+              </div>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="simulation-initial">سرمایه‌ی یک‌باره</label>
+                  <div class="unit-input">
+                    <input id="simulation-initial" type="text" inputmode="decimal" data-number-input value="۰" /><span
+                      >تومان</span
+                    >
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="simulation-monthly">واریز ماهانه</label>
+                  <div class="unit-input">
+                    <input id="simulation-monthly" type="text" inputmode="decimal" data-number-input value="۰" /><span
+                      >تومان</span
+                    >
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="simulation-horizon">افق زمانی</label>
+                  <div class="unit-input">
+                    <input id="simulation-horizon" type="number" min="1" max="50" value="5" /><span>سال</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="simulation-growth">رشد سالانه‌ی واریز</label>
+                  <div class="unit-input">
+                    <input id="simulation-growth" type="number" min="-50" max="200" value="۰" /><span>٪</span>
+                  </div>
+                </div>
+              </div>
+              <fieldset class="simulation-weights">
+                <legend>وزن هر دارایی (مجموع به‌صورت خودکار نرمال می‌شود)</legend>
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="sim-weight-fixed">درآمد ثابت</label>
+                    <div class="unit-input">
+                      <input id="sim-weight-fixed" type="number" min="0" max="100" value="72" /><span>٪</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="sim-weight-gold">طلا</label>
+                    <div class="unit-input">
+                      <input id="sim-weight-gold" type="number" min="0" max="100" value="18" /><span>٪</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="sim-weight-currency">ارز</label>
+                    <div class="unit-input">
+                      <input id="sim-weight-currency" type="number" min="0" max="100" value="8" /><span>٪</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="sim-weight-silver">نقره</label>
+                    <div class="unit-input">
+                      <input id="sim-weight-silver" type="number" min="0" max="100" value="2" /><span>٪</span>
+                    </div>
+                  </div>
+                </div>
+              </fieldset>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="simulation-inflation">تورم سناریو</label>
+                  <div class="unit-input">
+                    <input id="simulation-inflation" type="number" min="-20" max="300" value="۳۰" /><span>٪</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="simulation-path-count">تعداد مسیرهای آینده</label
+                  ><select id="simulation-path-count">
+                    <option value="1000">۱٬۰۰۰</option>
+                    <option value="2000" selected>۲٬۰۰۰</option>
+                    <option value="5000">۵٬۰۰۰</option>
+                    <option value="10000">۱۰٬۰۰۰</option>
+                  </select>
+                </div>
+              </div>
+              <label class="check-line"
+                ><input id="simulation-rebalance" type="checkbox" checked />
+                <span>بازتنظیم دوره‌ای وزن سبد</span></label
+              >
+              <button class="primary-button" type="submit"><span>اجرای سناریوی آینده</span><b>←</b></button>
+              <p class="small-note">
+                برای آینده، مقدارهای تورم، رشد، بازده و نوسان از تنظیمات عمومی می‌آیند. برای تغییر سراسری به تنظیمات
+                برو.
+              </p>
             </form>
-            <div class="portfolio-allocation-card"><div class="subheading"><strong>ارزش‌گذاری و تخصیص</strong><span>برای جزئیات هر دارایی انتخاب کن</span></div><div id="portfolio-donut" class="portfolio-donut"><div class="empty-state">با ثبت موجودی، اینجا پر می‌شود.</div></div><div id="portfolio-allocation" class="allocation-list"><div class="empty-state">با ثبت موجودی، اینجا پر می‌شود.</div></div></div>
-          </div>
-          <div class="stock-entry-card"><div class="subheading"><strong>ثبت سهام مشخص</strong><span>هر نماد یک دارایی مستقل است</span></div><p class="small-note">به‌جای یک «سهام» کلی، نام نماد یا شرکت را وارد کن تا دفتر پرتفوی همان دارایی را جداگانه نگه دارد.</p><form id="stock-entry-form" class="stock-entry-form"><div class="field"><label for="portfolio-stock-name">نام یا نماد</label><input id="portfolio-stock-name" type="text" maxlength="80" placeholder="مثلا فولاد" /></div><div class="field"><label for="portfolio-stock-value">ارزش فعلی</label><div class="unit-input"><input id="portfolio-stock-value" type="text" inputmode="decimal" data-number-input placeholder="مثلا ۵۰٬۰۰۰٬۰۰۰" /><span>تومان</span></div></div><button id="add-stock-entry" class="secondary-button" type="submit">افزودن سهم</button></form><div id="portfolio-stock-list" class="stock-list"><div class="empty-state">هنوز سهم مشخصی ثبت نشده.</div></div></div>
-          <div class="stock-entry-card market-asset-entry-card"><div class="subheading"><strong>ثبت دارایی</strong><span>قیمت معتبر یا بهای خرید واقعی</span></div><p class="small-note">همه دارایی‌های قابل ثبت در یک فهرست هستند. اگر قیمت معتبر بازار نداریم، مقدار، تاریخ و بهای واقعی خرید را ثبت کن؛ ارزش امروز تا زمان رسیدن قیمت معتبر خالی می‌ماند.</p><form id="portfolio-market-asset-form" class="stock-entry-form"><div class="field"><label for="portfolio-market-asset">دارایی</label><select id="portfolio-market-asset"></select></div><div class="field"><label for="portfolio-market-quantity">مقدار</label><div class="unit-input"><input id="portfolio-market-quantity" type="text" inputmode="decimal" data-number-input placeholder="مثلا ۰٫۰۱" /><span id="portfolio-market-asset-unit">واحد</span></div></div><div class="field"><label for="portfolio-market-date">تاریخ خرید</label><input id="portfolio-market-date" type="date" required /></div><div id="portfolio-market-acquisition-fields" class="field is-hidden"><label for="portfolio-market-acquisition-price">بهای خرید هر واحد (تومان)</label><input id="portfolio-market-acquisition-price" type="text" inputmode="decimal" data-number-input placeholder="خالی = قیمت معتبر همان تاریخ" /><small id="portfolio-market-acquisition-hint">قیمت خرید را از رسید یا سابقه واقعی وارد کن.</small></div><button class="secondary-button" type="submit">ثبت در دفتر</button></form></div>
-          <div id="portfolio-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">تغییرات مهم با گزارش و تأیید ثبت می‌شوند.</div>
+            <div class="analysis-grid">
+              <article class="panel analysis-panel">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">سناریوی آینده</span>
+                    <h2>دامنه‌ی برآورد</h2>
+                  </div>
+                  <span class="info-chip">تخمینی</span>
+                </div>
+                <p id="analysis-method-note" class="data-note">با ورودی‌های بالا اجرا کن.</p>
+                <div id="simulation-summary" class="metric-grid">
+                  <div class="empty-state">هنوز محاسبه‌ای اجرا نشده.</div>
+                </div>
+                <div id="simulation-chart" class="chart-box">
+                  <div class="empty-state">نتیجه‌ی مدل اینجا نمایش داده می‌شود.</div>
+                </div>
+              </article>
+              <article class="panel analysis-panel">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">مونت‌کارلو</span>
+                    <h2>نتایج مسیرهای احتمالی</h2>
+                  </div>
+                  <span class="info-chip">P10 · P50 · P90</span>
+                </div>
+                <div id="monte-carlo-output" class="range-grid">
+                  <div class="empty-state">بعد از اجرای سناریو نمایش داده می‌شود.</div>
+                </div>
+                <div id="scenario-comparison" class="scenario-comparison"></div>
+              </article>
+            </div>
+            <details id="backtest-section" class="panel collapsible-panel backtest-panel" open>
+              <summary class="section-heading collapsible-summary">
+                <div>
+                  <span class="kicker">بک‌تست</span>
+                  <h2>اگر همین ورودی‌ها در گذشته اجرا می‌شد</h2>
+                </div>
+                <span class="info-chip">تاریخچه‌ی مشاهده‌شده</span>
+              </summary>
+              <div class="collapsible-content">
+                <div class="section-actions">
+                  <span class="panel-intro"
+                    >بک‌تست از مبلغ، واریز، افق و ترکیب همین فرم استفاده می‌کند و به برنامه‌ی قبلی نیاز ندارد.</span
+                  ><button id="run-backtest" class="secondary-button" type="button">اجرای بک‌تست گذشته</button>
+                </div>
+                <div id="backtest-output"><div class="empty-state">بک‌تست را با ورودی‌های بالا اجرا کن.</div></div>
+                <div class="limitations-panel">
+                  <strong>داده‌ی ناکافی، نتیجه‌ی ناقص</strong>
+                  <p>
+                    دوره‌ای که تاریخچه‌ی واقعی ندارد حذف یا با نشان «تخمینی» مشخص می‌شود؛ قیمت گمشده به‌عنوان واقعیت
+                    نمایش داده نمی‌شود.
+                  </p>
+                </div>
+              </div>
+            </details>
+          </section>
 
-          <div id="simple-change-panel" class="change-panel is-hidden">
-            <strong>این تغییر چه معنایی دارد؟</strong>
-            <select id="simple-change-reason" aria-label="معنای تغییر"><option value="new-purchase">خرید جدید یا فروش واقعی</option><option value="correction">اصلاح ثبت قبلی</option><option value="restart-tracking">شروع دوباره ردیابی از امروز</option></select>
-            <small>اصلاح و شروع دوباره روی محاسبات تاریخی اثر می‌گذارد و با تأیید تو ثبت می‌شود.</small>
-            <div class="change-actions"><button id="apply-simple-change" class="secondary-button" type="button">ادامه</button><button id="cancel-simple-change" class="text-button" type="button">لغو</button></div>
-          </div>
+          <section data-app-view="history" class="app-view" aria-labelledby="history-view-title">
+            <div class="page-heading">
+              <div>
+                <span class="kicker">سابقه و روند</span>
+                <h2 id="history-view-title">تحلیل تاریخی</h2>
+                <p>برنامه‌های ذخیره‌شده، خروجی پشتیبان و روند ارزش تقریبی را در یکجا ببین.</p>
+              </div>
+              <span class="page-badge">روی همین دستگاه</span>
+            </div>
+            <details id="history-section" class="panel collapsible-panel history-panel">
+              <summary class="section-heading collapsible-summary">
+                <div>
+                  <span class="kicker">۵. سابقه شخصی</span>
+                  <h2>برنامه‌ها و ارزش تقریبی سبد</h2>
+                </div>
+                <span class="info-chip">روی همین دستگاه</span>
+              </summary>
+              <div class="collapsible-content">
+                <div class="section-actions">
+                  <span class="panel-intro">تاریخچه پیشنهادها و فایل پشتیبان را همین‌جا مدیریت کن.</span>
+                  <div class="history-actions">
+                    <button id="export-history" class="secondary-button" type="button">خروجی</button
+                    ><button id="import-history" class="secondary-button" type="button">ورود</button
+                    ><button id="clear-history" class="text-button" type="button">پاک کردن برنامه‌ها</button
+                    ><input id="history-file" type="file" accept="application/json,.json" hidden />
+                  </div>
+                </div>
+                <div id="history-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">
+                  فایل خروجی فقط روی همین دستگاه ساخته می‌شود؛ دفتر پرتفوی جداست.
+                </div>
+                <div id="history-summary" class="metric-grid"></div>
+                <div id="history-chart" class="chart-box"><div class="empty-state">هنوز سابقه‌ای ثبت نشده.</div></div>
+                <div class="subheading">
+                  <strong>تفکیک دسته‌ها</strong><span>برآورد با قیمت فعلی و snapshot زمان خرید</span>
+                </div>
+                <div id="portfolio-breakdown" class="portfolio-breakdown">
+                  <div class="empty-state">با ثبت اولین برنامه، اینجا پر می‌شود.</div>
+                </div>
+                <div class="subheading"><strong>ماه‌های ثبت‌شده</strong><span>حداکثر ۱۵ مورد اخیر</span></div>
+                <div id="history-list" class="history-list">
+                  <div class="empty-state">هنوز برنامه‌ای ذخیره نشده.</div>
+                </div>
+              </div>
+            </details>
 
-          <div class="subheading"><strong>روند ارزش‌گذاری</strong><span id="portfolio-chart-note">تاریخچه ساختگی اضافه نمی‌شود.</span></div>
-          <div id="portfolio-chart" class="chart-box"><div class="empty-state">هنوز دارایی‌ای در پرتفوی ثبت نشده.</div></div>
+            <article class="panel historical-comparison-panel">
+              <div class="section-heading">
+                <div>
+                  <span class="kicker">مقایسه بر پایه داده‌ی موجود</span>
+                  <h3>تحلیل قیمت و بازده دارایی‌ها</h3>
+                </div>
+                <span class="info-chip">حداکثر ۳ دارایی</span>
+              </div>
+              <p class="panel-intro">
+                بازه دلخواه را انتخاب کن. نمای قیمت، مقدار هر واحد را نشان می‌دهد؛ نمای بازده از ابتدای بازه درصد تغییر
+                را مقایسه می‌کند. تاریخچه‌ی ناقص با فاصله می‌ماند.
+              </p>
+              <div class="history-chart-controls">
+                <div class="history-range-switch" role="group" aria-label="بازه تاریخچه">
+                  <button type="button" data-history-range="1m" aria-pressed="false">۱ ماه</button
+                  ><button type="button" data-history-range="6m" aria-pressed="false">۶ ماه</button
+                  ><button type="button" data-history-range="1y" aria-pressed="true">۱ سال</button
+                  ><button type="button" data-history-range="all" aria-pressed="false">همه</button>
+                </div>
+                <form id="history-bounds-form" class="history-bounds">
+                  <label for="history-start">از تاریخ</label><input id="history-start" type="date" /><label
+                    for="history-end"
+                    >تا تاریخ</label
+                  ><input id="history-end" type="date" /><button class="secondary-button" type="submit">
+                    اعمال بازه
+                  </button>
+                </form>
+                <label class="history-view-select"
+                  >نمایش<select id="history-view-mode">
+                    <option value="return" selected>بازده از ابتدای بازه</option>
+                    <option value="price">قیمت هر واحد</option>
+                  </select></label
+                ><label class="history-view-select"
+                  >واحد قیمت<select id="history-currency">
+                    <option value="TOMAN" selected>تومان</option>
+                    <option value="USD">دلار</option>
+                  </select></label
+                >
+                <details class="history-asset-filter" open>
+                  <summary><span>دارایی‌های نمودار</span><span id="history-selected-count">۳ انتخاب</span></summary>
+                  <fieldset id="history-asset-options" class="history-asset-options">
+                    <legend class="visually-hidden">انتخاب ۱ تا ۳ دارایی برای مقایسه</legend>
+                  </fieldset>
+                </details>
+              </div>
+              <div id="historical-comparison-status" class="history-chart-status" role="status" aria-live="polite">
+                برای دریافت تاریخچه، دارایی‌ها را انتخاب کن.
+              </div>
+              <div id="historical-comparison-chart" class="chart-box chart-box-large">
+                <div class="empty-state">برای مقایسه، داده تاریخی کافی در دسترس نیست.</div>
+              </div>
+              <div id="historical-comparison-metrics" class="history-performance-grid"></div>
+              <div id="historical-comparison-list" class="benchmark-list"></div>
+              <div class="limitations-panel">
+                <strong>روش محاسبه‌ی بازده و ریسک</strong>
+                <p>
+                  بازده دوره از نخستین و آخرین مشاهده‌ی بازه است؛ CAGR با همان دو مشاهده و فقط برای دوره‌ی یک‌ساله یا
+                  بیشتر محاسبه می‌شود. ریسک شامل نوسان سالانه‌شده، افت بیشینه و CVaR تاریخی ۹۵٪ است. سطح کم/متوسط/زیاد
+                  نسبی به دارایی‌های انتخاب‌شده در همین بازه است و تعداد مشاهده‌ها کنار آن می‌آید.
+                </p>
+              </div>
+            </article>
+          </section>
 
-          <details class="advanced-portfolio">
-            <summary>مدیریت پیشرفته تراکنش‌ها</summary>
-            <p class="panel-intro">برای کنترل دقیق‌تر، خرید، فروش، سود نقدی، انتقال، اصلاح، واریز و برداشت را با تاریخ واقعی ثبت کن.</p>
-            <form id="advanced-transaction-form" class="transaction-form">
-              <div class="field"><label for="advanced-type">نوع تراکنش</label><select id="advanced-type"><option value="OPENING">موجودی اولیه</option><option value="BUY">خرید</option><option value="SELL">فروش</option><option value="DIVIDEND">سود نقدی</option><option value="TRANSFER">انتقال</option><option value="ADJUSTMENT">اصلاح</option><option value="DEPOSIT">واریز</option><option value="WITHDRAWAL">برداشت</option></select></div>
-              <div class="field"><label for="advanced-asset">دارایی</label><select id="advanced-asset"><option value="gold">طلا</option><option value="fixed">درآمد ثابت</option><option value="currency">ارز</option><option value="silver">نقره</option><option value="cash">نقد</option><option value="other">سایر</option></select></div>
-              <div class="field"><label for="advanced-target-asset">دارایی مقصد</label><select id="advanced-target-asset"><option value="cash">نقد</option><option value="gold">طلا</option><option value="fixed">درآمد ثابت</option><option value="currency">ارز</option><option value="silver">نقره</option><option value="other">سایر</option></select></div>
-              <div class="field"><label for="advanced-date">تاریخ</label><input id="advanced-date" type="date" required /></div>
-              <div class="field"><label id="advanced-quantity-label" for="advanced-quantity">مقدار</label><input id="advanced-quantity" type="text" inputmode="decimal" data-number-input /></div>
-              <div class="field"><label for="advanced-target-quantity">مقدار مقصد</label><input id="advanced-target-quantity" type="text" inputmode="decimal" data-number-input /></div>
-              <div class="field"><label for="advanced-unit-price">قیمت واحد</label><input id="advanced-unit-price" type="text" inputmode="decimal" data-number-input placeholder="خالی = قیمت بازار" /></div>
-              <div class="field"><label for="advanced-amount">مبلغ</label><input id="advanced-amount" type="text" inputmode="decimal" data-number-input /></div>
-              <div class="field"><label for="advanced-fee">کارمزد</label><input id="advanced-fee" type="text" inputmode="decimal" data-number-input /></div>
-              <div class="field"><label for="advanced-note">یادداشت</label><input id="advanced-note" type="text" maxlength="300" /></div>
-              <button class="secondary-button transaction-submit" type="submit">ثبت تراکنش</button>
-            </form>
-            <div class="subheading"><strong>دفتر تراکنش‌ها</strong><span id="portfolio-version-count">۰ نسخه</span></div>
-            <div id="portfolio-ledger" class="ledger-list"><div class="empty-state">هنوز تراکنشی ثبت نشده.</div></div>
-            <div class="subheading"><strong>گزارش تغییرات</strong><span id="portfolio-audit-count">۰ رویداد</span></div>
-            <div id="portfolio-audit" class="audit-list"><div class="empty-state">هنوز تغییری ثبت نشده.</div></div>
-          </details>
-          </div>
-        </details>
+          <section data-app-view="portfolio" class="app-view" aria-labelledby="portfolio-view-title">
+            <div class="page-heading">
+              <div>
+                <span class="kicker">دفتر شخصی</span>
+                <h2 id="portfolio-view-title">پرتفوی من</h2>
+                <p>موجودی و تراکنش‌ها را ثبت کن تا ارزش امروز و روند واقعی سبدت شفاف بماند.</p>
+              </div>
+              <span class="page-badge">دفتر تغییرناپذیر</span>
+            </div>
+            <details id="portfolio-section" class="panel collapsible-panel portfolio-panel" open>
+              <summary class="section-heading collapsible-summary">
+                <div>
+                  <span class="kicker">۶. پرتفوی شخصی</span>
+                  <h2>دارایی‌هایی که واقعا داری</h2>
+                </div>
+                <span id="portfolio-version-label" class="profile-chip">شروع اولیه</span>
+              </summary>
+              <div class="collapsible-content">
+                <p class="panel-intro">
+                  موجودی فقط از دفتر تراکنش‌ها محاسبه می‌شود. مسیر اصلی ثبت، مقدار و زمان هر خرید یا موجودی اولیه را در
+                  دفتر نگه می‌دارد؛ ثبت قیمت دستی جداست و تراکنش نمی‌سازد. اصلاحات دقیق را در بخش پیشرفته انجام بده.
+                </p>
+                <div id="portfolio-data-quality" class="data-note">هنوز دارایی‌ای در پرتفوی ثبت نشده.</div>
+                <div class="metric-grid portfolio-summary">
+                  <div class="metric"><small>ارزش فعلی</small><strong id="portfolio-current-value">—</strong></div>
+                  <div class="metric">
+                    <small>خالص سرمایه‌گذاری</small><strong id="portfolio-net-invested">—</strong>
+                  </div>
+                  <div class="metric"><small>سود یا زیان</small><strong id="portfolio-profit-loss">—</strong></div>
+                  <div class="metric"><small>CAGR</small><strong id="portfolio-cagr">—</strong></div>
+                  <div class="metric"><small>بازده پس از تورم</small><strong id="portfolio-real-return">—</strong></div>
+                  <div class="metric"><small>شروع ردیابی</small><strong id="portfolio-start-date">—</strong></div>
+                  <div class="metric"><small>خالص دارایی</small><strong id="portfolio-net-worth">—</strong></div>
+                  <div class="metric">
+                    <small>سرمایه قابل‌سرمایه‌گذاری</small><strong id="portfolio-investable-total">—</strong>
+                  </div>
+                  <div class="metric"><small>دارایی نقدشونده</small><strong id="portfolio-liquid-total">—</strong></div>
+                  <div class="metric">
+                    <small>پوشش ذخیره اضطراری</small><strong id="portfolio-emergency-coverage">—</strong>
+                  </div>
+                </div>
 
-        <dialog id="asset-detail-drawer" class="asset-drawer" aria-labelledby="asset-drawer-title"><div class="asset-drawer-header"><div><span class="kicker">جزئیات دارایی</span><h2 id="asset-drawer-title">—</h2></div><button id="asset-drawer-close" class="icon-button" type="button" aria-label="بستن">×</button></div><div id="asset-drawer-content" class="asset-drawer-content"></div><form method="dialog"><button class="secondary-button" type="submit">بستن</button></form></dialog>
+                <div class="portfolio-grid">
+                  <div class="portfolio-allocation-card">
+                    <div class="subheading">
+                      <strong>ارزش‌گذاری و تخصیص</strong><span>برای جزئیات هر دارایی انتخاب کن</span>
+                    </div>
+                    <div id="portfolio-donut" class="portfolio-donut">
+                      <div class="empty-state">با ثبت موجودی، اینجا پر می‌شود.</div>
+                    </div>
+                    <div id="portfolio-allocation" class="allocation-list">
+                      <div class="empty-state">با ثبت موجودی، اینجا پر می‌شود.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="stock-entry-card market-asset-entry-card">
+                  <div class="subheading">
+                    <strong>ثبت موجودی یا خرید</strong><span>یک مسیر اصلی برای همه دارایی‌ها</span>
+                  </div>
+                  <p class="small-note">
+                    مقدار و زمان معامله را ثبت کن. اگر نماد قیمت خودکار ندارد، قیمت خرید را وارد کن و برای ارزش امروز از
+                    فرم «ثبت قیمت دستی» کمک بگیر.
+                  </p>
+                  <form id="portfolio-market-asset-form" class="stock-entry-form">
+                    <div class="field">
+                      <label for="portfolio-market-asset">دارایی ثبت‌شده</label
+                      ><select id="portfolio-market-asset"></select>
+                    </div>
+                    <div class="field">
+                      <label for="portfolio-new-stock-title">ساخت نماد جدید (اختیاری)</label
+                      ><input
+                        id="portfolio-new-stock-title"
+                        type="text"
+                        maxlength="80"
+                        placeholder="نام یا نماد، مثلا فولاد"
+                      />
+                    </div>
+                    <div class="field">
+                      <label for="portfolio-market-quantity">مقدار</label>
+                      <div class="unit-input">
+                        <input
+                          id="portfolio-market-quantity"
+                          type="text"
+                          inputmode="decimal"
+                          data-number-input
+                          placeholder="مثلا ۰٫۰۱"
+                        /><span id="portfolio-market-asset-unit">واحد</span>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label for="portfolio-market-date">زمان خرید (تا دقیقه)</label
+                      ><input id="portfolio-market-date" type="datetime-local" step="60" required />
+                    </div>
+                    <div id="portfolio-market-acquisition-fields" class="field is-hidden">
+                      <label for="portfolio-market-acquisition-price">بهای خرید هر واحد (تومان)</label
+                      ><input
+                        id="portfolio-market-acquisition-price"
+                        type="text"
+                        inputmode="decimal"
+                        data-number-input
+                        placeholder="قیمت واقعی هر واحد"
+                      /><small id="portfolio-market-acquisition-hint"
+                        >برای نماد تازه یا تاریخ بدون قیمت، بهای واقعی را وارد کن.</small
+                      >
+                    </div>
+                    <button class="secondary-button" type="submit">ثبت در دفتر تراکنش</button>
+                  </form>
+                  <div id="portfolio-stock-list" class="stock-list"></div>
+                </div>
+                <div class="stock-entry-card manual-quote-card">
+                  <div class="subheading"><strong>ثبت قیمت دستی</strong><span>سابقه‌ی قیمت؛ بدون تراکنش</span></div>
+                  <p class="small-note">
+                    قیمت ثبت‌شده موجودی را تغییر نمی‌دهد. آخرین قیمت دستی تا زمانی که قیمت خودکار معتبر و با زمان
+                    مشاهده‌ی جدیدتر برسد برای ارزش‌گذاری استفاده می‌شود.
+                  </p>
+                  <form id="manual-quote-form" class="stock-entry-form">
+                    <div class="field">
+                      <label for="manual-quote-asset">دارایی</label
+                      ><select id="manual-quote-asset"></select>
+                    </div>
+                    <div class="field">
+                      <label for="manual-quote-price">قیمت هر واحد (تومان)</label
+                      ><input id="manual-quote-price" type="text" inputmode="decimal" data-number-input required />
+                    </div>
+                    <div class="field">
+                      <label for="manual-quote-date">زمان مشاهده‌ی قیمت (تا دقیقه)</label
+                      ><input id="manual-quote-date" type="datetime-local" step="60" required />
+                    </div>
+                    <button class="secondary-button" type="submit">ثبت قیمت در تاریخچه</button>
+                  </form>
+                  <div id="portfolio-manual-price-log" class="history-list"></div>
+                </div>
+                <div id="portfolio-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">
+                  تغییرات مهم با گزارش و تأیید ثبت می‌شوند.
+                </div>
 
-        </section>
+                <div class="subheading">
+                  <strong>روند ارزش‌گذاری</strong><span id="portfolio-chart-note">تاریخچه ساختگی اضافه نمی‌شود.</span>
+                </div>
+                <div id="portfolio-chart" class="chart-box">
+                  <div class="empty-state">هنوز دارایی‌ای در پرتفوی ثبت نشده.</div>
+                </div>
 
-        <section data-app-view="assets" class="app-view" aria-labelledby="assets-view-title">
-          <div class="page-heading"><div><span class="kicker">داده بازار</span><h2 id="assets-view-title">دارایی‌ها و بازار</h2><p>قیمت‌های عمومی از چند منبع جمع می‌شوند و برای هر دسته با میانه‌گیری نمایش داده می‌شوند.</p></div><span class="page-badge">چندمنبعی</span></div>
-          <aside class="panel market-panel">
-            <div class="section-heading"><div><span class="kicker">داده زنده</span><h2>بازار الان</h2></div><button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی">↻</button></div>
-            <p class="panel-intro">قیمت‌های دارای توافق موقت با هشدار و اطمینان متوسط نمایش داده می‌شوند؛ قیمت‌های متعارض در ارزش‌گذاری وارد نمی‌شوند. این داده برای تصمیم‌سازی است، نه معامله لحظه‌ای.</p>
-            <div id="market-data" class="market-data"><div class="loading-lines"><i></i><i></i><i></i><i></i></div></div>
-            <div class="market-footer"><span id="market-updated">—</span><span id="market-coverage">—</span></div>
-            <div class="data-note">اگر قیمت زنده در دسترس نباشد، آخرین مقدار ثبت‌شده جداگانه با تاریخ و سن داده نمایش داده می‌شود و وارد ارزش‌گذاری جاری نمی‌شود.</div>
-          </aside>
-          <details class="panel diagnostics-panel"><summary class="section-heading collapsible-summary"><div><span class="kicker">لایه پیشرفته</span><h3>تشخیص منبع و تازگی داده</h3></div><span class="info-chip">اختیاری</span></summary><div id="market-diagnostics" class="diagnostics-grid"><div class="empty-state">بعد از دریافت داده، وضعیت منابع اینجا نمایش داده می‌شود.</div></div></details>
-          <article class="panel assets-explainer"><div class="section-heading"><div><span class="kicker">چرا چندمنبعی؟</span><h3>یک عدد، با زمینه شفاف</h3></div><span class="info-chip">بدون API پولی</span></div><p>اگر چند منبع معتبر پاسخ بدهند، عدد میانی پس از کنارگذاشتن داده‌های پرت محاسبه می‌شود. توافق داخل حدود موقت با برچسب اطمینان متوسط نمایش داده می‌شود؛ اختلاف بیشتر تعارض است و وارد ارزش‌گذاری نمی‌شود.</p></article>
-        </section>
+                <details class="advanced-portfolio">
+                  <summary>مدیریت پیشرفته تراکنش‌ها</summary>
+                  <p class="panel-intro">
+                    برای کنترل دقیق‌تر، خرید، فروش، سود نقدی، انتقال، اصلاح، واریز و برداشت را با تاریخ واقعی ثبت کن.
+                  </p>
+                  <form id="advanced-transaction-form" class="transaction-form">
+                    <div class="field">
+                      <label for="advanced-type">نوع تراکنش</label
+                      ><select id="advanced-type">
+                        <option value="OPENING">موجودی اولیه</option>
+                        <option value="BUY">خرید</option>
+                        <option value="SELL">فروش</option>
+                        <option value="DIVIDEND">سود نقدی</option>
+                        <option value="TRANSFER">انتقال</option>
+                        <option value="ADJUSTMENT">اصلاح</option>
+                        <option value="DEPOSIT">واریز</option>
+                        <option value="WITHDRAWAL">برداشت</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="advanced-asset">دارایی</label
+                      ><select id="advanced-asset">
+                        <option value="gold">طلا</option>
+                        <option value="fixed">درآمد ثابت</option>
+                        <option value="currency">ارز</option>
+                        <option value="silver">نقره</option>
+                        <option value="cash">نقد</option>
+                        <option value="other">سایر</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="advanced-target-asset">دارایی مقصد</label
+                      ><select id="advanced-target-asset">
+                        <option value="cash">نقد</option>
+                        <option value="gold">طلا</option>
+                        <option value="fixed">درآمد ثابت</option>
+                        <option value="currency">ارز</option>
+                        <option value="silver">نقره</option>
+                        <option value="other">سایر</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="advanced-date">زمان تراکنش (تا دقیقه)</label
+                      ><input id="advanced-date" type="datetime-local" step="60" required />
+                    </div>
+                    <div class="field">
+                      <label id="advanced-quantity-label" for="advanced-quantity">مقدار</label
+                      ><input id="advanced-quantity" type="text" inputmode="decimal" data-number-input />
+                    </div>
+                    <div class="field">
+                      <label for="advanced-target-quantity">مقدار مقصد</label
+                      ><input id="advanced-target-quantity" type="text" inputmode="decimal" data-number-input />
+                    </div>
+                    <div class="field">
+                      <label for="advanced-unit-price">قیمت واحد</label
+                      ><input
+                        id="advanced-unit-price"
+                        type="text"
+                        inputmode="decimal"
+                        data-number-input
+                        placeholder="خالی = قیمت بازار"
+                      />
+                    </div>
+                    <div class="field">
+                      <label for="advanced-amount">مبلغ</label
+                      ><input id="advanced-amount" type="text" inputmode="decimal" data-number-input />
+                    </div>
+                    <div class="field">
+                      <label for="advanced-fee">کارمزد</label
+                      ><input id="advanced-fee" type="text" inputmode="decimal" data-number-input />
+                    </div>
+                    <div class="field">
+                      <label for="advanced-note">یادداشت</label><input id="advanced-note" type="text" maxlength="300" />
+                    </div>
+                    <button class="secondary-button transaction-submit" type="submit">ثبت تراکنش</button>
+                  </form>
+                  <div class="subheading">
+                    <strong>دفتر تراکنش‌ها</strong><span id="portfolio-version-count">۰ نسخه</span>
+                  </div>
+                  <div id="portfolio-ledger" class="ledger-list">
+                    <div class="empty-state">هنوز تراکنشی ثبت نشده.</div>
+                  </div>
+                  <div class="subheading">
+                    <strong>گزارش تغییرات</strong><span id="portfolio-audit-count">۰ رویداد</span>
+                  </div>
+                  <div id="portfolio-audit" class="audit-list">
+                    <div class="empty-state">هنوز تغییری ثبت نشده.</div>
+                  </div>
+                </details>
+              </div>
+            </details>
 
-        <section data-app-view="settings" class="app-view" aria-labelledby="settings-view-title">
-          <div class="page-heading"><div><span class="kicker">کنترل برنامه</span><h2 id="settings-view-title">تنظیمات</h2><p>ظاهر برنامه و داده‌های ذخیره‌شده روی همین مرورگر را مدیریت کن.</p></div><span class="page-badge">محلی و قابل کنترل</span></div>
-          <div class="settings-grid">
-            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">ظاهر</span><h3>نمایش منو</h3></div></div><label class="check-line"><input id="settings-sidebar-collapsed" type="checkbox" /> <span>منوی کناری را به‌صورت جمع‌شده نگه دار</span></label><p class="small-note">این انتخاب فقط در همین مرورگر ذخیره می‌شود.</p></article>
-            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">حریم خصوصی</span><h3>کنترل ذخیره‌سازی</h3></div></div><label class="check-line"><input id="settings-market-cache" type="checkbox" /> <span>قیمت بازار در مرورگر ذخیره نشود</span></label><p class="small-note">در این حالت اگر API در دسترس نباشد، داده قبلی برای نمایش استفاده نمی‌شود.</p><button id="settings-clear-market-cache" class="text-button" type="button">حذف داده بازار ذخیره‌شده</button></article>
-            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">پشتیبان</span><h3>خروجی و ورود داده</h3></div></div><p>تاریخچه برنامه و دفتر تراکنش در یک فایل JSON قابل انتقال ذخیره می‌شوند.</p><div class="settings-actions"><button id="settings-export-data" class="secondary-button" type="button">خروجی داده</button><button id="settings-import-data" class="secondary-button" type="button">ورود داده</button><input id="settings-file" type="file" accept="application/json,.json" hidden /></div><div id="settings-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">وضعیت ورود و خروج داده اینجا نمایش داده می‌شود.</div></article>
-            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">فرض‌های مدل</span><h3>قابل مشاهده و قابل تغییر</h3></div></div><div id="settings-assumptions" class="assumption-list"><div><span>تورم سالانه</span><strong>—</strong></div><div><span>رشد سالانه واریز</span><strong>—</strong></div><div><span>تعداد مسیر مونت‌کارلو</span><strong>—</strong></div></div><button class="secondary-button" data-go-view="plan" type="button">ویرایش فرض‌ها</button></article>
-            <article class="panel settings-card danger-card"><div class="section-heading"><div><span class="kicker">بازنشانی</span><h3>حذف داده‌های محلی</h3></div></div><p>این کار تاریخچه برنامه، دفتر پرتفوی، پروفایل و cache بازار را از همین مرورگر حذف می‌کند و قابل بازگشت نیست مگر فایل پشتیبان داشته باشی.</p><button id="settings-reset-all" class="text-button" type="button">حذف همه داده‌های محلی</button></article>
-            <article class="panel settings-card"><div class="section-heading"><div><span class="kicker">قواعد استفاده</span><h3>شفافیت مالی</h3></div></div><p>این ابزار فقط تصمیم‌یار آموزشی است. بازده تضمین نمی‌کند، از AI برای امتیازسازی استفاده نمی‌کند و در نبود داده تاریخی عددی جعل نمی‌کند.</p><button class="secondary-button" data-go-view="simulation" type="button">دیدن فرض‌ها و محدودیت‌ها</button></article>
-          </div>
-        </section>
-      </main>
+            <dialog id="asset-detail-drawer" class="asset-drawer" aria-labelledby="asset-drawer-title">
+              <div class="asset-drawer-header">
+                <div>
+                  <span class="kicker">جزئیات دارایی</span>
+                  <h2 id="asset-drawer-title">—</h2>
+                </div>
+                <button id="asset-drawer-close" class="icon-button" type="button" aria-label="بستن">×</button>
+              </div>
+              <div id="asset-drawer-content" class="asset-drawer-content"></div>
+              <form method="dialog"><button class="secondary-button" type="submit">بستن</button></form>
+            </dialog>
+          </section>
 
-      <footer class="footer">
-        <span>این ابزار تصمیم‌یار آموزشی است، نه مشاوره مالی یا تضمین بازده.</span>
-        <span>محاسبات و تاریخچه در مرورگر انجام می‌شود.</span>
-        <span class="creator-attribution">ساخته شده توسط <a href="https://taha.one" rel="author noopener noreferrer">Taha Moeini</a></span>
-      </footer>
+          <section data-app-view="assets" class="app-view" aria-labelledby="assets-view-title">
+            <div class="page-heading">
+              <div>
+                <span class="kicker">داده بازار</span>
+                <h2 id="assets-view-title">دارایی‌ها و بازار</h2>
+                <p>قیمت‌های عمومی از چند منبع جمع می‌شوند و برای هر دسته با میانه‌گیری نمایش داده می‌شوند.</p>
+              </div>
+              <span class="page-badge">چندمنبعی</span>
+            </div>
+            <aside class="panel market-panel">
+              <div class="section-heading">
+                <div>
+                  <span class="kicker">داده زنده</span>
+                  <h2>بازار الان</h2>
+                </div>
+                <button id="refresh-market" class="icon-button" type="button" aria-label="به‌روزرسانی">↻</button>
+              </div>
+              <p class="panel-intro">
+                قیمت‌های دارای توافق موقت با هشدار و اطمینان متوسط نمایش داده می‌شوند؛ قیمت‌های متعارض در ارزش‌گذاری
+                وارد نمی‌شوند. این داده برای تصمیم‌سازی است، نه معامله لحظه‌ای.
+              </p>
+              <div id="market-data" class="market-data">
+                <div class="loading-lines"><i></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="market-footer"><span id="market-updated">—</span><span id="market-coverage">—</span></div>
+              <div class="data-note">
+                اگر قیمت زنده در دسترس نباشد، آخرین مقدار ثبت‌شده جداگانه با تاریخ و سن داده نمایش داده می‌شود و وارد
+                ارزش‌گذاری جاری نمی‌شود.
+              </div>
+            </aside>
+            <details class="panel diagnostics-panel">
+              <summary class="section-heading collapsible-summary">
+                <div>
+                  <span class="kicker">لایه پیشرفته</span>
+                  <h3>تشخیص منبع و تازگی داده</h3>
+                </div>
+                <span class="info-chip">اختیاری</span>
+              </summary>
+              <div id="market-diagnostics" class="diagnostics-grid">
+                <div class="empty-state">بعد از دریافت داده، وضعیت منابع اینجا نمایش داده می‌شود.</div>
+              </div>
+            </details>
+            <article class="panel assets-explainer">
+              <div class="section-heading">
+                <div>
+                  <span class="kicker">چرا چندمنبعی؟</span>
+                  <h3>یک عدد، با زمینه شفاف</h3>
+                </div>
+                <span class="info-chip">بدون API پولی</span>
+              </div>
+              <p>
+                اگر چند منبع معتبر پاسخ بدهند، عدد میانی پس از کنارگذاشتن داده‌های پرت محاسبه می‌شود. توافق داخل حدود
+                موقت با برچسب اطمینان متوسط نمایش داده می‌شود؛ اختلاف بیشتر تعارض است و وارد ارزش‌گذاری نمی‌شود.
+              </p>
+            </article>
+          </section>
+
+          <section data-app-view="settings" class="app-view" aria-labelledby="settings-view-title">
+            <div class="page-heading">
+              <div>
+                <span class="kicker">کنترل برنامه</span>
+                <h2 id="settings-view-title">تنظیمات</h2>
+                <p>ظاهر برنامه و داده‌های ذخیره‌شده روی همین مرورگر را مدیریت کن.</p>
+              </div>
+              <span class="page-badge">محلی و قابل کنترل</span>
+            </div>
+            <div class="settings-grid">
+              <article class="panel settings-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">ظاهر</span>
+                    <h3>نمایش منو</h3>
+                  </div>
+                </div>
+                <label class="check-line"
+                  ><input id="settings-sidebar-collapsed" type="checkbox" />
+                  <span>منوی کناری را به‌صورت جمع‌شده نگه دار</span></label
+                >
+                <p class="small-note">این انتخاب فقط در همین مرورگر ذخیره می‌شود.</p>
+              </article>
+              <article class="panel settings-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">حریم خصوصی</span>
+                    <h3>کنترل ذخیره‌سازی</h3>
+                  </div>
+                </div>
+                <label class="check-line"
+                  ><input id="settings-market-cache" type="checkbox" />
+                  <span>قیمت بازار در مرورگر ذخیره نشود</span></label
+                >
+                <p class="small-note">در این حالت اگر API در دسترس نباشد، داده قبلی برای نمایش استفاده نمی‌شود.</p>
+                <button id="settings-clear-market-cache" class="text-button" type="button">
+                  حذف داده بازار ذخیره‌شده
+                </button>
+              </article>
+              <form id="settings-model-form" class="panel settings-card settings-model-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">پیش‌فرض برنامه‌ها</span>
+                    <h3>فرض‌های عمومی مدل</h3>
+                  </div>
+                </div>
+                <p>
+                  این مقدارها برای برنامه‌ها و سناریوهای بعدی استفاده می‌شوند. تغییر یک برنامه، این تنظیمات را عوض
+                  نمی‌کند.
+                </p>
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="settings-inflation-rate">تورم سالانه‌ی مدل</label>
+                    <div class="unit-input">
+                      <input id="settings-inflation-rate" type="number" min="-20" max="300" value="۳۰" /><span>٪</span>
+                    </div>
+                    <small id="settings-inflation-source">منبع تورم هنوز دریافت نشده.</small
+                    ><button id="refresh-inflation" class="text-button" type="button">
+                      دریافت تازه‌ترین داده‌ی تورم
+                    </button>
+                  </div>
+                  <div class="field">
+                    <label for="settings-contribution-growth">رشد سالانه‌ی واریز</label>
+                    <div class="unit-input">
+                      <input id="settings-contribution-growth" type="number" min="-50" max="200" value="۰" /><span
+                        >٪</span
+                      >
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="settings-simulation-paths">مسیرهای مونت‌کارلو</label
+                    ><select id="settings-simulation-paths">
+                      <option value="1000">۱٬۰۰۰</option>
+                      <option value="2000" selected>۲٬۰۰۰</option>
+                      <option value="5000">۵٬۰۰۰</option>
+                      <option value="10000">۱۰٬۰۰۰</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="check-line"
+                  ><input id="settings-rebalancing" type="checkbox" checked />
+                  <span>بازتنظیم دوره‌ای پیش‌فرض روشن باشد</span></label
+                >
+                <div class="settings-assumption-grid">
+                  <div><strong>دارایی</strong><strong>بازده سالانه</strong><strong>نوسان سالانه</strong></div>
+                  <div>
+                    <span>درآمد ثابت</span
+                    ><input
+                      id="settings-return-fixed"
+                      aria-label="بازده فرضی درآمد ثابت"
+                      type="number"
+                      min="-99"
+                      max="300"
+                    /><input
+                      id="settings-vol-fixed"
+                      aria-label="نوسان فرضی درآمد ثابت"
+                      type="number"
+                      min="0"
+                      max="300"
+                    />
+                  </div>
+                  <div>
+                    <span>طلا</span
+                    ><input
+                      id="settings-return-gold"
+                      aria-label="بازده فرضی طلا"
+                      type="number"
+                      min="-99"
+                      max="300"
+                    /><input id="settings-vol-gold" aria-label="نوسان فرضی طلا" type="number" min="0" max="300" />
+                  </div>
+                  <div>
+                    <span>ارز</span
+                    ><input
+                      id="settings-return-currency"
+                      aria-label="بازده فرضی ارز"
+                      type="number"
+                      min="-99"
+                      max="300"
+                    /><input id="settings-vol-currency" aria-label="نوسان فرضی ارز" type="number" min="0" max="300" />
+                  </div>
+                  <div>
+                    <span>نقره</span
+                    ><input
+                      id="settings-return-silver"
+                      aria-label="بازده فرضی نقره"
+                      type="number"
+                      min="-99"
+                      max="300"
+                    /><input id="settings-vol-silver" aria-label="نوسان فرضی نقره" type="number" min="0" max="300" />
+                  </div>
+                </div>
+                <p class="small-note">مقادیر بازده و نوسان، فرض مدل هستند و تضمین عملکرد نیستند.</p>
+                <button class="primary-button" type="submit">ذخیره‌ی پیش‌فرض‌ها</button>
+                <div
+                  id="settings-model-status"
+                  class="transfer-status transfer-neutral"
+                  role="status"
+                  aria-live="polite"
+                >
+                  فرض‌های مدل در همین مرورگر ذخیره می‌شوند.
+                </div>
+              </form>
+              <form id="provider-key-form" class="panel settings-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">منابع بازار</span>
+                    <h3>کلید API شخصی</h3>
+                  </div>
+                  <span class="info-chip">اختیاری</span>
+                </div>
+                <p>
+                  کلید CoinGecko Demo را برای دریافت قیمت و تاریخچه‌ی رمزدارایی وارد کن. اگر وارد شود، کلید تو به‌جای
+                  کلید پلتفرم استفاده می‌شود و فقط از مسیر سرور در هدر ارسال می‌شود.
+                </p>
+                <div class="field">
+                  <label for="provider-api-key">کلید CoinGecko Demo</label
+                  ><input
+                    id="provider-api-key"
+                    type="password"
+                    autocomplete="off"
+                    maxlength="300"
+                    placeholder="کلید را وارد کن"
+                  />
+                </div>
+                <div class="field">
+                  <label for="provider-key-storage">مدت نگهداری کلید</label
+                  ><select id="provider-key-storage">
+                    <option value="session" selected>تا پایان نشست مرورگر (پیشنهادی)</option>
+                    <option value="page">فقط تا وقتی این صفحه باز است</option>
+                    <option value="device">ذخیره‌شده روی همین دستگاه</option></select
+                  ><small
+                    >ذخیره روی دستگاه به مرورگر و کدهای همان صفحه دسترسی می‌دهد؛ کلید هرگز در خروجی پشتیبان قرار
+                    نمی‌گیرد.</small
+                  >
+                </div>
+                <div class="settings-actions">
+                  <button class="secondary-button" type="submit">ذخیره‌ی کلید</button
+                  ><button id="provider-key-clear" class="text-button" type="button">پاک‌کردن کلید</button>
+                </div>
+                <div id="provider-key-status" class="transfer-status transfer-neutral" role="status" aria-live="polite">
+                  برای CoinGecko Demo از راهنمای رسمی دریافت کلید استفاده کن.
+                </div>
+                <p class="small-note">
+                  <a
+                    href="https://support.coingecko.com/hc/en-us/articles/21880397454233-User-Guide-How-to-sign-up-for-CoinGecko-Demo-API-and-generate-an-API-key"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >راهنمای رسمی ساخت کلید CoinGecko Demo</a
+                  >
+                  ·
+                  <a href="docs/cloudflare-market-api.md" target="_blank" rel="noopener noreferrer"
+                    >راهنمای پیکربندی کلید پلتفرم در Cloudflare</a
+                  >
+                </p>
+              </form>
+              <article class="panel settings-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">پشتیبان</span>
+                    <h3>خروجی و ورود داده</h3>
+                  </div>
+                </div>
+                <p>تاریخچه برنامه و دفتر تراکنش در یک فایل JSON قابل انتقال ذخیره می‌شوند.</p>
+                <div class="settings-actions">
+                  <button id="settings-export-data" class="secondary-button" type="button">خروجی داده</button
+                  ><button id="settings-import-data" class="secondary-button" type="button">ورود داده</button
+                  ><input id="settings-file" type="file" accept="application/json,.json" hidden />
+                </div>
+                <div id="settings-transfer-status" class="transfer-status transfer-neutral" aria-live="polite">
+                  وضعیت ورود و خروج داده اینجا نمایش داده می‌شود.
+                </div>
+              </article>
+              <article class="panel settings-card danger-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">بازنشانی</span>
+                    <h3>حذف داده‌های محلی</h3>
+                  </div>
+                </div>
+                <p>
+                  این کار تاریخچه برنامه، دفتر پرتفوی، پروفایل و cache بازار را از همین مرورگر حذف می‌کند و قابل بازگشت
+                  نیست مگر فایل پشتیبان داشته باشی.
+                </p>
+                <button id="settings-reset-all" class="text-button" type="button">حذف همه داده‌های محلی</button>
+              </article>
+              <article class="panel settings-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">قواعد استفاده</span>
+                    <h3>شفافیت مالی</h3>
+                  </div>
+                </div>
+                <p>
+                  این ابزار فقط تصمیم‌یار آموزشی است. بازده تضمین نمی‌کند، از AI برای امتیازسازی استفاده نمی‌کند و در
+                  نبود داده تاریخی عددی جعل نمی‌کند.
+                </p>
+                <button class="secondary-button" data-go-view="simulation" type="button">
+                  دیدن فرض‌ها و محدودیت‌ها
+                </button>
+              </article>
+            </div>
+          </section>
+        </main>
+
+        <footer class="footer">
+          <span>این ابزار تصمیم‌یار آموزشی است، نه مشاوره مالی یا تضمین بازده.</span>
+          <span>محاسبات و تاریخچه در مرورگر انجام می‌شود.</span>
+          <span class="creator-attribution"
+            >ساخته شده توسط <a href="https://taha.one" rel="author noopener noreferrer">Taha Moeini</a></span
+          >
+        </footer>
       </div>
     </div>
   </body>

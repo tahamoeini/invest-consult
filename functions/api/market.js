@@ -1,4 +1,5 @@
 import { INSTRUMENT_REGISTRY, SLEEVE_REGISTRY } from "../../src/market/catalog.js";
+import { consumeRouteQuota, reservePlatformProviderRequest, selectedProviderKey } from "./_security.js";
 
 const TGJU_BASE = "https://www.tgju.org/profile/";
 const BONBAST_BASE = "https://www.bonbast.com";
@@ -18,19 +19,46 @@ const INTERACTIVE_BUDGET_MS = 3500;
 const CONSENSUS_POLICY = Object.freeze({
   version: "quote-consensus-v2-provisional",
   calibrated: false,
-  agreementTolerancePct: Object.freeze({ fx: 0.25, gold: 0.10, commodities: null, crypto: null, iranEquity: null }),
+  agreementTolerancePct: Object.freeze({ fx: 0.25, gold: 0.1, commodities: null, crypto: null, iranEquity: null }),
 });
-const CONFIGURED_SOURCE_COUNTS = Object.freeze({ dollar: 3, gold: 5, silver: 3, bitcoin: 2, ethereum: 2, tether: 1, platinum: 2, palladium: 2, copper: 2, bourseIndex: 2 });
-const DEFAULT_MARKET_ASSETS = Object.freeze(["dollar", "gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper", "bourseIndex", "fixedIncome"]);
+const CONFIGURED_SOURCE_COUNTS = Object.freeze({
+  dollar: 3,
+  gold: 5,
+  silver: 3,
+  bitcoin: 2,
+  ethereum: 2,
+  tether: 1,
+  platinum: 2,
+  palladium: 2,
+  copper: 2,
+  bourseIndex: 2,
+});
+const DEFAULT_MARKET_ASSETS = Object.freeze([
+  "dollar",
+  "gold",
+  "silver",
+  "bitcoin",
+  "ethereum",
+  "tether",
+  "platinum",
+  "palladium",
+  "copper",
+  "bourseIndex",
+  "fixedIncome",
+]);
 const headers = {
   "User-Agent": "invest-consult/2.0 (+https://github.com/tahamoeini/invest-consult)",
-  "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+  Accept: "text/html,application/json;q=0.9,*/*;q=0.8",
 };
 
 function normalizeDigits(value) {
   return String(value || "")
-    .replace(/[\u06f0-\u06f9]/g, (digit) => String("\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9".indexOf(digit)))
-    .replace(/[\u0660-\u0669]/g, (digit) => String("\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(digit)));
+    .replace(/[\u06f0-\u06f9]/g, (digit) =>
+      String("\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9".indexOf(digit)),
+    )
+    .replace(/[\u0660-\u0669]/g, (digit) =>
+      String("\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(digit)),
+    );
 }
 
 function parseNumber(value) {
@@ -57,7 +85,11 @@ function normalizeTimestamp(value) {
 function firstNumberAfter(html, marker, windowSize = 800) {
   const start = html.indexOf(marker);
   if (start < 0) return null;
-  const sample = html.slice(start + marker.length, start + windowSize).replace(/^>\s*/, "").replace(/<[^>]*>/g, " ").trim();
+  const sample = html
+    .slice(start + marker.length, start + windowSize)
+    .replace(/^>\s*/, "")
+    .replace(/<[^>]*>/g, " ")
+    .trim();
   const token = sample.split(/\s+/)[0] || "";
   const match = token.match(/[-+]?[0-9\u06f0-\u06f9\u0660-\u0669]+(?:[.,\u066b][0-9\u06f0-\u06f9\u0660-\u0669]+)*/);
   return match ? parseNumber(match[0]) : null;
@@ -107,20 +139,31 @@ async function fetchText(url, options = {}) {
 
 async function fetchJson(url, options = {}) {
   const text = await fetchText(url, options);
-  try { return JSON.parse(text); } catch { throw new Error("Source returned invalid JSON"); }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Source returned invalid JSON");
+  }
 }
 
 async function providerA(requested = Object.keys(sourcePages)) {
   const pages = Object.entries(sourcePages).filter(([asset]) => requested.includes(asset));
-  const results = await Promise.allSettled(pages.map(async ([asset, page]) => {
-    const html = await fetchText(TGJU_BASE + page);
-    const price = firstNumberAfter(html, 'data-col="info.last_trade.PDrCotVal"', 500);
-    const changePct = firstNumberAfter(html, 'data-col="info.last_trade.last_change_percentage"', 300);
-    const revision = html.match(/data-revision="([^"]+)"/);
-    const serverTime = html.match(/id="server-time"[^>]+data-value="([^"]+)"/);
-    const item = quote(asset, price === null ? null : price / 10, "Provider A", { changePct, sourceUrl: TGJU_BASE + page, sourceTime: serverTime ? serverTime[1] : null, sourceRevision: revision ? revision[1] : null });
-    return { asset, item, history: normalizeTgjuHistory(extractTgjuChartData(html)) };
-  }));
+  const results = await Promise.allSettled(
+    pages.map(async ([asset, page]) => {
+      const html = await fetchText(TGJU_BASE + page);
+      const price = firstNumberAfter(html, 'data-col="info.last_trade.PDrCotVal"', 500);
+      const changePct = firstNumberAfter(html, 'data-col="info.last_trade.last_change_percentage"', 300);
+      const revision = html.match(/data-revision="([^"]+)"/);
+      const serverTime = html.match(/id="server-time"[^>]+data-value="([^"]+)"/);
+      const item = quote(asset, price === null ? null : price / 10, "Provider A", {
+        changePct,
+        sourceUrl: TGJU_BASE + page,
+        sourceTime: serverTime ? serverTime[1] : null,
+        sourceRevision: revision ? revision[1] : null,
+      });
+      return { asset, item, history: normalizeTgjuHistory(extractTgjuChartData(html)) };
+    }),
+  );
   const fulfilled = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
   if (!fulfilled.length) throw new Error("No TGJU quote pages responded");
   return {
@@ -130,15 +173,24 @@ async function providerA(requested = Object.keys(sourcePages)) {
 }
 
 async function providerB() {
-  const landing = await fetchContent(BONBAST_BASE + "/", { requestTimeoutMs: 800, cf: { cacheTtl: 60, cacheEverything: true } }, async (response) => ({
-    html: await response.text(),
-    cookie: response.headers.get("set-cookie") || "",
-  }));
+  const landing = await fetchContent(
+    BONBAST_BASE + "/",
+    { requestTimeoutMs: 800, cf: { cacheTtl: 60, cacheEverything: true } },
+    async (response) => ({
+      html: await response.text(),
+      cookie: response.headers.get("set-cookie") || "",
+    }),
+  );
   const tokenMatch = landing.html.match(/\$\.post\('\/json',\s*\{param:\s*"([^"]+)"/);
   if (!tokenMatch) throw new Error("Request token not found");
   const data = await fetchJson(BONBAST_BASE + "/json", {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded; charset=UTF-8", "x-requested-with": "XMLHttpRequest", referer: BONBAST_BASE + "/", ...(landing.cookie ? { cookie: landing.cookie } : {}) },
+    headers: {
+      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "x-requested-with": "XMLHttpRequest",
+      referer: BONBAST_BASE + "/",
+      ...(landing.cookie ? { cookie: landing.cookie } : {}),
+    },
     body: "param=" + encodeURIComponent(tokenMatch[1]),
     requestTimeoutMs: 800,
     cf: { cacheTtl: 60, cacheEverything: true },
@@ -153,16 +205,34 @@ async function providerB() {
 
 async function providerC(requestTimeoutMs = 600, requested = ["dollar", "gold"]) {
   const [fiat, gold] = await Promise.all([
-    requested.includes("dollar") ? fetchJson(NAVASAN_RAW_BASE + "fiat.json", { requestTimeoutMs }) : Promise.resolve(null),
-    requested.includes("gold") ? fetchJson(NAVASAN_RAW_BASE + "gold.json", { requestTimeoutMs }) : Promise.resolve(null),
+    requested.includes("dollar")
+      ? fetchJson(NAVASAN_RAW_BASE + "fiat.json", { requestTimeoutMs })
+      : Promise.resolve(null),
+    requested.includes("gold")
+      ? fetchJson(NAVASAN_RAW_BASE + "gold.json", { requestTimeoutMs })
+      : Promise.resolve(null),
   ]);
   const dollar = fiat && fiat.usd;
   const gold18 = gold && gold["18ayar"];
-  const dollarTime = dollar && Number.isFinite(Number(dollar.date)) ? new Date(Number(dollar.date) * 1000).toISOString() : null;
-  const goldTime = gold18 && Number.isFinite(Number(gold18.date)) ? new Date(Number(gold18.date) * 1000).toISOString() : null;
+  const dollarTime =
+    dollar && Number.isFinite(Number(dollar.date)) ? new Date(Number(dollar.date) * 1000).toISOString() : null;
+  const goldTime =
+    gold18 && Number.isFinite(Number(gold18.date)) ? new Date(Number(gold18.date) * 1000).toISOString() : null;
   return [
-    requested.includes("dollar") ? quote("dollar", parseNumber(dollar && dollar.value), "Provider C", { changePct: parseNumber(dollar && dollar.change_pct), sourceUrl: "https://github.com/HosseinOdd/Navasan-API", sourceTime: dollarTime }) : null,
-    requested.includes("gold") ? quote("gold", parseNumber(gold18 && gold18.value), "Provider C", { changePct: parseNumber(gold18 && gold18.change_pct), sourceUrl: "https://github.com/HosseinOdd/Navasan-API", sourceTime: goldTime }) : null,
+    requested.includes("dollar")
+      ? quote("dollar", parseNumber(dollar && dollar.value), "Provider C", {
+          changePct: parseNumber(dollar && dollar.change_pct),
+          sourceUrl: "https://github.com/HosseinOdd/Navasan-API",
+          sourceTime: dollarTime,
+        })
+      : null,
+    requested.includes("gold")
+      ? quote("gold", parseNumber(gold18 && gold18.value), "Provider C", {
+          changePct: parseNumber(gold18 && gold18.change_pct),
+          sourceUrl: "https://github.com/HosseinOdd/Navasan-API",
+          sourceTime: goldTime,
+        })
+      : null,
   ].filter(Boolean);
 }
 
@@ -172,46 +242,62 @@ const providers = [
   { id: "providerC", run: providerC },
 ];
 
-async function providerCrypto(requested = ["bitcoin", "ethereum", "tether"]) {
+async function providerCrypto(
+  requested = ["bitcoin", "ethereum", "tether"],
+  apiKey = "",
+  userSuppliedKey = false,
+  env = {},
+) {
   const mapping = { bitcoin: "bitcoin", ethereum: "ethereum", tether: "tether" };
   const selected = Object.entries(mapping).filter(([, asset]) => requested.includes(asset));
   if (!selected.length) return [];
-  const url = COINGECKO_SIMPLE_URL + `?ids=${selected.map(([id]) => id).join(",")}&vs_currencies=usd&include_24hr_change=true`;
-  const data = await fetchJson(url);
-  return selected.map(([id, asset]) => {
-    const item = data && data[id];
-    if (!item) return null;
-    const usd = parseNumber(item.usd);
-    return quote(asset, usd, "CoinGecko", {
-      changePct: parseNumber(item.usd_24h_change),
-      sourceUrl: url,
-      sourceTime: null,
-      unit: "coin",
-      currency: "USD",
-      quoteType: "direct",
-    });
-  }).filter(Boolean);
+  if (!apiKey) throw new Error("coingecko-demo-key-missing");
+  if (!userSuppliedKey && !(await reservePlatformProviderRequest(env)))
+    throw new Error("platform-key-monthly-quota-exceeded");
+  const url =
+    COINGECKO_SIMPLE_URL +
+    `?ids=${selected.map(([id]) => id).join(",")}&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true`;
+  const data = await fetchJson(url, { headers: { "x-cg-demo-api-key": apiKey } });
+  return selected
+    .map(([id, asset]) => {
+      const item = data && data[id];
+      if (!item) return null;
+      const usd = parseNumber(item.usd);
+      return quote(asset, usd, "CoinGecko", {
+        changePct: parseNumber(item.usd_24h_change),
+        sourceUrl: url,
+        sourceTime: item.last_updated_at ? new Date(Number(item.last_updated_at) * 1000).toISOString() : null,
+        unit: "coin",
+        currency: "USD",
+        quoteType: "direct",
+      });
+    })
+    .filter(Boolean);
 }
 
 async function providerCryptoBinance(requested = ["bitcoin", "ethereum"]) {
   const mapping = { BTCUSDT: "bitcoin", ETHUSDT: "ethereum" };
-  const symbols = Object.entries(mapping).filter(([, asset]) => requested.includes(asset)).map(([symbol]) => symbol);
+  const symbols = Object.entries(mapping)
+    .filter(([, asset]) => requested.includes(asset))
+    .map(([symbol]) => symbol);
   if (!symbols.length) return [];
   const url = BINANCE_TICKER_URL + "?symbols=" + encodeURIComponent(JSON.stringify(symbols));
   const data = await fetchJson(url);
-  return (Array.isArray(data) ? data : []).map((item) => {
-    const asset = mapping[item && item.symbol];
-    if (!asset) return null;
-    const usdt = parseNumber(item.lastPrice);
-    return quote(asset, usdt, "Binance", {
-      changePct: parseNumber(item.priceChangePercent),
-      sourceUrl: url,
-      sourceTime: null,
-      unit: "coin",
-      currency: "USDT",
-      quoteType: "direct",
-    });
-  }).filter(Boolean);
+  return (Array.isArray(data) ? data : [])
+    .map((item) => {
+      const asset = mapping[item && item.symbol];
+      if (!asset) return null;
+      const usdt = parseNumber(item.lastPrice);
+      return quote(asset, usdt, "Binance", {
+        changePct: parseNumber(item.priceChangePercent),
+        sourceUrl: url,
+        sourceTime: item.closeTime ? new Date(Number(item.closeTime)).toISOString() : null,
+        unit: "coin",
+        currency: "USDT",
+        quoteType: "direct",
+      });
+    })
+    .filter(Boolean);
 }
 
 function nestedNumber(value, keys, depth = 0) {
@@ -247,17 +333,19 @@ async function providerGlobalMetals() {
     palladium: { factor: 1, unit: "gram", divisor: TROY_OUNCE_TO_GRAMS },
     copper: { factor: 1, unit: "gram", divisor: 453.59237 },
   };
-  return Object.entries(conversions).map(([asset, meta]) => {
-    const ounceUsd = parseNumber(row && row[asset]);
-    if (!Number.isFinite(ounceUsd) || ounceUsd <= 0) return null;
-    return quote(asset, ounceUsd * meta.factor / meta.divisor, "Metals.live", {
-      sourceUrl: METALS_LIVE_URL,
-      sourceTime: null,
-      unit: meta.unit,
-      currency: "USD",
-      quoteType: "direct",
-    });
-  }).filter(Boolean);
+  return Object.entries(conversions)
+    .map(([asset, meta]) => {
+      const ounceUsd = parseNumber(row && row[asset]);
+      if (!Number.isFinite(ounceUsd) || ounceUsd <= 0) return null;
+      return quote(asset, (ounceUsd * meta.factor) / meta.divisor, "Metals.live", {
+        sourceUrl: METALS_LIVE_URL,
+        sourceTime: null,
+        unit: meta.unit,
+        currency: "USD",
+        quoteType: "direct",
+      });
+    })
+    .filter(Boolean);
 }
 
 async function providerYahooMetals(requested = ["platinum", "palladium", "copper"]) {
@@ -266,21 +354,36 @@ async function providerYahooMetals(requested = ["platinum", "palladium", "copper
     palladium: { symbol: "PA=F", divisor: TROY_OUNCE_TO_GRAMS },
     copper: { symbol: "HG=F", divisor: 453.59237 },
   };
-  const results = await Promise.allSettled(Object.entries(symbols).filter(([asset]) => requested.includes(asset)).map(async ([asset, meta]) => {
-    const url = YAHOO_METAL_CHART_BASE + encodeURIComponent(meta.symbol) + "?range=1d&interval=1d";
-    const data = await fetchJson(url);
-    const quoteValue = data && data.chart && data.chart.result && data.chart.result[0] && data.chart.result[0].meta && data.chart.result[0].meta.regularMarketPrice;
-    const usd = parseNumber(quoteValue);
-    if (!Number.isFinite(usd) || usd <= 0) throw new Error("Yahoo metal price not found");
-    return quote(asset, usd / meta.divisor, "Yahoo Finance", {
-      sourceUrl: url,
-      sourceTime: data.chart.result[0].meta.regularMarketTime ? new Date(data.chart.result[0].meta.regularMarketTime * 1000).toISOString() : null,
-      unit: "gram",
-      currency: "USD",
-      quoteType: "direct",
-    });
-  }));
-  return results.filter((result) => result.status === "fulfilled").map((result) => result.value).filter(Boolean);
+  const results = await Promise.allSettled(
+    Object.entries(symbols)
+      .filter(([asset]) => requested.includes(asset))
+      .map(async ([asset, meta]) => {
+        const url = YAHOO_METAL_CHART_BASE + encodeURIComponent(meta.symbol) + "?range=1d&interval=1d";
+        const data = await fetchJson(url);
+        const quoteValue =
+          data &&
+          data.chart &&
+          data.chart.result &&
+          data.chart.result[0] &&
+          data.chart.result[0].meta &&
+          data.chart.result[0].meta.regularMarketPrice;
+        const usd = parseNumber(quoteValue);
+        if (!Number.isFinite(usd) || usd <= 0) throw new Error("Yahoo metal price not found");
+        return quote(asset, usd / meta.divisor, "Yahoo Finance", {
+          sourceUrl: url,
+          sourceTime: data.chart.result[0].meta.regularMarketTime
+            ? new Date(data.chart.result[0].meta.regularMarketTime * 1000).toISOString()
+            : null,
+          unit: "gram",
+          currency: "USD",
+          quoteType: "direct",
+        });
+      }),
+  );
+  return results
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value)
+    .filter(Boolean);
 }
 
 async function providerTsetmc() {
@@ -289,12 +392,14 @@ async function providerTsetmc() {
   if (!Number.isFinite(current) || current <= 0) return [];
   const previous = nestedNumber(data, ["xNivInPre", "previousValue", "yesterdayValue", "prevValue"]);
   const changePct = Number.isFinite(previous) && previous > 0 ? (current / previous - 1) * 100 : null;
-  return [quote("bourseIndex", current, "TSETMC", {
-    changePct,
-    sourceUrl: TSETMC_INDEX_URL,
-    unit: "point",
-    currency: "INDEX",
-  })];
+  return [
+    quote("bourseIndex", current, "TSETMC", {
+      changePct,
+      sourceUrl: TSETMC_INDEX_URL,
+      unit: "point",
+      currency: "INDEX",
+    }),
+  ];
 }
 
 async function providerTgjuIndex() {
@@ -319,14 +424,24 @@ async function providerTgjuIndex() {
 
 export function normalizeHistorySeries(value) {
   if (Array.isArray(value)) {
-    return value.map((point) => {
-      if (Array.isArray(point)) return { date: point[0], value: Number(point[1]) };
-      if (!point || typeof point !== "object") return null;
-      return { date: point.date || point.time || point.timestamp || point.t, value: Number(point.close ?? point.value ?? point.price ?? point.c) };
-    }).filter((point) => point && point.date && Number.isFinite(point.value) && point.value > 0);
+    return value
+      .map((point) => {
+        if (Array.isArray(point)) return { date: point[0], value: Number(point[1]) };
+        if (!point || typeof point !== "object") return null;
+        return {
+          date: point.date || point.time || point.timestamp || point.t,
+          value: Number(point.close ?? point.value ?? point.price ?? point.c),
+        };
+      })
+      .filter((point) => point && point.date && Number.isFinite(point.value) && point.value > 0);
   }
   if (value && typeof value === "object") {
-    return Object.entries(value).map(([date, point]) => ({ date, value: Number(point && typeof point === "object" ? point.close ?? point.value ?? point.price : point) })).filter((point) => point.date && Number.isFinite(point.value) && point.value > 0);
+    return Object.entries(value)
+      .map(([date, point]) => ({
+        date,
+        value: Number(point && typeof point === "object" ? (point.close ?? point.value ?? point.price) : point),
+      }))
+      .filter((point) => point.date && Number.isFinite(point.value) && point.value > 0);
   }
   return [];
 }
@@ -347,7 +462,7 @@ function readBalancedArray(text, startIndex) {
       else if (character === quoteChar) quoteChar = null;
       continue;
     }
-    if (character === "\"" || character === "'") {
+    if (character === '"' || character === "'") {
       quoteChar = character;
       continue;
     }
@@ -398,59 +513,115 @@ async function getAuxiliaryMetalData() {
 }
 
 function median(values) {
-  const sorted = values.filter(Number.isFinite).slice().sort((left, right) => left - right);
+  const sorted = values
+    .filter(Number.isFinite)
+    .slice()
+    .sort((left, right) => left - right);
   if (!sorted.length) return null;
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 export function aggregate(asset, quotes) {
-  const valid = quotes.filter((item) => item && item.asset === asset && Number.isFinite(Number(item.price)) && Number(item.price) > 0);
+  const valid = quotes.filter(
+    (item) => item && item.asset === asset && Number.isFinite(Number(item.price)) && Number(item.price) > 0,
+  );
   if (!valid.length) return null;
   const sleeveId = INSTRUMENT_REGISTRY[asset]?.sleeveId || "commodities";
   const configuredTolerance = CONSENSUS_POLICY.agreementTolerancePct[sleeveId];
   const hasAgreementTolerance = Number.isFinite(configuredTolerance);
   const agreementTolerancePct = hasAgreementTolerance ? configuredTolerance : 0;
-  const allPrices = valid.map((item) => Number(item.price));
+  const timedQuotes = valid
+    .map((item) => ({ item, time: new Date(item.observedAt || item.sourceTime || "").getTime() }))
+    .filter((entry) => Number.isFinite(entry.time));
+  const timeWindow = sleeveId === "crypto" ? 5 * 60_000 : sleeveId === "fx" ? 60 * 60_000 : 30 * 60_000;
+  const newestTime = timedQuotes.length ? Math.max(...timedQuotes.map((entry) => entry.time)) : null;
+  const comparisonQuotes = timedQuotes.length
+    ? timedQuotes.filter((entry) => newestTime - entry.time <= timeWindow).map((entry) => entry.item)
+    : valid;
+  const allPrices = comparisonQuotes.map((item) => Number(item.price));
   const center = median(allPrices);
   const mad = median(allPrices.map((price) => Math.abs(price - center)));
   const outlierLimit = 3 * 1.4826 * (mad || 0);
-  const accepted = valid.length >= 3
-    ? valid.filter((item) => Math.abs(Number(item.price) - center) <= outlierLimit)
-    : valid;
+  const accepted =
+    comparisonQuotes.length >= 3
+      ? comparisonQuotes.filter(
+          (item) =>
+            Math.abs(Number(item.price) - center) <= Math.max(outlierLimit, (center * agreementTolerancePct) / 100),
+        )
+      : comparisonQuotes;
   const acceptedPrices = accepted.map((item) => Number(item.price));
-  const spreadPct = acceptedPrices.length > 1
-    ? (Math.max(...acceptedPrices) - Math.min(...acceptedPrices)) / Math.max(median(acceptedPrices), 1) * 100
-    : 0;
+  const spreadPct =
+    acceptedPrices.length > 1
+      ? ((Math.max(...acceptedPrices) - Math.min(...acceptedPrices)) / Math.max(median(acceptedPrices), 1)) * 100
+      : 0;
   const conflicted = accepted.length >= 2 && spreadPct > agreementTolerancePct;
   const usable = conflicted ? [] : accepted;
   const provisional = !CONSENSUS_POLICY.calibrated && hasAgreementTolerance && accepted.length >= 2 && !conflicted;
-  const changes = valid
+  const changes = comparisonQuotes
     .map((item) => item.changePct)
     .filter((value) => value !== null && value !== undefined && value !== "")
     .map(Number)
     .filter(Number.isFinite);
-  const sourceTimes = (usable.length ? usable : accepted).map((item) => item.observedAt || item.sourceTime).filter(Boolean).sort((left, right) => {
-    const leftTime = new Date(left).getTime();
-    const rightTime = new Date(right).getTime();
-    if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
-    return String(left).localeCompare(String(right));
-  });
-  const defaultUnits = { dollar: "TOMAN", gold: "gram", silver: "gram", bitcoin: "coin", ethereum: "coin", tether: "coin", platinum: "gram", palladium: "gram", copper: "gram", bourseIndex: "point" };
-  const quoteTypes = new Set(usable.map((item) => item.quoteType === "derived" ? "derived" : "direct"));
-  const conversionDependencies = [...new Map(valid.flatMap((item) => item.conversionDependencies || []).map((dependency) => [JSON.stringify(dependency), dependency])).values()];
+  const sourceTimes = (usable.length ? usable : accepted)
+    .map((item) => item.observedAt || item.sourceTime)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftTime = new Date(left).getTime();
+      const rightTime = new Date(right).getTime();
+      if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
+      return String(left).localeCompare(String(right));
+    });
+  const defaultUnits = {
+    dollar: "TOMAN",
+    gold: "gram",
+    silver: "gram",
+    bitcoin: "coin",
+    ethereum: "coin",
+    tether: "coin",
+    platinum: "gram",
+    palladium: "gram",
+    copper: "gram",
+    bourseIndex: "point",
+  };
+  const quoteTypes = new Set(usable.map((item) => (item.quoteType === "derived" ? "derived" : "direct")));
+  const conversionDependencies = [
+    ...new Map(
+      accepted
+        .flatMap((item) => item.conversionDependencies || [])
+        .map((dependency) => [JSON.stringify(dependency), dependency]),
+    ).values(),
+  ];
   const degradedDependency = conversionDependencies.some((dependency) => dependency.status !== "healthy");
-  const status = conflicted ? "conflicted" : provisional ? "provisional" : usable.length === 1 || accepted.length < valid.length || degradedDependency ? "degraded" : "healthy";
+  const status = conflicted
+    ? "conflicted"
+    : provisional
+      ? "provisional"
+      : usable.length === 1 ||
+          accepted.length < comparisonQuotes.length ||
+          comparisonQuotes.length < valid.length ||
+          degradedDependency
+        ? "degraded"
+        : "healthy";
   const confidenceRank = { none: 0, low: 1, medium: 2, high: 3 };
-  let confidence = conflicted ? "none" : provisional ? "medium" : usable.length >= 3 && accepted.length === valid.length ? "high" : usable.length >= 2 ? "medium" : "low";
+  let confidence = conflicted
+    ? "none"
+    : provisional
+      ? "medium"
+      : usable.length >= 3 && accepted.length === valid.length
+        ? "high"
+        : usable.length >= 2
+          ? "medium"
+          : "low";
   conversionDependencies.forEach((dependency) => {
-    if ((confidenceRank[dependency.confidence] ?? 1) < confidenceRank[confidence]) confidence = dependency.confidence || "low";
+    if ((confidenceRank[dependency.confidence] ?? 1) < confidenceRank[confidence])
+      confidence = dependency.confidence || "low";
   });
   return {
     price: usable.length ? Math.round(median(usable.map((item) => item.price))) : null,
     changePct: changes.length ? Number(median(changes).toFixed(3)) : null,
-    unit: valid.find((item) => item.unit)?.unit || defaultUnits[asset] || "TOMAN",
-    currency: valid.find((item) => item.currency)?.currency || "TOMAN",
+    unit: comparisonQuotes.find((item) => item.unit)?.unit || defaultUnits[asset] || "TOMAN",
+    currency: comparisonQuotes.find((item) => item.currency)?.currency || "TOMAN",
     sleeveId,
     quoteType: quoteTypes.size > 1 ? "mixed" : quoteTypes.has("derived") ? "derived" : "direct",
     derivedFrom: [...new Set(usable.flatMap((item) => item.derivedFrom || []))],
@@ -465,7 +636,21 @@ export function aggregate(asset, quotes) {
     agreementTolerancePct: hasAgreementTolerance ? agreementTolerancePct : null,
     consensusProvisional: provisional,
     sources: usable.map((item) => item.source),
-    sourceValues: valid.map((item) => ({ source: item.source, price: Math.round(item.price), quoteType: item.quoteType, observedAt: item.observedAt || item.sourceTime || null })),
+    sourceValues: valid.map((item) => ({
+      source: item.source,
+      price: Math.round(item.price),
+      quoteType: item.quoteType,
+      observedAt: item.observedAt || item.sourceTime || null,
+      accepted: accepted.includes(item) && !conflicted,
+      exclusionReason:
+        conflicted && accepted.includes(item)
+          ? "price-disagreement"
+          : accepted.includes(item)
+            ? null
+            : timedQuotes.length && !comparisonQuotes.includes(item)
+              ? "older-observation"
+              : "statistical-outlier",
+    })),
     observedAt: sourceTimes.at(-1) || null,
     retrievedAt: new Date().toISOString(),
     asOf: sourceTimes.at(-1) || null,
@@ -476,7 +661,13 @@ export function parseRequestedAssets(urlLike) {
   const url = urlLike instanceof URL ? urlLike : new URL(String(urlLike || "https://invest-consult.local/api/market"));
   if (!url.searchParams.has("assets")) return null;
   const allowed = new Set([...Object.keys(INSTRUMENT_REGISTRY), "fixedIncome"]);
-  return new Set(url.searchParams.get("assets").split(",").map((asset) => asset.trim()).filter((asset) => allowed.has(asset)));
+  return new Set(
+    url.searchParams
+      .get("assets")
+      .split(",")
+      .map((asset) => asset.trim())
+      .filter((asset) => allowed.has(asset)),
+  );
 }
 
 function conversionDependency(dollarQuote) {
@@ -524,13 +715,23 @@ async function getFixedIncomeMetric() {
   const html = await fetchText(url);
   const effectiveAnnualReturn = parseAnnualReturn(html);
   if (!Number.isFinite(effectiveAnnualReturn)) throw new Error("Annual return not found");
-  return { effectiveAnnualReturn, sourceCount: 1, sources: ["Official provider page"], sourceUrl: url, observedAt: null, retrievedAt: new Date().toISOString() };
+  return {
+    effectiveAnnualReturn,
+    sourceCount: 1,
+    sources: ["Official provider page"],
+    sourceUrl: url,
+    observedAt: null,
+    retrievedAt: new Date().toISOString(),
+  };
 }
 
 export async function onRequestGet(context = {}) {
+  const quota = await consumeRouteQuota(context, "market");
+  if (quota.error) return quota.error;
   const startedAt = Date.now();
   const now = new Date().toISOString();
   const requestUrl = context.request?.url || "https://invest-consult.local/api/market";
+  const providerKey = selectedProviderKey(context.request, context.env);
   const selected = parseRequestedAssets(requestUrl) || new Set(DEFAULT_MARKET_ASSETS);
   const derivedAssets = new Set(["gold", "silver", "bitcoin", "ethereum", "tether", "platinum", "palladium", "copper"]);
   const needsConversion = [...selected].some((asset) => derivedAssets.has(asset));
@@ -543,16 +744,28 @@ export async function onRequestGet(context = {}) {
   ].filter((provider) => provider.enabled);
   const wantsAny = (...assets) => assets.some((asset) => selected.has(asset));
   const extendedDefinitions = [
-    { id: "coinGecko", run: () => providerCrypto([...selected]), enabled: wantsAny("bitcoin", "ethereum", "tether") },
+    {
+      id: "coinGecko",
+      run: () => providerCrypto([...selected], providerKey.key, providerKey.userSupplied, context.env),
+      enabled: wantsAny("bitcoin", "ethereum", "tether"),
+    },
     { id: "binance", run: () => providerCryptoBinance([...selected]), enabled: wantsAny("bitcoin", "ethereum") },
     { id: "metalsLive", run: providerGlobalMetals, enabled: wantsAny("silver", "platinum", "palladium", "copper") },
-    { id: "yahooMetals", run: () => providerYahooMetals([...selected]), enabled: wantsAny("platinum", "palladium", "copper") },
+    {
+      id: "yahooMetals",
+      run: () => providerYahooMetals([...selected]),
+      enabled: wantsAny("platinum", "palladium", "copper"),
+    },
     { id: "tsetmc", run: providerTsetmc, enabled: selected.has("bourseIndex") },
   ].filter((provider) => provider.enabled);
   const activeDefinitions = [...primaryDefinitions, ...extendedDefinitions];
   const providerRuns = activeDefinitions.map(async (provider) => {
     const result = await provider.run();
-    return { id: provider.id, quotes: Array.isArray(result) ? result : result.quotes || [], history: Array.isArray(result) ? {} : result.history || {} };
+    return {
+      id: provider.id,
+      quotes: Array.isArray(result) ? result : result.quotes || [],
+      history: Array.isArray(result) ? {} : result.history || {},
+    };
   });
   const fixedIncomeRequest = selected.has("fixedIncome") ? getFixedIncomeMetric() : null;
   const [settledProviders, fixedIncomeSettled] = await Promise.all([
@@ -581,8 +794,9 @@ export async function onRequestGet(context = {}) {
     const result = providerResults.get(id);
     return result?.status === "fulfilled" ? result.value.quotes : [];
   });
-  const fallbackAssets = [...baseAssets].filter((asset) => ["dollar", "gold"].includes(asset)
-    && aggregate(asset, primaryQuotes)?.status !== "healthy");
+  const fallbackAssets = [...baseAssets].filter(
+    (asset) => ["dollar", "gold"].includes(asset) && aggregate(asset, primaryQuotes)?.status !== "healthy",
+  );
   let fallbackResult = { status: "skipped", quoteCount: 0 };
   if (fallbackAssets.length) {
     try {
@@ -602,9 +816,9 @@ export async function onRequestGet(context = {}) {
   });
   const convertedGlobalQuotes = rawGlobalQuotes.map((item) => convertGlobalQuote(item, preliminaryDollar));
   const excludedCurrencyQuotes = rawGlobalQuotes.filter((item, index) => !convertedGlobalQuotes[index]);
-  const currencyBlockedAssets = new Set(excludedCurrencyQuotes
-    .filter((item) => item.currency === "USD")
-    .map((item) => item.asset));
+  const currencyBlockedAssets = new Set(
+    excludedCurrencyQuotes.filter((item) => item.currency === "USD").map((item) => item.asset),
+  );
   const globalQuotes = convertedGlobalQuotes.filter(Boolean);
   const referenceQuotes = ["tsetmc", "tgjuIndex"].flatMap((id) => {
     const result = providerResults.get(id);
@@ -621,10 +835,20 @@ export async function onRequestGet(context = {}) {
   const auxiliaryRawQuotes = [];
   if (auxiliaryAssets.length) {
     if (auxiliary && auxiliaryAssets.includes("gold") && isPositiveNumber(auxiliary.goldUsdPerGram)) {
-      auxiliaryRawQuotes.push({ asset: "gold", price: auxiliary.goldUsdPerGram, source: "Auxiliary metal source", currency: "USD" });
+      auxiliaryRawQuotes.push({
+        asset: "gold",
+        price: auxiliary.goldUsdPerGram,
+        source: "Auxiliary metal source",
+        currency: "USD",
+      });
     }
     if (auxiliary && auxiliaryAssets.includes("silver") && isPositiveNumber(auxiliary.silverUsdPerGram)) {
-      auxiliaryRawQuotes.push({ asset: "silver", price: auxiliary.silverUsdPerGram, source: "Auxiliary metal source", currency: "USD" });
+      auxiliaryRawQuotes.push({
+        asset: "silver",
+        price: auxiliary.silverUsdPerGram,
+        source: "Auxiliary metal source",
+        currency: "USD",
+      });
     }
     auxiliaryResult = { status: auxiliary ? "fulfilled" : "rejected", quoteCount: auxiliaryRawQuotes.length };
   }
@@ -678,18 +902,27 @@ export async function onRequestGet(context = {}) {
   };
 
   const history = {};
-  const tgjuHistory = providerResults.get("providerA")?.status === "fulfilled"
-    ? providerResults.get("providerA").value.history
-    : {};
+  const tgjuHistory =
+    providerResults.get("providerA")?.status === "fulfilled" ? providerResults.get("providerA").value.history : {};
   ["dollar", "gold", "silver"].forEach((asset) => {
     const series = tgjuHistory[asset] || [];
-    if (selected.has(asset) && series.length) history[asset] = series.map((point) => ({ date: point.date, price: Math.round(point.value), source: "Provider A" }));
+    if (selected.has(asset) && series.length)
+      history[asset] = series.map((point) => ({
+        date: point.date,
+        price: Math.round(point.value),
+        source: "Provider A",
+      }));
   });
-  const tgjuIndexHistory = providerResults.get("tgjuIndex")?.status === "fulfilled"
-    ? providerResults.get("tgjuIndex").value.history?.bourseIndex || []
-    : [];
+  const tgjuIndexHistory =
+    providerResults.get("tgjuIndex")?.status === "fulfilled"
+      ? providerResults.get("tgjuIndex").value.history?.bourseIndex || []
+      : [];
   if (selected.has("bourseIndex") && tgjuIndexHistory.length) {
-    history.bourseIndex = tgjuIndexHistory.map((point) => ({ date: point.date, price: Math.round(point.value), source: "TGJU" }));
+    history.bourseIndex = tgjuIndexHistory.map((point) => ({
+      date: point.date,
+      price: Math.round(point.value),
+      source: "TGJU",
+    }));
   }
   const funds = fixedIncome ? { fixedIncome } : {};
   const diagnostics = {
@@ -698,53 +931,74 @@ export async function onRequestGet(context = {}) {
     interactiveBudgetMs: INTERACTIVE_BUDGET_MS,
     responseTimeMs: Date.now() - startedAt,
     providers: providerDiagnostics,
-    assets: Object.fromEntries([...selected].filter((asset) => asset !== "fixedIncome").map((asset) => [asset, {
-      attempted: [...quotes, ...excludedCurrencyQuotes, ...(!preliminaryDollar?.price ? auxiliaryRawQuotes : [])].filter((item) => item.asset === asset).length,
-      successful: assets[asset]?.sourceCount || 0,
-      excludedForCurrency: [...excludedCurrencyQuotes, ...(!preliminaryDollar?.price ? auxiliaryRawQuotes : [])].filter((item) => item.asset === asset).length,
-      status: assets[asset]?.status || "unavailable",
-      reason: !assets[asset] && currencyBlockedAssets.has(asset)
-        ? preliminaryDollar?.status === "conflicted" ? "currency_conflicted" : "currency_unavailable"
-        : null,
-    }])),
-    funds: selected.has("fixedIncome") ? {
-      fixedIncome: {
-        attempted: 1,
-        successful: fixedIncome ? 1 : 0,
-        status: fixedIncome ? "available" : "unavailable",
-      },
-    } : {},
+    assets: Object.fromEntries(
+      [...selected]
+        .filter((asset) => asset !== "fixedIncome")
+        .map((asset) => [
+          asset,
+          {
+            attempted: [
+              ...quotes,
+              ...excludedCurrencyQuotes,
+              ...(!preliminaryDollar?.price ? auxiliaryRawQuotes : []),
+            ].filter((item) => item.asset === asset).length,
+            successful: assets[asset]?.sourceCount || 0,
+            excludedForCurrency: [
+              ...excludedCurrencyQuotes,
+              ...(!preliminaryDollar?.price ? auxiliaryRawQuotes : []),
+            ].filter((item) => item.asset === asset).length,
+            status: assets[asset]?.status || "unavailable",
+            reason:
+              !assets[asset] && currencyBlockedAssets.has(asset)
+                ? preliminaryDollar?.status === "conflicted"
+                  ? "currency_conflicted"
+                  : "currency_unavailable"
+                : null,
+          },
+        ]),
+    ),
+    funds: selected.has("fixedIncome")
+      ? {
+          fixedIncome: {
+            attempted: 1,
+            successful: fixedIncome ? 1 : 0,
+            status: fixedIncome ? "available" : "unavailable",
+          },
+        }
+      : {},
   };
 
-  return new Response(JSON.stringify({
-    updatedAt: now,
-    assets,
-    funds,
-    history,
-    catalog: { sleeves: SLEEVE_REGISTRY, instruments: INSTRUMENT_REGISTRY },
-    diagnostics,
-    sources: {
-      providers: [
-        { id: "providerA", name: "TGJU", url: "https://www.tgju.org/" },
-        { id: "providerB", name: "Bonbast", url: BONBAST_BASE + "/" },
-        { id: "providerC", name: "Navasan public mirror", url: "https://github.com/HosseinOdd/Navasan-API" },
-        { id: "auxiliary", name: "ChartGoldPrice", url: "https://www.chartgoldprice.com/gold-price-api" },
-        { id: "coinGecko", name: "CoinGecko", url: COINGECKO_SIMPLE_URL },
-        { id: "binance", name: "Binance public ticker", url: BINANCE_TICKER_URL },
-        { id: "metalsLive", name: "Metals.live", url: METALS_LIVE_URL },
-        { id: "yahooMetals", name: "Yahoo Finance futures chart", url: YAHOO_METAL_CHART_BASE },
-        { id: "tsetmc", name: "TSETMC", url: TSETMC_INDEX_URL },
-        { id: "tgjuIndex", name: "TGJU Tehran general index", url: TGJU_BASE + "gc30" },
-      ],
-      fixedIncome: "https://charisma.ir/",
-      history: "https://www.tgju.org/",
+  return new Response(
+    JSON.stringify({
+      updatedAt: now,
+      assets,
+      funds,
+      history,
+      catalog: { sleeves: SLEEVE_REGISTRY, instruments: INSTRUMENT_REGISTRY },
+      diagnostics,
+      sources: {
+        providers: [
+          { id: "providerA", name: "TGJU", url: "https://www.tgju.org/" },
+          { id: "providerB", name: "Bonbast", url: BONBAST_BASE + "/" },
+          { id: "providerC", name: "Navasan public mirror", url: "https://github.com/HosseinOdd/Navasan-API" },
+          { id: "auxiliary", name: "ChartGoldPrice", url: "https://www.chartgoldprice.com/gold-price-api" },
+          { id: "coinGecko", name: "CoinGecko", url: COINGECKO_SIMPLE_URL },
+          { id: "binance", name: "Binance public ticker", url: BINANCE_TICKER_URL },
+          { id: "metalsLive", name: "Metals.live", url: METALS_LIVE_URL },
+          { id: "yahooMetals", name: "Yahoo Finance futures chart", url: YAHOO_METAL_CHART_BASE },
+          { id: "tsetmc", name: "TSETMC", url: TSETMC_INDEX_URL },
+          { id: "tgjuIndex", name: "TGJU Tehran general index", url: TGJU_BASE + "gc30" },
+        ],
+        fixedIncome: "https://charisma.ir/",
+        history: "https://www.tgju.org/",
+      },
+      note: "قیمت‌های داخلی به تومان نرمال‌سازی می‌شوند. قیمت‌های مشتق‌شده با منبع تبدیل مشخص هستند؛ قیمت متعارض برای ارزش‌گذاری استفاده نمی‌شود. دارایی‌های شاخصی بورس به‌عنوان مرجع نمایش داده می‌شوند و قیمت آینده پیش‌بینی نمی‌شود.",
+    }),
+    {
+      headers: {
+        "content-type": "application/json; charset=UTF-8",
+        "cache-control": "private, no-store",
+      },
     },
-    note: "قیمت‌های داخلی به تومان نرمال‌سازی می‌شوند. قیمت‌های مشتق‌شده با منبع تبدیل مشخص هستند؛ قیمت متعارض برای ارزش‌گذاری استفاده نمی‌شود. دارایی‌های شاخصی بورس به‌عنوان مرجع نمایش داده می‌شوند و قیمت آینده پیش‌بینی نمی‌شود.",
-  }), {
-    headers: {
-      "content-type": "application/json; charset=UTF-8",
-      "cache-control": "public, max-age=60, s-maxage=60",
-      "access-control-allow-origin": "*",
-    },
-  });
+  );
 }

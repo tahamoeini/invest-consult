@@ -12,17 +12,16 @@ It is a mathematical decision-support engine. It does not use an AI model to pre
 - All Iranian currency inputs, market values, calculations, and exports use تومان. Legacy browser data and legacy exports are converted once on import; gold and silver quantities remain grams.
 - Salary, profile inputs, recommendation snapshots, and history remain in the browser's local storage.
 - History and the personal portfolio ledger can be exported as a versioned JSON file. Imported recommendation records merge by timestamp; an imported portfolio ledger replaces the current one only after confirmation.
-- A personal portfolio tracker supports a simple current-balance entry and an advanced transaction ledger. It never stores only a mutable current amount.
+- A personal portfolio tracker has one primary dated transaction-entry form and a separate advanced ledger for transfers, corrections, and cash flows. Manual prices are price history only; they never create transactions.
 - Portfolio values are calculated from holdings at a selected date and the best available immutable market-history point. Missing history remains missing rather than being backfilled.
 - Corrections and tracking restarts are versioned and audited. The interface confirms before a change can affect historical portfolio calculations.
 - A monthly recommendation based on salary, an optional age input, goal, horizon, risk tolerance, income stability, and emergency-fund status.
 - Separate net-worth, investable-capital, and liquid-asset totals, with emergency-reserve coverage shown in months of essential expenses.
 - New-contribution rebalancing: the tool shows target/current drift and directs the next contribution toward underweight supported categories instead of telling the user what to sell. Other sleeves are identified as excluded from that calculation.
-- A goal planner estimates success probability, P10/P50/P90 outcomes, projected inflation-adjusted target value, and required monthly contribution using the same simulation model.
-- A deterministic plan simulation with contribution growth, inflation adjustment, allocation, and rebalancing.
-- Historical backtesting with total invested, final value, CAGR-style annualized outcome, inflation-adjusted return, maximum drawdown, volatility, Sortino, and best/worst starting periods. Sharpe is in the advanced report and identifies its fixed-income reference rate.
+- Standalone simulations and backtests use only their own form inputs, public market data, and configured model assumptions. They do not read the user's portfolio or saved recommendation history, and never write to either.
+- Historical backtesting uses complete, continuously observed price periods only. Missing asset history makes the run unavailable and is reported; assumptions are never substituted as observed history. Available results include total invested, final value, annualized outcome, inflation-adjusted return, maximum drawdown, volatility, Sortino, and best/worst starting periods.
 - Monte Carlo output with P10, P50, and P90 nominal and inflation-adjusted outcomes. The baseline is retained; EWMA and three-month block-bootstrap methods are gated by walk-forward validation.
-- Simulation and backtest execute lazily in a browser Web Worker, keeping the interface responsive and cancelling stale calculations on navigation or plan changes.
+- Simulations execute in a browser Web Worker, keeping the interface responsive and cancelling stale calculations on navigation.
 - Clear labels when a calculation uses observed historical data versus model assumptions.
 
 ## Architecture
@@ -40,6 +39,10 @@ src/market/catalog.js      Instrument and sleeve registries
 src/portfolio.js           Portfolio ledger, versioning, valuation, and performance metrics
 src/history.js             Versioned recommendation and portfolio export/import validation
 functions/api/market.js    Cloudflare Pages Function for selected-asset quotes and quality aggregation
+functions/api/history.js   Cloudflare Pages Function for observed historical data
+functions/api/session.js   Signed, HttpOnly browser-session bootstrap
+functions/api/inflation.js World Bank annual CPI inflation fallback
+functions/api/migrations/ D1 session quota and platform-key usage tables
 content/fa.json            Persian UI copy
 tests/engine.test.js       Node built-in test suite
 ```
@@ -54,13 +57,13 @@ The personal portfolio has three separate layers:
 2. The portfolio ledger stores opening balances, buys, sells, dividends, transfers, adjustments, deposits, and withdrawals. Each record has a date, creation timestamp, source, optional note, and audit reference.
 3. The valuation engine replays the active portfolio version to any date, then calculates quantity multiplied by the market price available on that date. Manual تومان-denominated assets use unit price one because their entered quantity is already a value.
 
-Simple mode creates opening-balance transactions. When an existing simple balance changes, the user chooses a real purchase/sale, a correction, or a new tracking baseline. A correction keeps the original ledger and adds a dated adjustment; a restart closes the current version and creates a new baseline while preserving the previous version for audit.
+The primary form records an opening balance or purchase with its transaction time. Advanced corrections keep the original ledger and add a dated adjustment; a tracking restart closes the current version and creates a new baseline while preserving the previous version for audit.
 
 The tracker reports current value, net invested amount, profit/loss, cash-flow-aware annualized return when it converges, inflation-adjusted value and return, allocation percentage, the tracking start date, and data-quality warnings. Portfolio charts begin at the first real ledger entry and show gaps when a historical price is unavailable.
 
 ## Market data design
 
-The Pages Function uses independent public providers:
+The Pages Functions use independent public providers:
 
 - Provider A: TGJU profile pages.
 - Provider B: Bonbast public data request.
@@ -69,7 +72,7 @@ The Pages Function uses independent public providers:
 
 Each quote distinguishes direct from derived price, upstream observation time from retrieval time, and source provenance. Retrieval time is never presented as the market observation time. Binance BTCUSDT/ETHUSDT values are not converted as USD; they stay out of Toman aggregation until a verified USDT/TOMAN rate is available. Requests can select allow-listed assets, and conversion dependencies are fetched server-side. Providers run concurrently with bounded timeouts and fallback sources are called only when needed. The endpoint returns partial data when some sources fail.
 
-A single source is shown with low confidence. Two-source disagreement is marked conflicted until class-specific agreement thresholds are calibrated. Three or more sources use median/MAD outlier detection. Conflicted prices are excluded from portfolio valuation. The response includes policy version, source counts, values, and response-time diagnostics; its initial interactive budget is 3.5 seconds.
+A single source is shown with low confidence. Quotes are grouped by observation time before comparison; simultaneous values use median/MAD outlier screening and class-specific agreement thresholds. Conflicted prices are excluded from portfolio valuation. The response includes policy version, source counts, values, and response-time diagnostics; its initial interactive budget is 3.5 seconds.
 
 The application does not replace a failed source with a stale cached quote or a fabricated value. The browser may display the last complete response as a clearly labelled cache fallback when the endpoint itself is unavailable.
 
@@ -87,7 +90,7 @@ The simulation applies monthly contributions, annual contribution growth, nomina
 
 ### Historical backtest
 
-The engine converts available provider history to monthly returns and tests every possible starting period for the selected horizon. If a public history is missing for an asset, the engine uses the configured model assumption for that asset and marks the result as estimated. This avoids presenting a partial history as a complete market record.
+The engine converts available provider history to monthly returns and tests every possible starting period for the selected horizon. Each reported period must have continuous observed data for every selected asset. If an asset history is absent or a monthly observation is missing, that period is excluded; if no complete period remains, the run is unavailable and identifies the missing assets. Model assumptions are not used to fill historical gaps.
 
 The reported CAGR is a cash-flow-aware annualized outcome when the internal monthly IRR converges; otherwise the engine uses a documented total-invested fallback. Maximum drawdown is calculated from the simulated portfolio value path.
 
@@ -104,7 +107,10 @@ The default assumptions are intentionally visible in `src/engine.js` and are not
 The static page can be opened directly, but `/api/market` requires the Pages Functions runtime.
 
 ```bash
-npm test
+npm install
+npm run fix
+npm run format:check
+npm run lint
 npm run check
 npx wrangler pages dev . --compatibility-date=2026-09-18
 ```
@@ -113,7 +119,7 @@ Open the local URL printed by Wrangler.
 
 ## Deploy with Cloudflare Pages and GitHub
 
-Cloudflare Pages Functions run server-side code at the edge, so the static page and `/api/market` can be deployed from one repository. See the official [Cloudflare Pages Functions documentation](https://developers.cloudflare.com/pages/functions/).
+Cloudflare Pages Functions run server-side code at the edge, so the static page and `/api/*` endpoints can be deployed from one repository. Follow the [market API setup guide](docs/cloudflare-market-api.md) to configure the signed session, D1 quotas, and provider secrets. See the official [Cloudflare Pages Functions documentation](https://developers.cloudflare.com/pages/functions/).
 
 1. Open **Workers & Pages** in Cloudflare.
 2. Choose **Create application** and select **Pages**.
@@ -122,7 +128,7 @@ Cloudflare Pages Functions run server-side code at the edge, so the static page 
 5. Use these build settings:
    - Framework preset: `None`
    - Root directory: empty
-   - Build command: `npm test && npm run check`
+   - Build command: `npm run format:check && npm run lint && npm test && npm run check`
    - Build output directory: `.`
 6. Deploy.
 7. Test the function:
@@ -131,9 +137,9 @@ Cloudflare Pages Functions run server-side code at the edge, so the static page 
 https://YOUR-PAGES-DOMAIN.pages.dev/api/market
 ```
 
-The response should contain `updatedAt`, `assets`, `funds`, `history`, `diagnostics`, and `sources`.
+The response should contain `updatedAt`, `assets`, `funds`, `history`, `diagnostics`, and `sources`. First visit must obtain a signed `/api/session` cookie. If the D1 binding or signing secret is missing, the API returns a configuration error instead of serving unmetered provider calls.
 
-If the dashboard requires a non-empty build command, use `npm test && npm run check`. Do not put `wrangler pages deploy` inside the Pages build command.
+If the dashboard requires a non-empty build command, use `npm run format:check && npm run lint && npm test && npm run check`. Do not put `wrangler pages deploy` inside the Pages build command.
 
 ## Verification checklist
 
@@ -150,7 +156,7 @@ Before publishing, also verify:
 - Salary and local history are not present in any network request.
 - Exported history can be imported into an empty browser and duplicate timestamps are not duplicated.
 - The UI remains usable on a narrow mobile viewport.
-- A sparse historical response is labelled as estimated in the backtest and Monte Carlo sections.
+- A partial historical response is excluded from backtest results and model-based future estimates are labelled as such.
 
 ## Limitations
 

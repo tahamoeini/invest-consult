@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregate, extractTgjuChartData, normalizeMetalHistory, normalizeTgjuHistory, onRequestGet, parseRequestedAssets } from "../functions/api/market.js";
+import {
+  aggregate,
+  extractTgjuChartData,
+  normalizeMetalHistory,
+  normalizeTgjuHistory,
+  onRequestGet,
+  parseRequestedAssets,
+} from "../functions/api/market.js";
 
 test("metal history converts troy-ounce closes to grams", () => {
   const [gold] = normalizeMetalHistory([{ date: "2026-09-18", close: 4379.74 }]);
@@ -14,7 +21,10 @@ test("metal history accepts object-shaped source points", () => {
 
 test("TGJU chart history parses balanced arrays and converts rial to toman", () => {
   const html = `$("#ChartBlock-3").msHighcharts({ chartData: [[1700000000000, 233630000],[1700086400000, 234000000]], tooltipTitle: 'قیمت', chartType: "area" });`;
-  assert.deepEqual(extractTgjuChartData(html), [[1700000000000, 233630000], [1700086400000, 234000000]]);
+  assert.deepEqual(extractTgjuChartData(html), [
+    [1700000000000, 233630000],
+    [1700086400000, 234000000],
+  ]);
   assert.deepEqual(normalizeTgjuHistory(extractTgjuChartData(html)), [
     { date: 1700000000000, value: 23363000 },
     { date: 1700086400000, value: 23400000 },
@@ -61,7 +71,10 @@ test("selected crypto requests fetch only that instrument and preserve partial d
       return new Response('<td data-col="info.last_trade.PDrCotVal">500000</td>', { status: 200 });
     }
     if (url.hostname === "www.bonbast.com" && options.method !== "POST") {
-      return new Response(`$.post('/json', {param: "token"});`, { status: 200, headers: { "set-cookie": "session=one" } });
+      return new Response(`$.post('/json', {param: "token"});`, {
+        status: 200,
+        headers: { "set-cookie": "session=one" },
+      });
     }
     if (url.hostname === "www.bonbast.com") {
       return new Response(JSON.stringify({ usd1: "50000", gol18: "40000000" }), { status: 200 });
@@ -109,19 +122,32 @@ test("fixture FX and gold quotes produce provisional values and permit USD conve
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.hostname === "www.tgju.org") {
       const price = url.pathname.endsWith("price_dollar_rl") ? "2,317,050" : "237,659,000";
-      return new Response(`<td data-col="info.last_trade.PDrCotVal">${price}</td><span id="server-time" data-value="2026-09-23T18:04:00.000Z"></span>`, { status: 200 });
+      return new Response(
+        `<td data-col="info.last_trade.PDrCotVal">${price}</td><span id="server-time" data-value="2026-09-23T18:04:00.000Z"></span>`,
+        { status: 200 },
+      );
     }
-    if (url.hostname === "www.bonbast.com" && options.method !== "POST") return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
-    if (url.hostname === "www.bonbast.com") return new Response(JSON.stringify({ usd1: "231500", gol18: "23883835" }), { status: 200 });
-    if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("fiat.json")) return new Response(JSON.stringify({ usd: { value: "232000", date: 1780000000 } }), { status: 200 });
-    if (url.hostname === "raw.githubusercontent.com") return new Response(JSON.stringify({ "18ayar": { value: "23777640", date: 1780000000 } }), { status: 200 });
-    if (url.hostname === "api.coingecko.com") return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
+    if (url.hostname === "www.bonbast.com" && options.method !== "POST")
+      return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
+    if (url.hostname === "www.bonbast.com")
+      return new Response(JSON.stringify({ usd1: "231500", gol18: "23883835" }), { status: 200 });
+    if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("fiat.json"))
+      return new Response(JSON.stringify({ usd: { value: "232000", date: 1780000000 } }), { status: 200 });
+    if (url.hostname === "raw.githubusercontent.com")
+      return new Response(JSON.stringify({ "18ayar": { value: "23777640", date: 1780000000 } }), { status: 200 });
+    if (url.hostname === "api.coingecko.com")
+      return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
     if (url.hostname === "api.binance.com") throw new Error("Binance unavailable");
-    if (url.hostname === "www.chartgoldprice.com") return new Response(JSON.stringify({ prices: { gold: { gram: 0 }, silver: { gram: 0 } }, history: {} }), { status: 200 });
+    if (url.hostname === "www.chartgoldprice.com")
+      return new Response(JSON.stringify({ prices: { gold: { gram: 0 }, silver: { gram: 0 } }, history: {} }), {
+        status: 200,
+      });
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=dollar,gold,bitcoin") });
+    const response = await onRequestGet({
+      request: new Request("https://app.test/api/market?assets=dollar,gold,bitcoin"),
+    });
     const data = await response.json();
     assert.equal(data.assets.dollar.price, 231705);
     assert.equal(data.assets.dollar.status, "provisional");
@@ -144,12 +170,19 @@ test("USDT exchange pairs are not converted as if USDT were USD cash", async () 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
-    if (url.hostname === "www.tgju.org") return new Response('<td data-col="info.last_trade.PDrCotVal">500000</td>', { status: 200 });
-    if (url.hostname === "www.bonbast.com" && options.method !== "POST") return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
+    if (url.hostname === "www.tgju.org")
+      return new Response('<td data-col="info.last_trade.PDrCotVal">500000</td>', { status: 200 });
+    if (url.hostname === "www.bonbast.com" && options.method !== "POST")
+      return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
     if (url.hostname === "www.bonbast.com") return new Response(JSON.stringify({ usd1: "50000" }), { status: 200 });
-    if (url.hostname === "api.coingecko.com") return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
-    if (url.hostname === "api.binance.com") return new Response(JSON.stringify([{ symbol: "BTCUSDT", lastPrice: "65000", priceChangePercent: "2" }]), { status: 200 });
-    if (url.hostname === "raw.githubusercontent.com") return new Response(JSON.stringify({ usd: { value: "50000", date: 1780000000 } }), { status: 200 });
+    if (url.hostname === "api.coingecko.com")
+      return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
+    if (url.hostname === "api.binance.com")
+      return new Response(JSON.stringify([{ symbol: "BTCUSDT", lastPrice: "65000", priceChangePercent: "2" }]), {
+        status: 200,
+      });
+    if (url.hostname === "raw.githubusercontent.com")
+      return new Response(JSON.stringify({ usd: { value: "50000", date: 1780000000 } }), { status: 200 });
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
@@ -168,7 +201,8 @@ test("USDT exchange pairs are not converted as if USDT were USD cash", async () 
 
 test("TSETMC retrieval time is not misreported as the market observation time", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ indexValue: 2000000, previousValue: 1990000 }), { status: 200 });
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ indexValue: 2000000, previousValue: 1990000 }), { status: 200 });
   try {
     const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bourseIndex") });
     const data = await response.json();
@@ -186,7 +220,10 @@ test("TGJU gc30 supplies Tehran index points and history when TSETMC fails", asy
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.hostname === "cdn.tsetmc.com") throw new Error("TSETMC unavailable");
     if (url.hostname === "www.tgju.org" && url.pathname.endsWith("gc30")) {
-      return new Response(`<span data-col="info.last_trade.PDrCotVal">7,167,457</span><span id="server-time" data-value="${indexTime}"></span>$("#ChartBlock-3").msHighcharts({ chartData: [[1790181900000,7167000],[1790185500000,7167457]], chartType: "area" });`, { status: 200 });
+      return new Response(
+        `<span data-col="info.last_trade.PDrCotVal">7,167,457</span><span id="server-time" data-value="${indexTime}"></span>$("#ChartBlock-3").msHighcharts({ chartData: [[1790181900000,7167000],[1790185500000,7167457]], chartType: "area" });`,
+        { status: 200 },
+      );
     }
     throw new Error(`Unexpected request: ${url.href}`);
   };
@@ -198,7 +235,10 @@ test("TGJU gc30 supplies Tehran index points and history when TSETMC fails", asy
     assert.equal(data.assets.bourseIndex.observedAt, indexTime);
     assert.equal(data.diagnostics.providers.tsetmc.status, "rejected");
     assert.deepEqual(data.diagnostics.providers.tgjuIndex, { status: "fulfilled", quoteCount: 1 });
-    assert.deepEqual(data.history.bourseIndex.map((point) => point.price), [7167000, 7167457]);
+    assert.deepEqual(
+      data.history.bourseIndex.map((point) => point.price),
+      [7167000, 7167457],
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -210,7 +250,10 @@ test("TGJU index history remains available as a prior reading when its current q
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.hostname === "cdn.tsetmc.com") return new Response(JSON.stringify({}), { status: 200 });
     if (url.hostname === "www.tgju.org" && url.pathname.endsWith("gc30")) {
-      return new Response('$("#ChartBlock-3").msHighcharts({ chartData: [[1790181900000,7167000]], chartType: "area" });', { status: 200 });
+      return new Response(
+        '$("#ChartBlock-3").msHighcharts({ chartData: [[1790181900000,7167000]], chartType: "area" });',
+        { status: 200 },
+      );
     }
     throw new Error(`Unexpected request: ${url.href}`);
   };
@@ -255,7 +298,10 @@ test("gold auxiliary quotes are fetched only after primary and fallback sources 
       return new Response(`<td data-col="info.last_trade.PDrCotVal">${value}</td>`, { status: 200 });
     }
     if (url.hostname === "www.bonbast.com" && options.method !== "POST") {
-      return new Response(`$.post('/json', {param: "token"});`, { status: 200, headers: { "set-cookie": "session=one" } });
+      return new Response(`$.post('/json', {param: "token"});`, {
+        status: 200,
+        headers: { "set-cookie": "session=one" },
+      });
     }
     if (url.hostname === "www.bonbast.com") {
       return new Response(JSON.stringify({ usd1: "50000", gol18: "41000000" }), { status: 200 });
@@ -267,7 +313,9 @@ test("gold auxiliary quotes are fetched only after primary and fallback sources 
       return new Response(JSON.stringify({ "18ayar": { value: "40500000", date: 1770000000 } }), { status: 200 });
     }
     if (url.hostname === "www.chartgoldprice.com") {
-      return new Response(JSON.stringify({ prices: { gold: { gram: 1080 }, silver: { gram: 1 } }, history: {} }), { status: 200 });
+      return new Response(JSON.stringify({ prices: { gold: { gram: 1080 }, silver: { gram: 1 } }, history: {} }), {
+        status: 200,
+      });
     }
     throw new Error(`Unexpected request: ${url.href}`);
   };
@@ -286,15 +334,16 @@ test("gold auxiliary quotes are fetched only after primary and fallback sources 
 
 test("primary, fallback, and auxiliary provider timeouts return within the interactive budget", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (_input, { signal } = {}) => await new Promise((_resolve, reject) => {
-    const abort = () => {
-      const error = new Error("aborted");
-      error.name = "AbortError";
-      reject(error);
-    };
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
-  });
+  globalThis.fetch = async (_input, { signal } = {}) =>
+    await new Promise((_resolve, reject) => {
+      const abort = () => {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      };
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+    });
   try {
     const startedAt = Date.now();
     const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=gold") });
@@ -315,7 +364,9 @@ test("fixed income diagnostics report the fund separately from instrument quotes
   let html = "<p>بازده مؤثر سالانه 40%</p>";
   globalThis.fetch = async () => new Response(html, { status: 200 });
   try {
-    const successResponse = await onRequestGet({ request: new Request("https://app.test/api/market?assets=fixedIncome") });
+    const successResponse = await onRequestGet({
+      request: new Request("https://app.test/api/market?assets=fixedIncome"),
+    });
     const success = await successResponse.json();
     assert.equal(success.funds.fixedIncome.effectiveAnnualReturn, 40);
     assert.equal(success.assets.fixedIncome, undefined);
@@ -324,7 +375,9 @@ test("fixed income diagnostics report the fund separately from instrument quotes
     assert.deepEqual(success.diagnostics.providers.fixedIncome, { status: "fulfilled", quoteCount: 1 });
 
     html = "<p>اطلاعات بازده منتشر نشده است.</p>";
-    const failedResponse = await onRequestGet({ request: new Request("https://app.test/api/market?assets=fixedIncome") });
+    const failedResponse = await onRequestGet({
+      request: new Request("https://app.test/api/market?assets=fixedIncome"),
+    });
     const failed = await failedResponse.json();
     assert.deepEqual(failed.funds, {});
     assert.deepEqual(failed.diagnostics.funds.fixedIncome, { attempted: 1, successful: 0, status: "unavailable" });
@@ -352,7 +405,8 @@ test("derived quote diagnostics distinguish blocked currency conversion from pro
         if (dollarStatus === "unavailable") throw new Error("Navasan unavailable");
         return new Response(JSON.stringify({ usd: { value: "700000", date: 1770000000 } }), { status: 200 });
       }
-      if (url.hostname === "api.coingecko.com") return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
+      if (url.hostname === "api.coingecko.com")
+        return new Response(JSON.stringify({ bitcoin: { usd: 60000 } }), { status: 200 });
       if (url.hostname === "api.binance.com") throw new Error("Binance unavailable");
       throw new Error(`Unexpected request: ${url.href}`);
     };
@@ -361,7 +415,10 @@ test("derived quote diagnostics distinguish blocked currency conversion from pro
       const data = await response.json();
       assert.equal(data.assets.bitcoin, undefined);
       assert.equal(data.diagnostics.assets.bitcoin.status, "unavailable");
-      assert.equal(data.diagnostics.assets.bitcoin.reason, dollarStatus === "conflicted" ? "currency_conflicted" : "currency_unavailable");
+      assert.equal(
+        data.diagnostics.assets.bitcoin.reason,
+        dollarStatus === "conflicted" ? "currency_conflicted" : "currency_unavailable",
+      );
       assert.equal(data.diagnostics.assets.bitcoin.successful, 0);
       assert.equal(data.diagnostics.assets.bitcoin.excludedForCurrency, 1);
       assert.equal(data.diagnostics.providers.coinGecko.quoteCount, 1);
@@ -379,11 +436,18 @@ test("auxiliary provider counts parsed raw quotes even when FX blocks their conv
       const value = url.pathname.endsWith("price_dollar_rl") ? "5000000" : "400000000";
       return new Response(`<td data-col="info.last_trade.PDrCotVal">${value}</td>`, { status: 200 });
     }
-    if (url.hostname === "www.bonbast.com" && options.method !== "POST") return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
-    if (url.hostname === "www.bonbast.com") return new Response(JSON.stringify({ usd1: "600000", gol18: "41000000" }), { status: 200 });
-    if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("fiat.json")) return new Response(JSON.stringify({ usd: { value: "700000", date: 1780000000 } }), { status: 200 });
-    if (url.hostname === "raw.githubusercontent.com") return new Response(JSON.stringify({ "18ayar": { value: "40500000", date: 1780000000 } }), { status: 200 });
-    if (url.hostname === "www.chartgoldprice.com") return new Response(JSON.stringify({ prices: { gold: { gram: 1080 }, silver: { gram: 1 } }, history: {} }), { status: 200 });
+    if (url.hostname === "www.bonbast.com" && options.method !== "POST")
+      return new Response(`$.post('/json', {param: "token"});`, { status: 200 });
+    if (url.hostname === "www.bonbast.com")
+      return new Response(JSON.stringify({ usd1: "600000", gol18: "41000000" }), { status: 200 });
+    if (url.hostname === "raw.githubusercontent.com" && url.pathname.endsWith("fiat.json"))
+      return new Response(JSON.stringify({ usd: { value: "700000", date: 1780000000 } }), { status: 200 });
+    if (url.hostname === "raw.githubusercontent.com")
+      return new Response(JSON.stringify({ "18ayar": { value: "40500000", date: 1780000000 } }), { status: 200 });
+    if (url.hostname === "www.chartgoldprice.com")
+      return new Response(JSON.stringify({ prices: { gold: { gram: 1080 }, silver: { gram: 1 } }, history: {} }), {
+        status: 200,
+      });
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {

@@ -91,19 +91,48 @@ test("last-known market quotes require a valid observation time and stay separat
   const market = {
     updatedAt: now,
     assets: { gold: { price: null, status: "conflicted", observedAt: now } },
-    history: { gold: [{ date: "2026-09-23T17:30:00.000Z", price: 23770000, source: "TGJU" }, { price: 999, source: "Unknown time" }] },
+    history: {
+      gold: [
+        { date: "2026-09-23T17:30:00.000Z", price: 23770000, source: "TGJU" },
+        { price: 999, source: "Unknown time" },
+      ],
+    },
   };
-  const cached = { assets: { gold: { price: 23765000, status: "provisional", observedAt: "2026-09-23T17:45:00.000Z", retrievedAt: now } } };
+  const cached = {
+    assets: {
+      gold: { price: 23765000, status: "provisional", observedAt: "2026-09-23T17:45:00.000Z", retrievedAt: now },
+    },
+  };
   const fallback = lastKnownMarketQuote("gold", market, cached, new Date(now).getTime());
   assert.equal(fallback.price, 23765000);
   assert.equal(fallback.observedAt, "2026-09-23T17:45:00.000Z");
 
   assert.equal(lastKnownMarketQuote("gold", market, null, new Date(now).getTime()).price, 23770000);
-  assert.equal(lastKnownMarketQuote("bitcoin", { history: { bitcoin: [{ price: 10 }] } }, null, new Date(now).getTime()), null);
-  assert.equal(marketPriceAt({ updatedAt: now, assets: {}, history: { gold: market.history.gold } }, "gold", now), null);
-  assert.equal(marketPriceAt({ updatedAt: now, assets: {}, history: { gold: market.history.gold } }, "gold", "2026-09-23T17:45:00.000Z"), 23770000);
+  assert.equal(
+    lastKnownMarketQuote("bitcoin", { history: { bitcoin: [{ price: 10 }] } }, null, new Date(now).getTime()),
+    null,
+  );
+  assert.equal(
+    marketPriceAt({ updatedAt: now, assets: {}, history: { gold: market.history.gold } }, "gold", now),
+    null,
+  );
+  assert.equal(
+    marketPriceAt(
+      { updatedAt: now, assets: {}, history: { gold: market.history.gold } },
+      "gold",
+      "2026-09-23T17:45:00.000Z",
+    ),
+    23770000,
+  );
 
-  const offlineMarket = { ...cached, updatedAt: now, assets: {}, history: market.history, diagnostics: null, _currentQuotesUnavailableAt: now };
+  const offlineMarket = {
+    ...cached,
+    updatedAt: now,
+    assets: {},
+    history: market.history,
+    diagnostics: null,
+    _currentQuotesUnavailableAt: now,
+  };
   assert.equal(lastKnownMarketQuote("gold", offlineMarket, cached, new Date(now).getTime()).price, 23765000);
   assert.equal(marketPriceAt(offlineMarket, "gold", now), null);
 });
@@ -145,13 +174,18 @@ test("market-priced crypto can be added to the immutable portfolio ledger", () =
     assets: { bitcoin: { price: 2000000000 } },
     history: {},
   };
-  const transaction = createTransaction({
-    type: "OPENING",
-    assetId: "bitcoin",
-    quantity: 0.1,
-    date: now,
-    source: "test",
-  }, market, now, portfolio);
+  const transaction = createTransaction(
+    {
+      type: "OPENING",
+      assetId: "bitcoin",
+      quantity: 0.1,
+      date: now,
+      source: "test",
+    },
+    market,
+    now,
+    portfolio,
+  );
   assert.ok(transaction);
   assert.equal(transaction.unitPrice, 2000000000);
   const appended = appendTransactions(portfolio, [transaction], { action: "test-opening" });
@@ -165,7 +199,36 @@ test("market-priced crypto can be added to the immutable portfolio ledger", () =
 test("portfolio separates net worth, investable capital, liquidity, and strategy sleeves", () => {
   const now = "2026-09-20T00:00:00.000Z";
   const portfolio = createEmptyPortfolio(now);
-  const market = { updatedAt: now, assets: { gold: { price: 10, status: "healthy", observedAt: now, retrievedAt: now, quoteType: "direct", sleeveId: "gold", sourceCount: 2, configuredSourceCount: 3, spreadPct: 0, sourceValues: [{ source: "A", price: 10, quoteType: "direct", observedAt: now }], consensusPolicyVersion: "quote-consensus-v1", dependencies: [{ instrumentId: "dollar", source: "A, B", sourceCount: 2, status: "healthy", confidence: "medium", observedAt: now, retrievedAt: now }] } }, history: {} };
+  const market = {
+    updatedAt: now,
+    assets: {
+      gold: {
+        price: 10,
+        status: "healthy",
+        observedAt: now,
+        retrievedAt: now,
+        quoteType: "direct",
+        sleeveId: "gold",
+        sourceCount: 2,
+        configuredSourceCount: 3,
+        spreadPct: 0,
+        sourceValues: [{ source: "A", price: 10, quoteType: "direct", observedAt: now }],
+        consensusPolicyVersion: "quote-consensus-v1",
+        dependencies: [
+          {
+            instrumentId: "dollar",
+            source: "A, B",
+            sourceCount: 2,
+            status: "healthy",
+            confidence: "medium",
+            observedAt: now,
+            retrievedAt: now,
+          },
+        ],
+      },
+    },
+    history: {},
+  };
   const transactions = [
     createTransaction({ type: "OPENING", assetId: "cash", quantity: 1000, unitPrice: 1, date: now }, market, now),
     createTransaction({ type: "OPENING", assetId: "gold", quantity: 10, date: now }, market, now),
@@ -192,11 +255,16 @@ test("portfolio separates net worth, investable capital, liquidity, and strategy
 test("invalid quote timestamps stay unknown when portfolio records are normalized", () => {
   const now = "2026-09-20T00:00:00.000Z";
   const portfolio = createEmptyPortfolio(now);
-  const transaction = createTransaction({ type: "OPENING", assetId: "bitcoin", quantity: 1, date: now }, {
-    updatedAt: now,
-    assets: { bitcoin: { price: 100, observedAt: "not-a-date", retrievedAt: now } },
-    history: {},
-  }, now, portfolio);
+  const transaction = createTransaction(
+    { type: "OPENING", assetId: "bitcoin", quantity: 1, date: now },
+    {
+      updatedAt: now,
+      assets: { bitcoin: { price: 100, observedAt: "not-a-date", retrievedAt: now } },
+      history: {},
+    },
+    now,
+    portfolio,
+  );
   transaction.marketQuote.retrievedAt = "also-not-a-date";
   const appended = appendTransactions(portfolio, [transaction]).portfolio;
   const quote = appended.versions[0].transactions.find((entry) => entry.assetId === "bitcoin").marketQuote;
@@ -207,25 +275,38 @@ test("invalid quote timestamps stay unknown when portfolio records are normalize
 test("portfolio refuses a market asset entry when no valid price exists", () => {
   const now = "2026-09-20T00:00:00.000Z";
   const portfolio = createEmptyPortfolio(now);
-  const transaction = createTransaction({
-    type: "OPENING",
-    assetId: "platinum",
-    quantity: 10,
-    date: now,
-  }, { updatedAt: now, assets: {}, history: {} }, now, portfolio);
+  const transaction = createTransaction(
+    {
+      type: "OPENING",
+      assetId: "platinum",
+      quantity: 10,
+      date: now,
+    },
+    { updatedAt: now, assets: {}, history: {} },
+    now,
+    portfolio,
+  );
   assert.equal(transaction, null);
 });
 
 test("conflicted live quotes are excluded from portfolio valuation", () => {
   const now = "2026-09-20T00:00:00.000Z";
   const portfolio = createEmptyPortfolio(now);
-  const transaction = createTransaction({ type: "OPENING", assetId: "bitcoin", quantity: 0.1, unitPrice: 10, date: now }, null, now);
+  const transaction = createTransaction(
+    { type: "OPENING", assetId: "bitcoin", quantity: 0.1, unitPrice: 10, date: now },
+    null,
+    now,
+  );
   const saved = appendTransactions(portfolio, [transaction]).portfolio;
-  const valuation = calculatePortfolio(saved, {
-    updatedAt: now,
-    assets: { bitcoin: { price: null, status: "conflicted", retrievedAt: now } },
-    history: {},
-  }, now);
+  const valuation = calculatePortfolio(
+    saved,
+    {
+      updatedAt: now,
+      assets: { bitcoin: { price: null, status: "conflicted", retrievedAt: now } },
+      history: {},
+    },
+    now,
+  );
   assert.equal(valuation.values.bitcoin.value, null);
   assert.deepEqual(valuation.missingPrices, ["bitcoin"]);
 });
@@ -249,17 +330,25 @@ test("silver conflict values and a last-known reading stay outside current portf
     history: { silver: [{ date: staleDate, price: 508750, source: "TGJU" }] },
   };
   const portfolio = createEmptyPortfolio(now);
-  const opening = createTransaction({
-    type: "OPENING",
-    assetId: "silver",
-    quantity: 2,
-    unitPrice: 500000,
-    date: "2026-09-21",
-  }, market, now, portfolio);
+  const opening = createTransaction(
+    {
+      type: "OPENING",
+      assetId: "silver",
+      quantity: 2,
+      unitPrice: 500000,
+      date: "2026-09-21",
+    },
+    market,
+    now,
+    portfolio,
+  );
   const saved = appendTransactions(portfolio, [opening]).portfolio;
   const valuation = calculatePortfolio(saved, market, now);
   const lastKnown = lastKnownMarketQuote("silver", market, null, new Date(now).getTime());
-  assert.deepEqual(market.assets.silver.sourceValues.map((item) => item.price), [501240, 486249]);
+  assert.deepEqual(
+    market.assets.silver.sourceValues.map((item) => item.price),
+    [501240, 486249],
+  );
   assert.equal(lastKnown.price, 508750);
   assert.equal(valuation.values.silver.value, null);
   assert.equal(valuation.currentValue, 0);
@@ -269,23 +358,39 @@ test("silver conflict values and a last-known reading stay outside current portf
 test("all investable catalog assets and a named manual holding can be recorded in the ledger", () => {
   const now = "2026-09-23T18:00:00.000Z";
   let portfolio = createEmptyPortfolio(now);
-  const catalogIds = Object.values(PORTFOLIO_ASSETS).filter((asset) => asset.isInvestable).map((asset) => asset.id);
+  const catalogIds = Object.values(PORTFOLIO_ASSETS)
+    .filter((asset) => asset.isInvestable)
+    .map((asset) => asset.id);
   const manual = createPortfolioAsset(portfolio, { title: "فولاد", kind: "stock", unit: "TOMAN" }, now);
   portfolio = manual.portfolio;
-  const transactions = catalogIds.map((assetId) => createTransaction({
-    type: "OPENING",
-    assetId,
-    quantity: 1,
-    unitPrice: 1,
-    date: now,
-  }, { assets: {}, history: {} }, now, portfolio));
-  transactions.push(createTransaction({
-    type: "OPENING",
-    assetId: manual.asset.id,
-    quantity: 5000000,
-    unitPrice: 1,
-    date: now,
-  }, { assets: {}, history: {} }, now, portfolio));
+  const transactions = catalogIds.map((assetId) =>
+    createTransaction(
+      {
+        type: "OPENING",
+        assetId,
+        quantity: 1,
+        unitPrice: 1,
+        date: now,
+      },
+      { assets: {}, history: {} },
+      now,
+      portfolio,
+    ),
+  );
+  transactions.push(
+    createTransaction(
+      {
+        type: "OPENING",
+        assetId: manual.asset.id,
+        quantity: 5000000,
+        unitPrice: 1,
+        date: now,
+      },
+      { assets: {}, history: {} },
+      now,
+      portfolio,
+    ),
+  );
   const saved = appendTransactions(portfolio, transactions).portfolio;
   const valuation = calculatePortfolio(saved, { assets: {}, history: {} }, now);
   catalogIds.forEach((assetId) => assert.equal(valuation.holdings[assetId], 1));

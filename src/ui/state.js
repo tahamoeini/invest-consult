@@ -30,10 +30,13 @@ function readPreferences() {
 
 function persistPreferences(state) {
   try {
-    localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify({
-      sidebarCollapsed: state.sidebarCollapsed,
-      marketCacheDisabled: state.marketCacheDisabled,
-    }));
+    localStorage.setItem(
+      UI_PREFERENCES_KEY,
+      JSON.stringify({
+        sidebarCollapsed: state.sidebarCollapsed,
+        marketCacheDisabled: state.marketCacheDisabled,
+      }),
+    );
   } catch {
     // Local persistence is an enhancement; navigation remains usable if it fails.
   }
@@ -45,8 +48,14 @@ export function createAppStore(initial = {}) {
     ...DEFAULT_STATE,
     ...initial,
     activeView: VIEW_IDS.has(initial.activeView) ? initial.activeView : DEFAULT_STATE.activeView,
-    sidebarCollapsed: typeof preferences.sidebarCollapsed === "boolean" ? preferences.sidebarCollapsed : Boolean(initial.sidebarCollapsed),
-    marketCacheDisabled: typeof preferences.marketCacheDisabled === "boolean" ? preferences.marketCacheDisabled : Boolean(initial.marketCacheDisabled),
+    sidebarCollapsed:
+      typeof preferences.sidebarCollapsed === "boolean"
+        ? preferences.sidebarCollapsed
+        : Boolean(initial.sidebarCollapsed),
+    marketCacheDisabled:
+      typeof preferences.marketCacheDisabled === "boolean"
+        ? preferences.marketCacheDisabled
+        : Boolean(initial.marketCacheDisabled),
   };
   const listeners = new Set();
 

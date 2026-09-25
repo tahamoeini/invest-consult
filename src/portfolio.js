@@ -4,22 +4,116 @@ import { realValue } from "./engine.js";
 import { INSTRUMENT_REGISTRY, SLEEVE_REGISTRY } from "./market/catalog.js";
 
 export const PORTFOLIO_SCHEMA = "invest-consult-portfolio";
-export const PORTFOLIO_VERSION = 1;
-export const TRANSACTION_TYPES = ["OPENING", "BUY", "SELL", "DIVIDEND", "TRANSFER", "ADJUSTMENT", "DEPOSIT", "WITHDRAWAL"];
+export const PORTFOLIO_VERSION = 2;
+export const TRANSACTION_TYPES = [
+  "OPENING",
+  "BUY",
+  "SELL",
+  "DIVIDEND",
+  "TRANSFER",
+  "ADJUSTMENT",
+  "DEPOSIT",
+  "WITHDRAWAL",
+];
 
 export const PORTFOLIO_ASSETS = Object.freeze({
   gold: { ...INSTRUMENT_REGISTRY.gold, id: "gold", titleKey: "gold", priced: true, isInvestable: true, isLiquid: true },
-  fixed: { id: "fixed", titleKey: "fixed", unit: "TOMAN", marketKey: null, sleeveId: "fixedIncome", priced: true, isInvestable: true, isLiquid: true },
-  currency: { ...INSTRUMENT_REGISTRY.dollar, id: "currency", titleKey: "currency", unit: "USD", marketKey: "dollar", priced: true, isInvestable: true, isLiquid: true },
-  silver: { ...INSTRUMENT_REGISTRY.silver, id: "silver", titleKey: "silver", priced: true, isInvestable: true, isLiquid: true },
-  bitcoin: { ...INSTRUMENT_REGISTRY.bitcoin, id: "bitcoin", titleKey: "bitcoin", priced: true, isInvestable: true, isLiquid: true },
-  ethereum: { ...INSTRUMENT_REGISTRY.ethereum, id: "ethereum", titleKey: "ethereum", priced: true, isInvestable: true, isLiquid: true },
-  tether: { ...INSTRUMENT_REGISTRY.tether, id: "tether", titleKey: "tether", priced: true, isInvestable: true, isLiquid: true },
-  platinum: { ...INSTRUMENT_REGISTRY.platinum, id: "platinum", titleKey: "platinum", priced: true, isInvestable: true, isLiquid: true },
-  palladium: { ...INSTRUMENT_REGISTRY.palladium, id: "palladium", titleKey: "palladium", priced: true, isInvestable: true, isLiquid: true },
-  copper: { ...INSTRUMENT_REGISTRY.copper, id: "copper", titleKey: "copper", priced: true, isInvestable: true, isLiquid: true },
-  cash: { id: "cash", titleKey: "cash", unit: "TOMAN", marketKey: null, sleeveId: "liquidity", priced: true, isInvestable: true, isLiquid: true },
-  other: { id: "other", titleKey: "other", unit: "TOMAN", marketKey: null, sleeveId: null, priced: true, isInvestable: false, isLiquid: false },
+  fixed: {
+    id: "fixed",
+    titleKey: "fixed",
+    unit: "TOMAN",
+    marketKey: null,
+    sleeveId: "fixedIncome",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  currency: {
+    ...INSTRUMENT_REGISTRY.dollar,
+    id: "currency",
+    titleKey: "currency",
+    unit: "USD",
+    marketKey: "dollar",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  silver: {
+    ...INSTRUMENT_REGISTRY.silver,
+    id: "silver",
+    titleKey: "silver",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  bitcoin: {
+    ...INSTRUMENT_REGISTRY.bitcoin,
+    id: "bitcoin",
+    titleKey: "bitcoin",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  ethereum: {
+    ...INSTRUMENT_REGISTRY.ethereum,
+    id: "ethereum",
+    titleKey: "ethereum",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  tether: {
+    ...INSTRUMENT_REGISTRY.tether,
+    id: "tether",
+    titleKey: "tether",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  platinum: {
+    ...INSTRUMENT_REGISTRY.platinum,
+    id: "platinum",
+    titleKey: "platinum",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  palladium: {
+    ...INSTRUMENT_REGISTRY.palladium,
+    id: "palladium",
+    titleKey: "palladium",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  copper: {
+    ...INSTRUMENT_REGISTRY.copper,
+    id: "copper",
+    titleKey: "copper",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  cash: {
+    id: "cash",
+    titleKey: "cash",
+    unit: "TOMAN",
+    marketKey: null,
+    sleeveId: "liquidity",
+    priced: true,
+    isInvestable: true,
+    isLiquid: true,
+  },
+  other: {
+    id: "other",
+    titleKey: "other",
+    unit: "TOMAN",
+    marketKey: null,
+    sleeveId: null,
+    priced: true,
+    isInvestable: false,
+    isLiquid: false,
+  },
 });
 
 export const SIMPLE_ASSET_IDS = ["gold", "fixed", "cash", "other"];
@@ -48,9 +142,17 @@ function optionalIsoDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+let fallbackIdSequence = 0;
+
 function makeId(prefix = "id") {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return `${prefix}-${crypto.randomUUID()}`;
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return `${prefix}-${cryptoApi.randomUUID()}`;
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+    return `${prefix}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+  fallbackIdSequence += 1;
+  return `${prefix}-${Date.now()}-${fallbackIdSequence}`;
 }
 
 function assetDefinition(assetId, assets = PORTFOLIO_ASSETS) {
@@ -101,11 +203,20 @@ function normalizeTransaction(raw, assets = PORTFOLIO_ASSETS) {
   const unitPrice = finite(raw.unitPrice);
   const amount = finite(raw.amount);
   if (!assetId && raw.type !== "DEPOSIT" && raw.type !== "WITHDRAWAL") return null;
-  if (["OPENING", "BUY", "SELL", "TRANSFER"].includes(raw.type) && (quantity === null || quantity <= EPSILON)) return null;
+  if (["OPENING", "BUY", "SELL", "TRANSFER"].includes(raw.type) && (quantity === null || quantity <= EPSILON))
+    return null;
   if (raw.type === "ADJUSTMENT" && (quantity === null || Math.abs(quantity) <= EPSILON)) return null;
-  if (["OPENING", "BUY", "SELL", "ADJUSTMENT"].includes(raw.type) && (unitPrice === null || unitPrice <= 0)) return null;
+  if (["OPENING", "BUY", "SELL", "ADJUSTMENT"].includes(raw.type) && (unitPrice === null || unitPrice <= 0))
+    return null;
   if (["DEPOSIT", "WITHDRAWAL", "DIVIDEND"].includes(raw.type) && (amount === null || amount <= 0)) return null;
-  if (raw.type === "TRANSFER" && (!targetAssetId || targetAssetId === assetId || finite(raw.targetQuantity) === null || Number(raw.targetQuantity) <= EPSILON)) return null;
+  if (
+    raw.type === "TRANSFER" &&
+    (!targetAssetId ||
+      targetAssetId === assetId ||
+      finite(raw.targetQuantity) === null ||
+      Number(raw.targetQuantity) <= EPSILON)
+  )
+    return null;
   return {
     id: typeof raw.id === "string" && raw.id.length <= 120 ? raw.id : makeId("tx"),
     type: raw.type,
@@ -121,49 +232,71 @@ function normalizeTransaction(raw, assets = PORTFOLIO_ASSETS) {
     createdAt: isoDate(raw.createdAt),
     note: typeof raw.note === "string" ? raw.note.slice(0, 300) : "",
     source: typeof raw.source === "string" ? raw.source.slice(0, 50) : "advanced",
-    marketQuote: raw.marketQuote && typeof raw.marketQuote === "object" ? {
-      assetId: raw.marketQuote.assetId,
-      price: finite(raw.marketQuote.price),
-      source: typeof raw.marketQuote.source === "string" ? raw.marketQuote.source : "market-snapshot",
-      capturedAt: optionalIsoDate(raw.marketQuote.capturedAt),
-      observedAt: optionalIsoDate(raw.marketQuote.observedAt),
-      retrievedAt: optionalIsoDate(raw.marketQuote.retrievedAt),
-      quoteType: ["direct", "derived", "mixed"].includes(raw.marketQuote.quoteType) ? raw.marketQuote.quoteType : "direct",
-      sleeveId: typeof raw.marketQuote.sleeveId === "string" ? raw.marketQuote.sleeveId.slice(0, 60) : null,
-      derivedFrom: Array.isArray(raw.marketQuote.derivedFrom) ? raw.marketQuote.derivedFrom.filter((value) => typeof value === "string").slice(0, 5) : [],
-      sourceValues: Array.isArray(raw.marketQuote.sourceValues) ? raw.marketQuote.sourceValues.slice(0, 8).map((value) => {
-        if (!value || typeof value !== "object") return null;
-        const quotePrice = finite(value.price);
-        if (quotePrice === null || quotePrice <= 0) return null;
-        return {
-          source: typeof value.source === "string" ? value.source.slice(0, 100) : "",
-          price: quotePrice,
-          quoteType: ["direct", "derived"].includes(value.quoteType) ? value.quoteType : "direct",
-          observedAt: optionalIsoDate(value.observedAt),
-        };
-      }).filter(Boolean) : [],
-      dependencies: Array.isArray(raw.marketQuote.dependencies) ? raw.marketQuote.dependencies.slice(0, 5).map((dependency) => {
-        if (!dependency || typeof dependency !== "object") return null;
-        return {
-          instrumentId: typeof dependency.instrumentId === "string" ? dependency.instrumentId.slice(0, 60) : "",
-          price: finite(dependency.price),
-          sourceCount: Math.max(0, finite(dependency.sourceCount) || 0),
-          unit: typeof dependency.unit === "string" ? dependency.unit.slice(0, 20) : "",
-          source: typeof dependency.source === "string" ? dependency.source.slice(0, 100) : "",
-          status: typeof dependency.status === "string" ? dependency.status.slice(0, 30) : "unavailable",
-          confidence: typeof dependency.confidence === "string" ? dependency.confidence.slice(0, 20) : "none",
-          observedAt: optionalIsoDate(dependency.observedAt),
-          retrievedAt: optionalIsoDate(dependency.retrievedAt),
-        };
-      }).filter(Boolean) : [],
-      status: typeof raw.marketQuote.status === "string" ? raw.marketQuote.status.slice(0, 30) : "healthy",
-      confidence: typeof raw.marketQuote.confidence === "string" ? raw.marketQuote.confidence.slice(0, 20) : null,
-      sourceCount: Math.max(0, finite(raw.marketQuote.sourceCount) || 0),
-      configuredSourceCount: Math.max(0, finite(raw.marketQuote.configuredSourceCount) || 0),
-      spreadPct: Math.max(0, finite(raw.marketQuote.spreadPct) || 0),
-      consensusPolicyVersion: typeof raw.marketQuote.consensusPolicyVersion === "string" ? raw.marketQuote.consensusPolicyVersion.slice(0, 60) : null,
-      consensusCalibrated: raw.marketQuote.consensusCalibrated === true,
-    } : undefined,
+    marketQuote:
+      raw.marketQuote && typeof raw.marketQuote === "object"
+        ? {
+            assetId: raw.marketQuote.assetId,
+            price: finite(raw.marketQuote.price),
+            source: typeof raw.marketQuote.source === "string" ? raw.marketQuote.source : "market-snapshot",
+            capturedAt: optionalIsoDate(raw.marketQuote.capturedAt),
+            observedAt: optionalIsoDate(raw.marketQuote.observedAt),
+            retrievedAt: optionalIsoDate(raw.marketQuote.retrievedAt),
+            quoteType: ["direct", "derived", "mixed"].includes(raw.marketQuote.quoteType)
+              ? raw.marketQuote.quoteType
+              : "direct",
+            sleeveId: typeof raw.marketQuote.sleeveId === "string" ? raw.marketQuote.sleeveId.slice(0, 60) : null,
+            derivedFrom: Array.isArray(raw.marketQuote.derivedFrom)
+              ? raw.marketQuote.derivedFrom.filter((value) => typeof value === "string").slice(0, 5)
+              : [],
+            sourceValues: Array.isArray(raw.marketQuote.sourceValues)
+              ? raw.marketQuote.sourceValues
+                  .slice(0, 8)
+                  .map((value) => {
+                    if (!value || typeof value !== "object") return null;
+                    const quotePrice = finite(value.price);
+                    if (quotePrice === null || quotePrice <= 0) return null;
+                    return {
+                      source: typeof value.source === "string" ? value.source.slice(0, 100) : "",
+                      price: quotePrice,
+                      quoteType: ["direct", "derived"].includes(value.quoteType) ? value.quoteType : "direct",
+                      observedAt: optionalIsoDate(value.observedAt),
+                    };
+                  })
+                  .filter(Boolean)
+              : [],
+            dependencies: Array.isArray(raw.marketQuote.dependencies)
+              ? raw.marketQuote.dependencies
+                  .slice(0, 5)
+                  .map((dependency) => {
+                    if (!dependency || typeof dependency !== "object") return null;
+                    return {
+                      instrumentId:
+                        typeof dependency.instrumentId === "string" ? dependency.instrumentId.slice(0, 60) : "",
+                      price: finite(dependency.price),
+                      sourceCount: Math.max(0, finite(dependency.sourceCount) || 0),
+                      unit: typeof dependency.unit === "string" ? dependency.unit.slice(0, 20) : "",
+                      source: typeof dependency.source === "string" ? dependency.source.slice(0, 100) : "",
+                      status: typeof dependency.status === "string" ? dependency.status.slice(0, 30) : "unavailable",
+                      confidence:
+                        typeof dependency.confidence === "string" ? dependency.confidence.slice(0, 20) : "none",
+                      observedAt: optionalIsoDate(dependency.observedAt),
+                      retrievedAt: optionalIsoDate(dependency.retrievedAt),
+                    };
+                  })
+                  .filter(Boolean)
+              : [],
+            status: typeof raw.marketQuote.status === "string" ? raw.marketQuote.status.slice(0, 30) : "healthy",
+            confidence: typeof raw.marketQuote.confidence === "string" ? raw.marketQuote.confidence.slice(0, 20) : null,
+            sourceCount: Math.max(0, finite(raw.marketQuote.sourceCount) || 0),
+            configuredSourceCount: Math.max(0, finite(raw.marketQuote.configuredSourceCount) || 0),
+            spreadPct: Math.max(0, finite(raw.marketQuote.spreadPct) || 0),
+            consensusPolicyVersion:
+              typeof raw.marketQuote.consensusPolicyVersion === "string"
+                ? raw.marketQuote.consensusPolicyVersion.slice(0, 60)
+                : null,
+            consensusCalibrated: raw.marketQuote.consensusCalibrated === true,
+          }
+        : undefined,
   };
 }
 
@@ -174,7 +307,9 @@ function normalizeAudit(raw) {
     action: typeof raw.action === "string" ? raw.action.slice(0, 80) : "portfolio-change",
     timestamp: isoDate(raw.timestamp),
     versionId: typeof raw.versionId === "string" ? raw.versionId : "",
-    transactionIds: Array.isArray(raw.transactionIds) ? raw.transactionIds.filter((id) => typeof id === "string").slice(0, 100) : [],
+    transactionIds: Array.isArray(raw.transactionIds)
+      ? raw.transactionIds.filter((id) => typeof id === "string").slice(0, 100)
+      : [],
     affectsHistory: Boolean(raw.affectsHistory),
     detail: typeof raw.detail === "string" ? raw.detail.slice(0, 300) : "",
   };
@@ -208,8 +343,29 @@ function normalizeVersion(raw, assets = PORTFOLIO_ASSETS) {
     createdAt: isoDate(raw.createdAt),
     startedAt: isoDate(raw.startedAt || raw.createdAt),
     closedAt: raw.closedAt ? isoDate(raw.closedAt) : null,
-    transactions: Array.isArray(raw.transactions) ? raw.transactions.map((transaction) => normalizeTransaction(transaction, assets)).filter(Boolean) : [],
+    transactions: Array.isArray(raw.transactions)
+      ? raw.transactions.map((transaction) => normalizeTransaction(transaction, assets)).filter(Boolean)
+      : [],
     audit: Array.isArray(raw.audit) ? raw.audit.map(normalizeAudit).filter(Boolean) : [],
+  };
+}
+
+function normalizeManualQuote(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const assetId = typeof raw.assetId === "string" ? raw.assetId.slice(0, 120) : "";
+  const knownMarketAsset = Object.hasOwn(INSTRUMENT_REGISTRY, assetId);
+  const knownPortfolioAsset = Object.hasOwn(PORTFOLIO_ASSETS, assetId) || assetId.startsWith("custom:");
+  const price = finite(raw.price);
+  const observedAt = optionalIsoDate(raw.observedAt || raw.date);
+  if ((!knownMarketAsset && !knownPortfolioAsset) || price === null || price <= 0 || !observedAt) return null;
+  return {
+    id: typeof raw.id === "string" && raw.id.length <= 120 ? raw.id : makeId("quote"),
+    assetId,
+    price,
+    observedAt,
+    createdAt: isoDate(raw.createdAt || observedAt),
+    source: "manual",
+    note: typeof raw.note === "string" ? raw.note.slice(0, 160) : "",
   };
 }
 
@@ -219,26 +375,96 @@ export function createEmptyPortfolio(now = new Date().toISOString()) {
     schema: PORTFOLIO_SCHEMA,
     version: PORTFOLIO_VERSION,
     assets: {},
+    manualQuotes: [],
     activeVersionId: versionId,
-    versions: [{ id: versionId, label: "Initial portfolio", createdAt: now, startedAt: now, closedAt: null, transactions: [], audit: [] }],
+    versions: [
+      {
+        id: versionId,
+        label: "Initial portfolio",
+        createdAt: now,
+        startedAt: now,
+        closedAt: null,
+        transactions: [],
+        audit: [],
+      },
+    ],
   };
 }
 
 export function normalizePortfolio(raw) {
-  if (!raw || typeof raw !== "object" || raw.schema !== PORTFOLIO_SCHEMA || Number(raw.version) > PORTFOLIO_VERSION || !Array.isArray(raw.versions)) return createEmptyPortfolio();
-  const customAssets = Object.fromEntries(Object.entries(raw.assets && typeof raw.assets === "object" ? raw.assets : {}).map(([id, asset]) => [id, normalizeAsset(asset, id)]).filter(([, asset]) => asset));
-  const hasLegacyStocks = raw.versions.some((version) => Array.isArray(version.transactions) && version.transactions.some((transaction) => transaction && (transaction.assetId === "stocks" || transaction.targetAssetId === "stocks")));
-  if (hasLegacyStocks && !customAssets[LEGACY_STOCK_ASSET_ID]) customAssets[LEGACY_STOCK_ASSET_ID] = { id: LEGACY_STOCK_ASSET_ID, title: "Legacy stock holding", titleKey: "stocks", kind: "legacy-stock", unit: "TOMAN", marketKey: null, priced: true, sleeveId: "iranEquity", isInvestable: true, isLiquid: false, createdAt: new Date().toISOString() };
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    raw.schema !== PORTFOLIO_SCHEMA ||
+    Number(raw.version) > PORTFOLIO_VERSION ||
+    !Array.isArray(raw.versions)
+  )
+    return createEmptyPortfolio();
+  const customAssets = Object.fromEntries(
+    Object.entries(raw.assets && typeof raw.assets === "object" ? raw.assets : {})
+      .map(([id, asset]) => [id, normalizeAsset(asset, id)])
+      .filter(([, asset]) => asset),
+  );
+  const hasLegacyStocks = raw.versions.some(
+    (version) =>
+      Array.isArray(version.transactions) &&
+      version.transactions.some(
+        (transaction) => transaction && (transaction.assetId === "stocks" || transaction.targetAssetId === "stocks"),
+      ),
+  );
+  if (hasLegacyStocks && !customAssets[LEGACY_STOCK_ASSET_ID])
+    customAssets[LEGACY_STOCK_ASSET_ID] = {
+      id: LEGACY_STOCK_ASSET_ID,
+      title: "Legacy stock holding",
+      titleKey: "stocks",
+      kind: "legacy-stock",
+      unit: "TOMAN",
+      marketKey: null,
+      priced: true,
+      sleeveId: "iranEquity",
+      isInvestable: true,
+      isLiquid: false,
+      createdAt: new Date().toISOString(),
+    };
   const assets = { ...PORTFOLIO_ASSETS, ...customAssets };
-  const versions = raw.versions.map((version) => normalizeVersion({ ...version, transactions: (version.transactions || []).map((transaction) => ({ ...transaction, assetId: transaction.assetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.assetId, targetAssetId: transaction.targetAssetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.targetAssetId })) }, assets)).filter(Boolean);
+  const versions = raw.versions
+    .map((version) =>
+      normalizeVersion(
+        {
+          ...version,
+          transactions: (version.transactions || []).map((transaction) => ({
+            ...transaction,
+            assetId: transaction.assetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.assetId,
+            targetAssetId: transaction.targetAssetId === "stocks" ? LEGACY_STOCK_ASSET_ID : transaction.targetAssetId,
+          })),
+        },
+        assets,
+      ),
+    )
+    .filter(Boolean);
   if (!versions.length) return createEmptyPortfolio();
-  const activeVersionId = versions.some((version) => version.id === raw.activeVersionId) ? raw.activeVersionId : versions[versions.length - 1].id;
-  return { schema: PORTFOLIO_SCHEMA, version: PORTFOLIO_VERSION, assets: customAssets, activeVersionId, versions };
+  const activeVersionId = versions.some((version) => version.id === raw.activeVersionId)
+    ? raw.activeVersionId
+    : versions[versions.length - 1].id;
+  const manualQuotes = (Array.isArray(raw.manualQuotes) ? raw.manualQuotes : [])
+    .map(normalizeManualQuote)
+    .filter(Boolean);
+  return {
+    schema: PORTFOLIO_SCHEMA,
+    version: PORTFOLIO_VERSION,
+    assets: customAssets,
+    manualQuotes,
+    activeVersionId,
+    versions,
+  };
 }
 
 export function activePortfolioVersion(portfolio) {
   const normalized = normalizePortfolio(portfolio);
-  return normalized.versions.find((version) => version.id === normalized.activeVersionId) || normalized.versions[normalized.versions.length - 1];
+  return (
+    normalized.versions.find((version) => version.id === normalized.activeVersionId) ||
+    normalized.versions[normalized.versions.length - 1]
+  );
 }
 
 export function activeTransactions(portfolio) {
@@ -252,30 +478,116 @@ function marketHistoryKey(assetId) {
 function seriesPointValue(point) {
   if (Array.isArray(point)) return { date: point[0], value: finite(point[1]) };
   if (!point || typeof point !== "object") return null;
-  return { date: point.date || point.time || point.timestamp, value: finite(point.price ?? point.value ?? point.close ?? point.c) };
+  return {
+    date: point.date || point.time || point.timestamp,
+    value: finite(point.price ?? point.value ?? point.close ?? point.c),
+  };
 }
 
-export function marketPriceAt(market, assetId, asOf = new Date().toISOString()) {
-  const definition = assetDefinition(assetId) || (String(assetId).startsWith("custom:") ? { marketKey: null } : null);
+export function marketPriceDetailsAt(market, assetId, asOf = new Date().toISOString()) {
+  const definition =
+    assetDefinition(assetId) ||
+    market?.assetDefinitions?.[assetId] ||
+    (String(assetId).startsWith("custom:") ? { id: assetId, marketKey: null, unit: "TOMAN" } : null);
   if (!definition) return null;
-  if (!definition.marketKey) return 1;
   const timestamp = new Date(asOf).getTime();
   if (!Number.isFinite(timestamp)) return null;
+  const quoteAssetIds = new Set([assetId, definition.marketKey].filter(Boolean));
+  const manualQuotes = (Array.isArray(market?.manualQuotes) ? market.manualQuotes : [])
+    .map(normalizeManualQuote)
+    .filter((quote) => quote && quoteAssetIds.has(quote.assetId) && new Date(quote.observedAt).getTime() <= timestamp)
+    .sort((left, right) => new Date(left.observedAt).getTime() - new Date(right.observedAt).getTime());
+  const latestManual = manualQuotes.at(-1) || null;
+  if (!definition.marketKey)
+    return latestManual
+      ? {
+          price: latestManual.price,
+          source: "قیمت دستی",
+          observedAt: latestManual.observedAt,
+          retrievedAt: latestManual.createdAt,
+          isManual: true,
+        }
+      : String(assetId).startsWith("custom:") && definition.unit !== "TOMAN"
+        ? null
+        : { price: 1, source: "ارزش تومانی ثبت‌شده", observedAt: null, retrievedAt: null, isManual: false };
   const currentUnavailableAt = market?._currentQuotesUnavailableAt
     ? new Date(market._currentQuotesUnavailableAt).getTime()
     : NaN;
-  if (Number.isFinite(currentUnavailableAt) && timestamp >= currentUnavailableAt) return null;
   const current = market && market.assets && market.assets[definition.marketKey];
   const currentPrice = finite(current && current.price);
-  const updateTimeValue = current?.retrievedAt || market?.updatedAt;
-  const updatedAt = updateTimeValue ? new Date(updateTimeValue).getTime() : NaN;
-  const currentQuoteUsable = currentPrice !== null && current?.status !== "conflicted" && current?.status !== "unavailable";
-  if (Number.isFinite(updatedAt) && timestamp >= updatedAt) {
-    return currentQuoteUsable ? currentPrice : null;
-  }
+  const observedAtValue = current?.observedAt || current?.asOf || null;
+  const observedAt = observedAtValue ? new Date(observedAtValue).getTime() : NaN;
+  const retrievedAt = current?.retrievedAt || market?.updatedAt || null;
+  const retrievedTime = retrievedAt ? new Date(retrievedAt).getTime() : NaN;
+  const currentQuoteUsable =
+    currentPrice !== null && current?.status !== "conflicted" && current?.status !== "unavailable";
   const rawSeries = market && market.history && market.history[marketHistoryKey(assetId)];
-  const points = (Array.isArray(rawSeries) ? rawSeries : []).map(seriesPointValue).filter((point) => point && point.value !== null && point.value > 0 && Number.isFinite(new Date(point.date).getTime()) && new Date(point.date).getTime() <= timestamp).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
-  return points.length ? points[points.length - 1].value : null;
+  const points = (Array.isArray(rawSeries) ? rawSeries : [])
+    .map(seriesPointValue)
+    .filter(
+      (point) =>
+        point &&
+        point.value !== null &&
+        point.value > 0 &&
+        Number.isFinite(new Date(point.date).getTime()) &&
+        new Date(point.date).getTime() <= timestamp,
+    )
+    .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+  const lastHistory = points.at(-1) || null;
+  const manualTime = latestManual ? new Date(latestManual.observedAt).getTime() : -Infinity;
+  const historyTime = lastHistory ? new Date(lastHistory.date).getTime() : -Infinity;
+  if (
+    currentQuoteUsable &&
+    Number.isFinite(observedAt) &&
+    observedAt <= timestamp &&
+    observedAt >= manualTime &&
+    observedAt >= historyTime
+  ) {
+    return {
+      price: currentPrice,
+      source: current.sources?.join(", ") || current.source || "قیمت خودکار",
+      observedAt: observedAtValue,
+      retrievedAt,
+      isManual: false,
+    };
+  }
+  if (latestManual && manualTime >= historyTime) {
+    return {
+      price: latestManual.price,
+      source: "قیمت دستی",
+      observedAt: latestManual.observedAt,
+      retrievedAt: latestManual.createdAt,
+      isManual: true,
+    };
+  }
+  if (lastHistory)
+    return {
+      price: lastHistory.value,
+      source: lastHistory.source || "تاریخچه‌ی بازار",
+      observedAt: lastHistory.date,
+      retrievedAt: null,
+      isManual: false,
+    };
+  if (
+    currentQuoteUsable &&
+    !latestManual &&
+    Number.isFinite(retrievedTime) &&
+    timestamp >= retrievedTime &&
+    (!Number.isFinite(currentUnavailableAt) || timestamp < currentUnavailableAt)
+  ) {
+    return {
+      price: currentPrice,
+      source: current.sources?.join(", ") || current.source || "قیمت خودکار",
+      observedAt: null,
+      retrievedAt,
+      isManual: false,
+    };
+  }
+  return null;
+}
+
+export function marketPriceAt(market, assetId, asOf = new Date().toISOString()) {
+  return marketPriceDetailsAt(market, assetId, asOf)?.price ?? null;
 }
 
 function transactionAmount(transaction) {
@@ -285,7 +597,14 @@ function transactionAmount(transaction) {
 
 function sortedTransactions(transactions, asOf) {
   const timestamp = new Date(asOf).getTime();
-  return transactions.filter((transaction) => new Date(transaction.date).getTime() <= timestamp).slice().sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime() || new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  return transactions
+    .filter((transaction) => new Date(transaction.date).getTime() <= timestamp)
+    .slice()
+    .sort(
+      (left, right) =>
+        new Date(left.date).getTime() - new Date(right.date).getTime() ||
+        new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+    );
 }
 
 export function ledgerState(transactions, asOf = new Date().toISOString(), assets = PORTFOLIO_ASSETS) {
@@ -346,9 +665,18 @@ function valueState(holdings, market, asOf, assets = PORTFOLIO_ASSETS) {
   const sleeveValues = {};
   Object.keys(assets).forEach((assetId) => {
     const quantity = Number(holdings[assetId]) || 0;
-    const price = marketPriceAt(market, assetId, asOf);
+    const priceDetails = marketPriceDetailsAt(market, assetId, asOf);
+    const price = priceDetails?.price ?? null;
     const value = price === null ? null : quantity * price;
-    values[assetId] = { quantity, price, value, unit: assets[assetId].unit };
+    values[assetId] = {
+      quantity,
+      price,
+      value,
+      unit: assets[assetId].unit,
+      priceSource: priceDetails?.source || null,
+      priceObservedAt: priceDetails?.observedAt || null,
+      manualPrice: Boolean(priceDetails?.isManual),
+    };
     if (quantity > EPSILON && value === null) missingPrices.push(assetId);
     if (value !== null) {
       totalValue += value;
@@ -359,8 +687,19 @@ function valueState(holdings, market, asOf, assets = PORTFOLIO_ASSETS) {
     }
   });
   const allocation = {};
-  Object.entries(values).forEach(([assetId, item]) => { allocation[assetId] = totalValue > EPSILON && item.value !== null ? item.value / totalValue * 100 : 0; });
-  return { values, totalValue, netWorth: totalValue, investableTotal, liquidTotal, sleeveValues, allocation, missingPrices };
+  Object.entries(values).forEach(([assetId, item]) => {
+    allocation[assetId] = totalValue > EPSILON && item.value !== null ? (item.value / totalValue) * 100 : 0;
+  });
+  return {
+    values,
+    totalValue,
+    netWorth: totalValue,
+    investableTotal,
+    liquidTotal,
+    sleeveValues,
+    allocation,
+    missingPrices,
+  };
 }
 
 function xirr(cashFlows, guess = 0.1) {
@@ -375,7 +714,7 @@ function xirr(cashFlows, guess = 0.1) {
       const year = years(flow.date);
       const denominator = Math.pow(1 + rate, year);
       value += flow.amount / denominator;
-      if (year !== 0) derivative -= year * flow.amount / Math.pow(1 + rate, year + 1);
+      if (year !== 0) derivative -= (year * flow.amount) / Math.pow(1 + rate, year + 1);
     });
     if (Math.abs(derivative) < EPSILON) return null;
     const next = rate - value / derivative;
@@ -387,14 +726,18 @@ function xirr(cashFlows, guess = 0.1) {
 }
 
 function performanceMetrics(transactions, state, totalValue, asOf, inflationRate = 0) {
-  const first = transactions.slice().sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())[0];
+  const first = transactions
+    .slice()
+    .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())[0];
   const start = first ? new Date(first.date) : new Date(asOf);
   const years = Math.max(0, (new Date(asOf).getTime() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
   const flows = [];
   transactions.forEach((transaction) => {
     const amount = transactionAmount(transaction);
-    if (["OPENING", "BUY", "DEPOSIT"].includes(transaction.type)) flows.push({ date: transaction.date, amount: -(amount + (Number(transaction.fee) || 0)) });
-    if (["SELL", "WITHDRAWAL"].includes(transaction.type)) flows.push({ date: transaction.date, amount: Math.max(0, amount - (Number(transaction.fee) || 0)) });
+    if (["OPENING", "BUY", "DEPOSIT"].includes(transaction.type))
+      flows.push({ date: transaction.date, amount: -(amount + (Number(transaction.fee) || 0)) });
+    if (["SELL", "WITHDRAWAL"].includes(transaction.type))
+      flows.push({ date: transaction.date, amount: Math.max(0, amount - (Number(transaction.fee) || 0)) });
   });
   if (totalValue > 0) flows.push({ date: asOf, amount: totalValue });
   const annualizedReturn = xirr(flows);
@@ -405,7 +748,10 @@ function performanceMetrics(transactions, state, totalValue, asOf, inflationRate
     netInvested: state.netInvested,
     currentValue: totalValue,
     profitLoss: totalValue - state.netInvested,
-    cagr: annualizedReturn === null && state.netInvested > 0 && years > 0 ? Math.pow(totalValue / state.netInvested, 1 / years) - 1 : annualizedReturn,
+    cagr:
+      annualizedReturn === null && state.netInvested > 0 && years > 0
+        ? Math.pow(totalValue / state.netInvested, 1 / years) - 1
+        : annualizedReturn,
     realValue: realTotalValue,
     inflationAdjustedReturn: state.netInvested > 0 ? realTotalValue / state.netInvested - 1 : null,
     dividends: state.dividends,
@@ -417,8 +763,9 @@ export function calculatePortfolio(portfolio, market, asOf = new Date().toISOStr
   const assets = assetRegistry(normalized);
   const version = activePortfolioVersion(normalized);
   const transactions = version.transactions;
+  const marketWithManualQuotes = { ...(market || {}), manualQuotes: normalized.manualQuotes, assetDefinitions: assets };
   const state = ledgerState(transactions, asOf, assets);
-  const valuation = valueState(state.holdings, market, asOf, assets);
+  const valuation = valueState(state.holdings, marketWithManualQuotes, asOf, assets);
   return {
     versionId: version.id,
     versionLabel: version.label,
@@ -441,17 +788,33 @@ export function validateLedger(transactions, assets = PORTFOLIO_ASSETS) {
   const holdings = emptyHoldings(assets);
   const errors = [];
   sortedTransactions(transactions, new Date(8640000000000000).toISOString()).forEach((transaction) => {
-    const required = transaction.type === "SELL" || transaction.type === "WITHDRAWAL" ? transaction.type === "WITHDRAWAL" ? "cash" : transaction.assetId : transaction.type === "TRANSFER" ? transaction.assetId : null;
-    const requested = transaction.type === "WITHDRAWAL" ? transaction.amount : transaction.type === "TRANSFER" ? transaction.quantity : transaction.quantity;
-    if (required && (Number(holdings[required]) || 0) + EPSILON < (Number(requested) || 0)) errors.push({ code: "negative-holding", transactionId: transaction.id, assetId: required });
+    const required =
+      transaction.type === "SELL" || transaction.type === "WITHDRAWAL"
+        ? transaction.type === "WITHDRAWAL"
+          ? "cash"
+          : transaction.assetId
+        : transaction.type === "TRANSFER"
+          ? transaction.assetId
+          : null;
+    const requested =
+      transaction.type === "WITHDRAWAL"
+        ? transaction.amount
+        : transaction.type === "TRANSFER"
+          ? transaction.quantity
+          : transaction.quantity;
+    if (required && (Number(holdings[required]) || 0) + EPSILON < (Number(requested) || 0))
+      errors.push({ code: "negative-holding", transactionId: transaction.id, assetId: required });
     if (transaction.type === "TRANSFER") {
       holdings[transaction.assetId] -= Number(transaction.quantity) || 0;
       holdings[transaction.targetAssetId] += Number(transaction.targetQuantity) || 0;
     } else if (transaction.type === "WITHDRAWAL") holdings.cash -= Number(transaction.amount) || 0;
-    else if (transaction.type === "DIVIDEND" || transaction.type === "DEPOSIT") holdings.cash += Number(transaction.amount) || 0;
+    else if (transaction.type === "DIVIDEND" || transaction.type === "DEPOSIT")
+      holdings.cash += Number(transaction.amount) || 0;
     else if (transaction.type === "SELL") holdings[transaction.assetId] -= Number(transaction.quantity) || 0;
-    else if (["OPENING", "BUY", "ADJUSTMENT"].includes(transaction.type)) holdings[transaction.assetId] += Number(transaction.quantity) || 0;
-    if (Object.values(holdings).some((value) => value < -EPSILON)) errors.push({ code: "negative-holding", transactionId: transaction.id });
+    else if (["OPENING", "BUY", "ADJUSTMENT"].includes(transaction.type))
+      holdings[transaction.assetId] += Number(transaction.quantity) || 0;
+    if (Object.values(holdings).some((value) => value < -EPSILON))
+      errors.push({ code: "negative-holding", transactionId: transaction.id });
   });
   return { valid: errors.length === 0, errors };
 }
@@ -467,22 +830,64 @@ export function appendTransactions(portfolio, transactions, audit = {}) {
   const next = clone(current);
   const nextVersion = next.versions.find((item) => item.id === version.id);
   nextVersion.transactions = candidate;
-  nextVersion.audit.push({ id: makeId("audit"), action: audit.action || "append-transactions", timestamp: isoDate(audit.timestamp), versionId: version.id, transactionIds: normalized.map((transaction) => transaction.id), affectsHistory: Boolean(audit.affectsHistory), detail: audit.detail || "" });
+  nextVersion.audit.push({
+    id: makeId("audit"),
+    action: audit.action || "append-transactions",
+    timestamp: isoDate(audit.timestamp),
+    versionId: version.id,
+    transactionIds: normalized.map((transaction) => transaction.id),
+    affectsHistory: Boolean(audit.affectsHistory),
+    detail: audit.detail || "",
+  });
   return { portfolio: next, transactions: normalized, validation: { valid: true, errors: [] } };
 }
 
-export function createPortfolioVersion(portfolio, openingTransactions, label = "New tracking baseline", now = new Date().toISOString()) {
+export function createPortfolioVersion(
+  portfolio,
+  openingTransactions,
+  label = "New tracking baseline",
+  now = new Date().toISOString(),
+) {
   const current = normalizePortfolio(portfolio);
   const assets = assetRegistry(current);
   const next = clone(current);
-  const oldVersion = next.versions.find((version) => version.id === next.activeVersionId) || next.versions[next.versions.length - 1];
+  const oldVersion =
+    next.versions.find((version) => version.id === next.activeVersionId) || next.versions[next.versions.length - 1];
   const versionId = makeId("version");
-  const normalized = openingTransactions.map((transaction) => normalizeTransaction(transaction, assets)).filter(Boolean);
+  const normalized = openingTransactions
+    .map((transaction) => normalizeTransaction(transaction, assets))
+    .filter(Boolean);
   const validation = validateLedger(normalized, assets);
   if (!validation.valid) return { portfolio: current, transactions: [], validation };
   oldVersion.closedAt = now;
-  oldVersion.audit.push({ id: makeId("audit"), action: "close-version", timestamp: now, versionId: oldVersion.id, transactionIds: [], affectsHistory: true, detail: label });
-  next.versions.push({ id: versionId, label, createdAt: now, startedAt: now, closedAt: null, transactions: normalized, audit: [{ id: makeId("audit"), action: "create-version", timestamp: now, versionId, transactionIds: normalized.map((transaction) => transaction.id), affectsHistory: true, detail: label }] });
+  oldVersion.audit.push({
+    id: makeId("audit"),
+    action: "close-version",
+    timestamp: now,
+    versionId: oldVersion.id,
+    transactionIds: [],
+    affectsHistory: true,
+    detail: label,
+  });
+  next.versions.push({
+    id: versionId,
+    label,
+    createdAt: now,
+    startedAt: now,
+    closedAt: null,
+    transactions: normalized,
+    audit: [
+      {
+        id: makeId("audit"),
+        action: "create-version",
+        timestamp: now,
+        versionId,
+        transactionIds: normalized.map((transaction) => transaction.id),
+        affectsHistory: true,
+        detail: label,
+      },
+    ],
+  });
   next.activeVersionId = versionId;
   return { portfolio: next, transactions: normalized, validation: { valid: true, errors: [] } };
 }
@@ -497,7 +902,15 @@ export function createTransaction(input, market, now = new Date().toISOString(),
   const effectiveAssetId = assetId || "cash";
   const date = isoDate(input.date || now, now);
   const definition = assetDefinition(effectiveAssetId, assets);
-  const unitPrice = finite(input.unitPrice) || (definition.unit === "TOMAN" ? 1 : marketPriceAt(market, effectiveAssetId, date));
+  const normalizedPortfolio = normalizePortfolio(portfolio);
+  const transactionMarket = {
+    ...(market || {}),
+    manualQuotes: normalizedPortfolio.manualQuotes,
+    assetDefinitions: assetRegistry(normalizedPortfolio),
+  };
+  const unitPrice =
+    finite(input.unitPrice) ||
+    (definition.unit === "TOMAN" ? 1 : marketPriceAt(transactionMarket, effectiveAssetId, date));
   const quantity = finite(input.quantity);
   const amount = finite(input.amount);
   const transaction = {
@@ -515,30 +928,37 @@ export function createTransaction(input, market, now = new Date().toISOString(),
     createdAt: now,
     note: input.note || "",
     source: input.source || "advanced",
-    marketQuote: snapshotQuote(market, assetId, date),
+    marketQuote: snapshotQuote(transactionMarket, assetId, date),
   };
   return normalizeTransaction(transaction, assets);
 }
 
 export function createPortfolioAsset(portfolio, input, now = new Date().toISOString()) {
   const current = normalizePortfolio(portfolio);
-  const title = String(input && input.title || "").trim().slice(0, 80);
+  const title = String((input && input.title) || "")
+    .trim()
+    .slice(0, 80);
   if (!title) return { portfolio: current, asset: null };
-  const existing = Object.values(current.assets).find((asset) => asset.title.toLocaleLowerCase() === title.toLocaleLowerCase());
+  const existing = Object.values(current.assets).find(
+    (asset) => asset.title.toLocaleLowerCase() === title.toLocaleLowerCase(),
+  );
   if (existing) return { portfolio: current, asset: existing };
   const id = makeId("asset").replace(/^/, "custom:");
   const kind = input.kind || "custom";
   const isStock = kind === "stock" || kind === "legacy-stock";
-  const asset = normalizeAsset({
+  const asset = normalizeAsset(
+    {
+      id,
+      title,
+      kind,
+      unit: input.unit || "TOMAN",
+      sleeveId: input.sleeveId || (isStock ? "iranEquity" : null),
+      isInvestable: typeof input.isInvestable === "boolean" ? input.isInvestable : isStock,
+      isLiquid: typeof input.isLiquid === "boolean" ? input.isLiquid : false,
+      createdAt: now,
+    },
     id,
-    title,
-    kind,
-    unit: input.unit || "TOMAN",
-    sleeveId: input.sleeveId || (isStock ? "iranEquity" : null),
-    isInvestable: typeof input.isInvestable === "boolean" ? input.isInvestable : isStock,
-    isLiquid: typeof input.isLiquid === "boolean" ? input.isLiquid : false,
-    createdAt: now,
-  }, id);
+  );
   const next = clone(current);
   next.assets = { ...(next.assets || {}), [id]: asset };
   return { portfolio: next, asset };
@@ -549,28 +969,77 @@ export function simpleBalancesFromPortfolio(portfolio, market, asOf = new Date()
   return Object.fromEntries(SIMPLE_ASSET_IDS.map((assetId) => [assetId, result.holdings[assetId] || 0]));
 }
 
-export function simpleChangeTransactions(currentHoldings, desiredHoldings, reason, market, now = new Date().toISOString(), trackingStart = null) {
+export function simpleChangeTransactions(
+  currentHoldings,
+  desiredHoldings,
+  reason,
+  market,
+  now = new Date().toISOString(),
+  trackingStart = null,
+) {
   const transactions = [];
+  let hasMissingPrice = false;
   SIMPLE_ASSET_IDS.forEach((assetId) => {
     const current = Number(currentHoldings[assetId]) || 0;
     const desired = Math.max(0, Number(desiredHoldings[assetId]) || 0);
     const delta = desired - current;
     if (Math.abs(delta) <= EPSILON) return;
     const effectiveDate = reason === "new-purchase" ? now : trackingStart || now;
-    const price = marketPriceAt(market, assetId, effectiveDate) || 1;
+    const definition = assetDefinition(assetId);
+    const marketPrice = marketPriceAt(market, assetId, effectiveDate);
+    const price = marketPrice ?? (definition?.unit === "TOMAN" ? 1 : null);
+    if (!Number.isFinite(price) || price <= 0) {
+      hasMissingPrice = true;
+      return;
+    }
     if (reason === "new-purchase") {
-      transactions.push(createTransaction({ type: delta > 0 ? "BUY" : "SELL", assetId, quantity: Math.abs(delta), unitPrice: price, source: "simple", note: "Simple holdings update", date: effectiveDate }, market, now));
+      transactions.push(
+        createTransaction(
+          {
+            type: delta > 0 ? "BUY" : "SELL",
+            assetId,
+            quantity: Math.abs(delta),
+            unitPrice: price,
+            source: "simple",
+            note: "Simple holdings update",
+            date: effectiveDate,
+          },
+          market,
+          now,
+        ),
+      );
     } else {
-      transactions.push(createTransaction({ type: "ADJUSTMENT", assetId, quantity: delta, unitPrice: price, source: "simple-correction", note: "Simple holdings correction", date: effectiveDate }, market, now));
+      transactions.push(
+        createTransaction(
+          {
+            type: "ADJUSTMENT",
+            assetId,
+            quantity: delta,
+            unitPrice: price,
+            source: "simple-correction",
+            note: "Simple holdings correction",
+            date: effectiveDate,
+          },
+          market,
+          now,
+        ),
+      );
     }
   });
-  return transactions.filter(Boolean);
+  return hasMissingPrice ? [] : transactions.filter(Boolean);
 }
 
 export function portfolioSeries(portfolio, market, startDate, endDate, inflationRate = 0) {
   const normalized = normalizePortfolio(portfolio);
+  const marketWithManualQuotes = {
+    ...(market || {}),
+    manualQuotes: normalized.manualQuotes,
+    assetDefinitions: assetRegistry(normalized),
+  };
   const version = activePortfolioVersion(normalized);
-  const transactionDates = version.transactions.map((transaction) => new Date(transaction.date).getTime()).filter(Number.isFinite);
+  const transactionDates = version.transactions
+    .map((transaction) => new Date(transaction.date).getTime())
+    .filter(Number.isFinite);
   if (!transactionDates.length) return [];
   const requestedStart = new Date(startDate).getTime();
   const end = new Date(endDate).getTime();
@@ -580,13 +1049,23 @@ export function portfolioSeries(portfolio, market, startDate, endDate, inflation
   const points = [];
   for (let time = start; time <= end; time += 30 * 24 * 60 * 60 * 1000) {
     const date = new Date(time).toISOString();
-    const state = calculatePortfolio(normalized, market, date, inflationRate);
-    points.push({ date, value: state.missingPrices.length ? null : state.currentValue, realValue: state.missingPrices.length ? null : state.realValue, complete: state.missingPrices.length === 0 });
+    const state = calculatePortfolio(normalized, marketWithManualQuotes, date, inflationRate);
+    points.push({
+      date,
+      value: state.missingPrices.length ? null : state.currentValue,
+      realValue: state.missingPrices.length ? null : state.realValue,
+      complete: state.missingPrices.length === 0,
+    });
   }
   const finalDate = new Date(end).toISOString();
   if (!points.length || points[points.length - 1].date.slice(0, 10) !== finalDate.slice(0, 10)) {
     const state = calculatePortfolio(normalized, market, finalDate, inflationRate);
-    points.push({ date: finalDate, value: state.missingPrices.length ? null : state.currentValue, realValue: state.missingPrices.length ? null : state.realValue, complete: state.missingPrices.length === 0 });
+    points.push({
+      date: finalDate,
+      value: state.missingPrices.length ? null : state.currentValue,
+      realValue: state.missingPrices.length ? null : state.realValue,
+      complete: state.missingPrices.length === 0,
+    });
   }
   return points;
 }

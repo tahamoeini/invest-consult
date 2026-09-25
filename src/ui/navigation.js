@@ -22,7 +22,8 @@ export function createNavigationController(shell, store) {
     if (navigation.title && activeItem) navigation.title.textContent = activeItem.label;
     if (sidebar.overlay) sidebar.overlay.setAttribute("aria-hidden", state.mobileNavOpen ? "false" : "true");
     if (sidebar.toggle) sidebar.toggle.setAttribute("aria-expanded", state.sidebarCollapsed ? "false" : "true");
-    if (sidebar.mobileToggle) sidebar.mobileToggle.setAttribute("aria-expanded", state.mobileNavOpen ? "true" : "false");
+    if (sidebar.mobileToggle)
+      sidebar.mobileToggle.setAttribute("aria-expanded", state.mobileNavOpen ? "true" : "false");
   }
 
   function goTo(viewId) {
@@ -31,8 +32,12 @@ export function createNavigationController(shell, store) {
   }
 
   navigation.items.forEach((item) => item.addEventListener("click", () => goTo(item.dataset.navView)));
-  sidebar.toggle?.addEventListener("click", () => store.setState((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })));
-  sidebar.mobileToggle?.addEventListener("click", () => store.setState((state) => ({ mobileNavOpen: !state.mobileNavOpen })));
+  sidebar.toggle?.addEventListener("click", () =>
+    store.setState((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  );
+  sidebar.mobileToggle?.addEventListener("click", () =>
+    store.setState((state) => ({ mobileNavOpen: !state.mobileNavOpen })),
+  );
   sidebar.overlay?.addEventListener("click", () => store.setState({ mobileNavOpen: false }));
 
   store.subscribe(apply);

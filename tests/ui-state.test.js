@@ -4,9 +4,15 @@ import { createAppStore } from "../src/ui/state.js";
 
 const values = new Map();
 globalThis.localStorage = {
-  getItem(key) { return values.has(key) ? values.get(key) : null; },
-  setItem(key, value) { values.set(key, String(value)); },
-  removeItem(key) { values.delete(key); },
+  getItem(key) {
+    return values.has(key) ? values.get(key) : null;
+  },
+  setItem(key, value) {
+    values.set(key, String(value));
+  },
+  removeItem(key) {
+    values.delete(key);
+  },
 };
 
 test("application state preserves shared data while navigation remains dashboard-first", () => {

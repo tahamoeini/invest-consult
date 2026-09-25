@@ -12,18 +12,18 @@ Branch: `feat/dashboard-trust-hardening`
 
 ## Scenario checklist
 
-| Scenario | Expected result | Local evidence | Manual preview status |
-| --- | --- | --- | --- |
-| New empty user | Summary cards and charts explain that values are not available; onboarding remains visible. | Dashboard state contract and existing chart tests | Rerun on preview |
-| Existing portfolio | Current value, invested amount, P/L amount and percentage use the ledger result. | Existing portfolio tests plus dashboard wiring review | Rerun on preview |
-| Portfolio with history | Tracking duration starts at the ledger tracking start and history remains versioned. | Existing history/portfolio tests; no engine changes | Rerun on preview |
-| Missing market data | Valuation is unavailable instead of presenting a partial total; market cards remain visible as unavailable. | Existing missing-price behavior plus market rendering review | Rerun on preview |
-| Corrupted storage | Invalid JSON or invalid stored shape falls back safely and shows a visible warning. | `readJson`, `readHistory`, and `readPortfolio` guards | Rerun on preview |
-| Import/export | Existing schema validation, confirmation gates, and versioned portfolio payload remain intact. | Existing history APIs and unchanged ledger flow | Rerun on preview |
-| Mobile/tablet | Sidebar/cards/charts stack without horizontal overflow; controls remain touch-friendly. | Responsive CSS review | Rerun on preview |
-| Large portfolio | Rendering remains bounded to monthly chart points and existing ledger limits. | Existing rendering limits and monthly series path | Rerun on preview |
-| API failure | Cache policy or unavailable state is explicit; no synthetic market quote is created. | Existing `loadMarket()` path and diagnostics review | Rerun on preview |
-| Navigation | Dashboard, plan, simulation, history, portfolio, assets, and settings remain sibling views. | Dashboard contract test | Rerun on preview |
+| Scenario               | Expected result                                                                                             | Local evidence                                               | Manual preview status |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------- |
+| New empty user         | Summary cards and charts explain that values are not available; onboarding remains visible.                 | Dashboard state contract and existing chart tests            | Rerun on preview      |
+| Existing portfolio     | Current value, invested amount, P/L amount and percentage use the ledger result.                            | Existing portfolio tests plus dashboard wiring review        | Rerun on preview      |
+| Portfolio with history | Tracking duration starts at the ledger tracking start and history remains versioned.                        | Existing history/portfolio tests; no engine changes          | Rerun on preview      |
+| Missing market data    | Valuation is unavailable instead of presenting a partial total; market cards remain visible as unavailable. | Existing missing-price behavior plus market rendering review | Rerun on preview      |
+| Corrupted storage      | Invalid JSON or invalid stored shape falls back safely and shows a visible warning.                         | `readJson`, `readHistory`, and `readPortfolio` guards        | Rerun on preview      |
+| Import/export          | Existing schema validation, confirmation gates, and versioned portfolio payload remain intact.              | Existing history APIs and unchanged ledger flow              | Rerun on preview      |
+| Mobile/tablet          | Sidebar/cards/charts stack without horizontal overflow; controls remain touch-friendly.                     | Responsive CSS review                                        | Rerun on preview      |
+| Large portfolio        | Rendering remains bounded to monthly chart points and existing ledger limits.                               | Existing rendering limits and monthly series path            | Rerun on preview      |
+| API failure            | Cache policy or unavailable state is explicit; no synthetic market quote is created.                        | Existing `loadMarket()` path and diagnostics review          | Rerun on preview      |
+| Navigation             | Dashboard, plan, simulation, history, portfolio, assets, and settings remain sibling views.                 | Dashboard contract test                                      | Rerun on preview      |
 
 ## Manual preview gate before merge
 
@@ -47,4 +47,4 @@ Branch: `feat/dashboard-trust-hardening`
 ## Current limitation
 
 The browser-control session used for this branch repeatedly timed out before opening a tab, so new screenshots and live interaction evidence could not be captured in this work session. The branch is intentionally not marked merge-ready until the manual preview gate above is run against the deployed PR preview.
-{∂ﬂÎó∏·æﬁ€ç¯Âœzwﬁu”m:Ô]<mÁ|}Á¥
+{ÔøΩÔøΩÎó∏ÔøΩÔøΩ€çÔøΩÔøΩÔøΩzwÔøΩuÔøΩm:ÔøΩ]<mÔøΩ|}ÔøΩ

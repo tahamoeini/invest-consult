@@ -10,17 +10,17 @@
 
 ## Scenario matrix
 
-| Scenario | Expected behavior | Coverage |
-| --- | --- | --- |
-| New user with no data | Dashboard uses onboarding and empty states; no financial value is fabricated. | Dashboard state logic + chart empty states |
-| Existing plan history | Dashboard can recover the latest saved monthly plan after reload. | `latestPlanSnapshot()` |
-| Portfolio only | Portfolio summary, allocation, ledger, and dashboard values use the active ledger. | Existing portfolio engine + new UI wiring |
-| Missing market data | Held assets with missing prices show unavailable valuation; missing chart periods remain gaps. | Existing portfolio tests + chart tests |
-| Import/export | Existing versioned history and portfolio payload remain on the existing schema path. | Existing history tests + unchanged APIs |
-| Currency migration | Existing migration keys and TOMAN conversion path remain intact. | Existing migration code preserved |
-| Mobile viewport | Sidebar becomes a compact drawer; cards stack; charts and tables stay within the viewport. | Responsive CSS review |
-| Empty charts | Reusable chart module returns an explicit Persian empty state. | `tests/charts.test.js` |
-| Broken API response | Cache fallback or unavailable state is used; no synthetic quote is created. | `loadMarket()` + existing API behavior |
+| Scenario                | Expected behavior                                                                                       | Coverage                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| New user with no data   | Dashboard uses onboarding and empty states; no financial value is fabricated.                           | Dashboard state logic + chart empty states              |
+| Existing plan history   | Dashboard can recover the latest saved monthly plan after reload.                                       | `latestPlanSnapshot()`                                  |
+| Portfolio only          | Portfolio summary, allocation, ledger, and dashboard values use the active ledger.                      | Existing portfolio engine + new UI wiring               |
+| Missing market data     | Held assets with missing prices show unavailable valuation; missing chart periods remain gaps.          | Existing portfolio tests + chart tests                  |
+| Import/export           | Existing versioned history and portfolio payload remain on the existing schema path.                    | Existing history tests + unchanged APIs                 |
+| Currency migration      | Existing migration keys and TOMAN conversion path remain intact.                                        | Existing migration code preserved                       |
+| Mobile viewport         | Sidebar becomes a compact drawer; cards stack; charts and tables stay within the viewport.              | Responsive CSS review                                   |
+| Empty charts            | Reusable chart module returns an explicit Persian empty state.                                          | `tests/charts.test.js`                                  |
+| Broken API response     | Cache fallback or unavailable state is used; no synthetic quote is created.                             | `loadMarket()` + existing API behavior                  |
 | Large portfolio dataset | Rendering is bounded to visible ledger/audit rows; series is monthly rather than transaction-per-pixel. | Existing rendering limits + monthly `portfolioSeries()` |
 
 ## Manual preview checks before merge

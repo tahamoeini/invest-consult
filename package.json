@@ -4,10 +4,21 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
+    "format": "prettier --write \"**/*.{js,json,md,css,html}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md,css,html}\"",
+    "fix": "npm run format && npm run lint:fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "node --test",
-    "check": "node --check app.js && node --check src/engine.js && node --check src/analysis.js && node --check src/analysis.worker.js && node --check src/history.js && node --check src/portfolio.js && node --check src/market/catalog.js && node --check src/market/history.js && node --check src/ui/charts.js && node --check functions/api/market.js && node --check functions/api/history.js"
+    "check": "node --check app.js && node --check src/engine.js && node --check src/analysis.js && node --check src/analysis.worker.js && node --check src/history.js && node --check src/portfolio.js && node --check src/market/catalog.js && node --check src/market/history.js && node --check src/ui/charts.js && node --check functions/api/_security.js && node --check functions/api/session.js && node --check functions/api/inflation.js && node --check functions/api/market.js && node --check functions/api/history.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.0.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0"
   }
 }
