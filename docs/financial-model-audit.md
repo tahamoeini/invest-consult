@@ -67,7 +67,7 @@ P10, P50, and P90 are empirical percentiles of the simulated ending balances: 10
 - **Real maximum drawdown:** peak-to-trough drawdown of that unitized path after applying monthly inflation deflation.
 - **Purchasing-power drawdown:** largest shortfall of the inflation-adjusted account balance versus cumulative contributions expressed in today's toman. It is a contribution-relative measure, not another peak-to-trough measure.
 - **Annualized volatility:** sample standard deviation of cash-flow-adjusted monthly portfolio returns times `sqrt(12)`.
-- **Sortino:** MAR is selected explicitly as 0% annual (default), scenario inflation, or the current effective fixed-income yield. Effective annual MAR converts to monthly using `(1 + MAR)^(1/12) - 1`. Downside means strictly below MAR; a zero return is not downside at zero MAR. Numerator is mean monthly excess return times 12; denominator is root-mean-square monthly shortfall times `sqrt(12)`. At least 24 monthly returns and two downside observations are required. Missing MAR, too few observations, too few downside observations, or zero/negligible downside returns an unavailable state, never an infinite or capped ratio. Monte Carlo displays the median valid per-path ratio and labels it as simulation-derived; it is not a historical performance statistic and inherits all return, correlation, and fixed-income assumptions.
+- **Sortino:** MAR is selected explicitly as 0% annual (default), scenario inflation, or the current effective fixed-income yield. Effective annual MAR converts to monthly using `(1 + MAR)^(1/12) - 1`. Downside means strictly below MAR; a zero return is not downside at zero MAR. Numerator is mean monthly excess return times 12; denominator is root-mean-square monthly shortfall times `sqrt(12)`. At least 24 monthly returns and five downside observations are required to reduce sensitivity to one or two tail outcomes. Missing MAR, too few observations, too few downside observations, or zero/negligible downside returns an unavailable state, never an infinite or capped ratio. Monte Carlo displays the median valid per-path ratio and labels it as simulation-derived; it is not a historical performance statistic and inherits all return, correlation, and fixed-income assumptions.
 - **Sharpe:** shown only when the user checks the fixed-income benchmark. It uses mean monthly arithmetic excess return times 12 divided by annualized monthly volatility, and is unavailable when the benchmark or nonzero volatility is absent.
 - **VaR and CVaR:** 95% estimates from the pooled simulated monthly portfolio-return distribution, only when at least 200 simulated monthly observations exist. These are model outputs, not empirically calibrated loss limits.
 
@@ -99,6 +99,30 @@ The required reference portfolio is:
 - Paths: 10,000; quarterly rebalancing enabled
 
 The fixture test uses 60 synthetic dated monthly observations for repeatability. It verifies the end-to-end calculation path and is not a substitute for running the same form against current production data sources. Production inputs can differ because of history availability, current fixed-income yield, source coverage, and model method selection.
+
+### Manual interface check and reconstructed before/after
+
+The Persian RTL interface was manually exercised at a 390-pixel viewport with the reference inputs, nominal/real tabs, model disclosure, cost/turnover rows, and conservative recommendation preview. The local Pages preview's history request failed in this restricted environment, so the run correctly reported Low data quality, zero joint observed months, and configured-return fallbacks. It used the 25% effective fixed-income assumption, quarterly rebalancing, 0.5% buy/sell fees for gold, silver, and copper, and seed 42. These values verify the UI/formula path only; they are not a production-data result or forecast.
+
+| Reference output                          | Baseline engine at task start |                                      Hardened UI local fallback run |
+| ----------------------------------------- | ----------------------------: | ------------------------------------------------------------------: |
+| Deterministic central nominal value       |                   329,686,486 |                                                         328,902,871 |
+| P10 nominal                               |                   281,157,827 |                                                         267,841,831 |
+| P50 nominal                               |                   327,992,240 |                                                         324,215,272 |
+| P90 nominal                               |                   383,823,944 |                                                         395,748,548 |
+| Central real value                        |                   111,440,808 |                                                         111,175,930 |
+| P10 real                                  |                    95,037,124 |                                                          90,536,044 |
+| P50 real                                  |                   110,868,118 |                                                         109,591,425 |
+| P90 real                                  |                   129,740,381 |                                                         133,771,142 |
+| Annualized volatility                     |                          8.4% |                                                               10.8% |
+| Sortino                                   |                          8.16 | 5.10, median of simulation paths with at least five downside months |
+| Nominal maximum drawdown                  |                          3.4% |                                                                4.9% |
+| Real maximum drawdown                     |                   unavailable |                                                               48.2% |
+| Probability of beating scenario inflation |                   unavailable |                                                                0.0% |
+| Median modeled transaction fees           |                       omitted |                                                       859,719 toman |
+| Median rebalancing turnover               |                       omitted |                                                    60,201,086 toman |
+
+The baseline values were reconstructed from the checked-in engine revision using the same fallback return assumptions and an injected seed of 42 because that revision's normal UI run used unseeded randomness. The baseline rebalanced monthly and omitted transaction costs; the hardened run uses the disclosed quarterly cadence and fees. These are not a controlled single-variable A/B comparison. Both use the correct cumulative inflation factor `1.72^2 = 2.9584`; every real value in the table is the corresponding nominal value divided by that factor (rounded to whole toman). The new real drawdown exposes the purchasing-power decline that the baseline did not report.
 
 ## Known limitations
 

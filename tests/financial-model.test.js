@@ -436,6 +436,12 @@ test("Sortino is unavailable without enough observations or downside observation
   assert.equal(downsideDeviation([], 0), null);
   assert.equal(sortinoRatio(Array(24).fill(0.01), 0), null);
   assert.equal(sortinoRatio(Array(24).fill(0), 0), null);
+  const fourDownside = Array(24).fill(0.01);
+  fourDownside.fill(-0.01, 0, 4);
+  assert.equal(sortinoRatio(fourDownside, 0), null);
+  const fiveDownside = Array(24).fill(0.01);
+  fiveDownside.fill(-0.01, 0, 5);
+  assert.ok(Number.isFinite(sortinoRatio(fiveDownside, 0)));
   assert.equal(maxDrawdown([100]), null);
   assert.equal(annualizedVolatility([]), null);
 });
