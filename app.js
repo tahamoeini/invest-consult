@@ -3085,10 +3085,11 @@ async function loadMarket(force = false) {
   setStatus(text("status.loading", fallbackCopy.status.loading), "loading");
   appStore.setState({ marketStatus: "loading", error: null });
   const cacheDisabled = appStore.getState().marketCacheDisabled;
-  lastKnownMarket = cacheDisabled ? null : readJson(MARKET_CACHE_KEY, null);
-  const cacheAge = Number.isFinite(new Date(lastKnownMarket?.updatedAt || 0).getTime())
-    ? Date.now() - new Date(lastKnownMarket.updatedAt).getTime()
-    : Infinity;
+  const cachedMarket = cacheDisabled ? null : readJson(MARKET_CACHE_KEY, null);
+  lastKnownMarket =
+    cachedMarket && typeof cachedMarket === "object" && !Array.isArray(cachedMarket) ? cachedMarket : null;
+  const cachedUpdatedAt = Date.parse(lastKnownMarket?.updatedAt || "");
+  const cacheAge = Number.isFinite(cachedUpdatedAt) ? Date.now() - cachedUpdatedAt : Infinity;
   if (!force && !cacheDisabled && lastKnownMarket?.assets && cacheAge >= 0 && cacheAge < 90_000) {
     liveMarket = lastKnownMarket;
     appStore.setState({ market: liveMarket, marketStatus: "cached" });
@@ -3108,7 +3109,18 @@ async function loadMarket(force = false) {
       headers: providerRequestHeaders(),
     });
     if (!response.ok) throw new Error("Market request failed");
-    liveMarket = reconcileMarketWithRecentAcceptedQuote(await response.json(), lastKnownMarket);
+    const payload = await response.json();
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      Array.isArray(payload) ||
+      !payload.assets ||
+      typeof payload.assets !== "object" ||
+      !Number.isFinite(Date.parse(payload.updatedAt || ""))
+    )
+      throw new Error("Market response was invalid");
+    liveMarket = reconcileMarketWithRecentAcceptedQuote(payload, lastKnownMarket);
+    if (!liveMarket || typeof liveMarket !== "object") throw new Error("Market response could not be reconciled");
     const cacheDisabledNow = appStore.getState().marketCacheDisabled;
     if (!cacheDisabledNow) writeJson(MARKET_CACHE_KEY, liveMarket);
     else lastKnownMarket = null;
