@@ -43,6 +43,7 @@ button,
 input,
 select {
   font: inherit;
+  font-size: small;
 }
 button,
 select {
@@ -415,7 +416,7 @@ select:focus {
 }
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 13px;
   margin-top: 18px;
 }
@@ -854,6 +855,7 @@ input[type="range"] {
 }
 .analysis-panel {
   min-height: 300px;
+  height: stretch;
 }
 .metric-grid {
   display: grid;
@@ -938,6 +940,182 @@ input[type="range"] {
   color: var(--muted);
   font-size: max(12px, 0.64rem);
   line-height: 1.8;
+}
+.simulation-primary-metric small {
+  min-height: 2.6em;
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.6;
+}
+.simulation-primary-metric strong {
+  font-size: 0.8rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.simulation-primary-metric span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: max(12px, 0.58rem);
+  line-height: 1.55;
+}
+.simulation-view-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 18px 0 9px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #f1f5f4;
+}
+.simulation-view-tabs button {
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.simulation-view-tabs button[aria-selected="true"] {
+  color: var(--primary-dark);
+  background: white;
+  box-shadow: 0 1px 4px rgba(19, 46, 43, 0.1);
+}
+.simulation-range-table {
+  overflow: hidden;
+  border: 1px solid #edf1f2;
+  border-radius: 13px;
+  background: white;
+}
+.simulation-range-heading,
+.simulation-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.8fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.simulation-range-heading {
+  color: var(--muted);
+  background: #f7faf9;
+  font-size: max(12px, 0.62rem);
+  font-weight: 800;
+}
+.simulation-range-row + .simulation-range-row {
+  border-top: 1px solid #edf1f2;
+}
+.simulation-range-row > span {
+  font-size: max(12px, 0.7rem);
+  line-height: 1.55;
+}
+.simulation-range-row > strong {
+  font-size: max(12px, 0.73rem);
+  overflow-wrap: anywhere;
+}
+.simulation-range-row > small {
+  color: var(--muted);
+  font-size: max(12px, 0.58rem);
+  line-height: 1.5;
+}
+.simulation-range-central {
+  background: #f7faf9;
+}
+.simulation-range-p50 > span,
+.simulation-range-p50 > strong {
+  color: var(--primary-dark);
+  font-weight: 900;
+}
+.model-details-panel {
+  margin-top: 16px;
+}
+.model-details-panel .collapsible-summary h2 {
+  font-size: 1rem;
+}
+.model-overview,
+.method-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin: 12px 0;
+}
+.model-overview > div,
+.method-comparison-grid > div {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #edf1f2;
+  border-radius: 12px;
+  background: white;
+}
+.model-overview strong,
+.method-comparison-grid strong {
+  font-size: max(12px, 0.68rem);
+  line-height: 1.6;
+}
+.model-overview span,
+.method-comparison-grid span,
+.method-comparison-grid small {
+  color: var(--muted);
+  font-size: max(12px, 0.62rem);
+  line-height: 1.7;
+}
+.method-comparison-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.simulation-advanced-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.simulation-advanced-grid .metric small {
+  white-space: normal;
+  line-height: 1.6;
+}
+.model-data-section {
+  margin-top: 18px;
+}
+.model-data-section h3 {
+  margin: 0 0 8px;
+  color: var(--primary-dark);
+  font-size: 0.86rem;
+}
+.model-data-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.model-data-row,
+.correlation-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #edf1f2;
+  border-radius: 10px;
+  background: white;
+}
+.model-data-row strong,
+.correlation-row strong {
+  font-size: max(12px, 0.68rem);
+}
+.model-data-row span,
+.model-data-row small,
+.correlation-row span {
+  color: var(--muted);
+  font-size: max(12px, 0.6rem);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.correlation-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.simulation-model-warning {
+  padding: 10px 12px;
+  border-right: 3px solid #c18a2c;
+  background: #fffaf0;
 }
 .backtest-panel,
 .history-panel {
@@ -1430,6 +1608,38 @@ input[type="range"] {
   }
   .stock-entry-form button {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 740px) {
+  .model-overview,
+  .simulation-advanced-grid,
+  .model-data-list,
+  .correlation-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .method-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 460px) {
+  .model-overview,
+  .simulation-advanced-grid,
+  .model-data-list,
+  .correlation-list,
+  .method-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+  .simulation-range-heading,
+  .simulation-range-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+  .simulation-range-heading > span:last-child {
+    display: none;
+  }
+  .simulation-range-row > small {
+    grid-column: 2;
   }
 }
 
@@ -3072,7 +3282,7 @@ summary:focus-visible,
 
 .history-chart-controls {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
   gap: var(--space-3);
   margin: var(--space-4) 0 var(--space-2);
@@ -3108,6 +3318,7 @@ summary:focus-visible,
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--surface-muted);
+  grid-column: span 2;
 }
 .history-asset-filter > summary {
   display: flex;
@@ -3133,7 +3344,7 @@ summary:focus-visible,
 }
 .history-asset-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
   padding: 4px 10px 10px;
@@ -3425,6 +3636,12 @@ summary {
   gap: 9px;
   padding: 3px 0;
 }
+.settings-fee-grid > div {
+  grid-template-columns: minmax(88px, 1.25fr) repeat(3, minmax(60px, 0.8fr));
+}
+.settings-fee-grid input {
+  min-width: 0;
+}
 .settings-assumption-grid input {
   padding: 7px 9px;
 }
@@ -3473,5 +3690,9 @@ summary {
   .settings-assumption-grid > div {
     grid-template-columns: minmax(70px, 1fr) repeat(2, minmax(75px, 0.8fr));
     gap: 5px;
+  }
+  .settings-fee-grid > div {
+    grid-template-columns: minmax(66px, 1fr) repeat(3, minmax(50px, 0.7fr));
+    gap: 4px;
   }
 }

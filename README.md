@@ -44,7 +44,9 @@ functions/api/session.js   Signed, HttpOnly browser-session bootstrap
 functions/api/inflation.js World Bank annual CPI inflation fallback
 functions/api/migrations/ D1 session quota and platform-key usage tables
 content/fa.json            Persian UI copy
-tests/engine.test.js       Node built-in test suite
+tests/engine.test.js       Core model and portfolio tests
+tests/financial-model.test.js Seeded quantitative regression tests
+tests/history-api.test.js  History API and dated copper conversion tests
 ```
 
 The calculation engine is isolated from the DOM and network layer. This keeps the model testable and makes it possible to replace the UI or data providers without changing the formulas.
@@ -86,19 +88,19 @@ The allocation engine uses transparent guardrails rather than price prediction. 
 
 ### Future simulation
 
-The simulation applies monthly contributions, annual contribution growth, nominal annual return assumptions, optional rebalancing, and inflation deflation. It is a planning scenario, not a forecast.
+The simulation applies end-of-month contributions, explicit buy/sell costs, optional cadence- or threshold-based rebalancing, nominal return assumptions, and a separate inflation deflator. It shows nominal and today's-toman P10/P50/P90 values and labels data and assumptions. It is a planning scenario, not a forecast. The detailed calculation flow and its limits are documented in [the financial-model audit](docs/financial-model-audit.md).
 
 ### Historical backtest
 
 The engine converts available provider history to monthly returns and tests every possible starting period for the selected horizon. Each reported period must have continuous observed data for every selected asset. If an asset history is absent or a monthly observation is missing, that period is excluded; if no complete period remains, the run is unavailable and identifies the missing assets. Model assumptions are not used to fill historical gaps.
 
-The reported CAGR is a cash-flow-aware annualized outcome when the internal monthly IRR converges; otherwise the engine uses a documented total-invested fallback. Maximum drawdown is calculated from the simulated portfolio value path.
+The reported CAGR is a cash-flow-aware annualized outcome only when monthly IRR converges. Maximum drawdown uses the unitized return path, so contributions do not hide portfolio losses. Real drawdown uses the inflation-deflated unitized path; purchasing-power drawdown is separately measured against inflation-adjusted contributions.
 
 ### Monte Carlo
 
-The simulation uses return means and volatility estimated from available monthly history where coverage is sufficient. It falls back to explicit versioned assumptions for sparse series. Covariance uses paired observed returns only; missing/imputed returns never enter covariance, and short samples shrink correlations toward zero. The default run uses 2,000 paths and can be changed to 1,000, 5,000, or 10,000 in the interface. P10, P50, and P90 are percentile summaries, not confidence guarantees.
+The simulation uses arithmetic monthly mean returns, sample volatility, and paired historical covariance when coverage is sufficient. Sparse correlations are blended toward disclosed asset-pair priors; missing or assumption-filled returns never enter historical covariance. It compares correlated lognormal Gaussian paths with three-month moving-block bootstrap paths when joint history is sufficient. P10/P50/P90 are simulated outcome percentiles, not confidence guarantees. Nominal and real values are shown separately, with real values deflated once by `(1 + annual inflation)^years`.
 
-EWMA uses a 12-month half-life; moving-block bootstrap samples contiguous three-month blocks. Both methods must pass a rolling 24-month-training, minimum-24-forecast walk-forward gate before the app selects them. Otherwise, the existing Gaussian Monte Carlo remains the baseline. Goal projections and required-contribution search use the same selected model and currently include only the four modeled planning categories.
+EWMA uses a 12-month half-life; moving-block bootstrap samples contiguous three-month blocks. The UI compares Gaussian and bootstrap results when eligible joint history is available. Fixed-income yield is modeled separately with mean-reverting (default), constant-current-yield, or configured-yield behavior; effective annual rates compound monthly as `(1 + y)^(1/12) - 1`. Sortino defaults to 0% MAR and is unavailable when observations or downside data are insufficient. Sharpe only appears when the fixed-income benchmark is explicitly selected. Goal projections and required-contribution search use the same assumptions and remain scenario outputs.
 
 The default assumptions are intentionally visible in `src/engine.js` and are not presented as expected market returns. They exist so the tool remains usable when public historical data is incomplete.
 

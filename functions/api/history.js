@@ -258,6 +258,12 @@ export async function onRequestGet(context = {}) {
     points = filterHistoryRange(points, range, Date.now(), { start, end });
     responseAssets[assetId] = {
       unit: assetId === "bourseIndex" ? "point" : assetId === "dollar" ? "TOMAN/USD" : "TOMAN",
+      priceUnit:
+        assetId === "bourseIndex"
+          ? "index point"
+          : assetId === "dollar"
+            ? "TOMAN/USD"
+            : `TOMAN/${INSTRUMENT_REGISTRY[assetId]?.unit || "unit"}`,
       currency: assetId === "bourseIndex" ? "INDEX" : "TOMAN",
       sourceUrl: provider?.sourceUrl || null,
       points,

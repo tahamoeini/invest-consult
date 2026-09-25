@@ -67,6 +67,45 @@ test("history endpoint returns source-labelled Toman observations using dated FX
   assert.equal(data.assets.dollar.points[0].value, 230000);
 });
 
+test("copper history converts USD per pound to Toman per gram with same-date FX once", async () => {
+  const timestamps = [Date.UTC(2025, 0, 2), Date.UTC(2025, 0, 3)];
+  const dollarRows = timestamps.map((date, index) => [date, 2_300_000 + index * 10_000]);
+  const response = await withFetch(
+    async (input) => {
+      const url = new URL(typeof input === "string" ? input : input.url);
+      if (url.hostname === "www.tgju.org") return new Response(tgjuPage(dollarRows), { status: 200 });
+      if (url.hostname === "query1.finance.yahoo.com")
+        return new Response(
+          JSON.stringify({
+            chart: {
+              result: [
+                {
+                  timestamp: timestamps.map((date) => date / 1000),
+                  indicators: { quote: [{ close: [453.59237, 907.18474] }] },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      throw new Error(`unexpected-provider:${url.hostname}`);
+    },
+    async () => historyRequest("https://app.test/api/history?assets=copper&range=all"),
+  );
+  const data = await response.json();
+  const copper = data.assets.copper;
+  assert.equal(response.status, 200);
+  assert.equal(copper.unit, "TOMAN");
+  assert.equal(copper.priceUnit, "TOMAN/gram");
+  assert.equal(copper.currency, "TOMAN");
+  assert.equal(copper.coverage.source, "Yahoo Finance");
+  assert.equal(copper.coverage.missingFxCount, 0);
+  assert.equal(copper.points[0].value, 230_000);
+  assert.equal(copper.points[1].value, 462_000);
+  assert.equal(copper.points[0].conversion.formula, "USD × USD/TOMAN");
+  assert.equal(copper.points[0].conversion.dollarObservedAt.slice(0, 10), "2025-01-02");
+});
+
 test("crypto history stays unavailable without the optional Demo key", async () => {
   const requestedUrls = [];
   const response = await withFetch(

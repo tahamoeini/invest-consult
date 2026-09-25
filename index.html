@@ -46,6 +46,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="app.js" defer></script>
   </head>
+
   <body>
     <div id="app-shell" class="app-shell">
       <aside id="app-sidebar" class="app-sidebar" aria-label="ناوبری برنامه">
@@ -185,7 +186,7 @@
                 <span class="summary-label">مدت پیگیری</span><strong id="dashboard-tracking-duration">—</strong
                 ><small id="dashboard-tracking-duration-note">از شروع دفتر پرتفوی</small>
               </article>
-              <article class="summary-card summary-card-wide">
+              <article class="summary-card">
                 <span class="summary-label">تخصیص فعلی</span><strong id="dashboard-allocation-summary">—</strong
                 ><small id="dashboard-allocation-summary-note">برای نمایش، موجودی و قیمت لازم است</small>
               </article>
@@ -385,8 +386,14 @@
                 </div>
                 <fieldset class="recommendation-assets">
                   <legend>دارایی‌های اضافه در پیشنهاد</legend>
-                  <p>به‌صورت پیش‌فرض خاموش‌اند. طلا، ارز، درآمد ثابت و نقره در ترکیب پایه باقی می‌مانند.</p>
+                  <p>
+                    دارایی‌های اضافه خاموش‌اند. درآمد ثابت، طلا و نقره پایه‌اند؛ ارز برای کاربر محافظه‌کار فقط با
+                    سابقه‌ی دارایی یا انتخاب روشن وارد می‌شود.
+                  </p>
                   <div class="field-grid">
+                    <label class="check-line"
+                      ><input type="checkbox" data-recommendation-asset="currency" /> <span>ارز</span></label
+                    >
                     <label class="check-line"
                       ><input type="checkbox" data-recommendation-asset="copper" /> <span>مس</span></label
                     >
@@ -404,9 +411,11 @@
                     >
                   </div>
                   <small
-                    >فلزات سهم بخش کالایی را بر پایه‌ی نوسان تاریخی یا فرض تنظیمات تقسیم می‌کنند. هدف رمزارز در سطح ریسک
-                    محافظه‌کارانه، متعادل و رشدپذیر به‌ترتیب ۱٪، ۳٪ و ۵٪ است و از ۵٪ بیشتر نمی‌شود؛ تتر فقط در شبیه‌سازی
-                    دستی قابل انتخاب است.</small
+                    >کمترین وزن معنادار ۳٪ است. سهم‌های کوچک‌تر حذف و میان دارایی‌های باقی‌مانده پخش می‌شوند. برای
+                    مجازکردن سهم‌های کوچک‌تر، این گزینه را روشن کن.</small
+                  >
+                  <label class="check-line"
+                    ><input id="allow-micro-allocation" type="checkbox" /><span>سهم کمتر از ۳٪ را مجاز کن</span></label
                   >
                 </fieldset>
                 <details class="profile-settings">
@@ -512,8 +521,8 @@
               <article class="disclosure-card">
                 <span class="kicker">مرز داده</span><strong>گذشته‌ی مشاهده‌شده با آینده‌ی تخمینی فرق دارد</strong>
                 <p>
-                  بک‌تست تنها بازه‌هایی را گزارش می‌کند که تاریخچه‌ی واقعی دارند؛ پیش‌بینی آینده بر پایه‌ی سابقه‌ی موجود
-                  یا فرض‌های تنظیم‌شده برچسب می‌خورد.
+                  بک‌تست تنها بازه‌هایی را گزارش می‌کند که تاریخچه‌ی واقعی دارند؛ سناریوهای شبیه‌سازی‌شده به داده و
+                  فرض‌های انتخاب‌شده وابسته‌اند.
                 </p>
               </article>
             </div>
@@ -571,7 +580,7 @@
                   </div>
                 </div>
                 <div class="field">
-                  <label for="simulation-path-count">تعداد مسیرهای آینده</label
+                  <label for="simulation-path-count">تعداد مسیرهای شبیه‌سازی</label
                   ><select id="simulation-path-count">
                     <option value="1000">۱٬۰۰۰</option>
                     <option value="2000" selected>۲٬۰۰۰</option>
@@ -579,15 +588,60 @@
                     <option value="10000">۱۰٬۰۰۰</option>
                   </select>
                 </div>
+                <div class="field">
+                  <label for="simulation-fixed-mode">فرض نرخ درآمد ثابت</label>
+                  <select id="simulation-fixed-mode">
+                    <option value="mean-reverting" selected>بازگشت تدریجی نرخ جاری به فرض بلندمدت</option>
+                    <option value="constant-market">ثابت ماندن نرخ مؤثر جاری تا پایان افق</option>
+                    <option value="user-expected">نرخ مورد انتظار تنظیمات</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="simulation-mar">حداقل بازده قابل قبول برای سورتینو</label>
+                  <select id="simulation-mar">
+                    <option value="zero" selected>۰٪ سالانه (پیش‌فرض)</option>
+                    <option value="inflation">نرخ تورم همین سناریو</option>
+                    <option value="fixed-income">نرخ مؤثر جاری درآمد ثابت</option>
+                  </select>
+                </div>
               </div>
               <label class="check-line"
                 ><input id="simulation-rebalance" type="checkbox" checked />
                 <span>بازتنظیم دوره‌ای وزن سبد</span></label
               >
-              <button class="primary-button" type="submit"><span>اجرای سناریوی آینده</span><b>←</b></button>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="simulation-rebalance-cadence">فاصله‌ی بازتنظیم</label>
+                  <select id="simulation-rebalance-cadence">
+                    <option value="monthly">ماهانه</option>
+                    <option value="quarterly" selected>فصلی</option>
+                    <option value="annually">سالانه</option>
+                    <option value="threshold">پس از انحراف هدف</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="simulation-rebalance-threshold">حد انحراف هدف</label>
+                  <div class="unit-input">
+                    <input
+                      id="simulation-rebalance-threshold"
+                      type="number"
+                      min="0"
+                      max="25"
+                      step="0.5"
+                      value="3"
+                    /><span>واحد درصد</span>
+                  </div>
+                </div>
+              </div>
+              <label class="check-line"
+                ><input id="simulation-fixed-benchmark" type="checkbox" /><span
+                  >احتمال برتری بر نرخ مؤثر جاری درآمد ثابت را محاسبه کن</span
+                ></label
+              >
+              <button class="primary-button" type="submit"><span>اجرای شبیه‌سازی</span><b>←</b></button>
               <p class="small-note">
-                برای آینده، مقدارهای تورم، رشد، بازده و نوسان از تنظیمات عمومی می‌آیند. برای تغییر سراسری به تنظیمات
-                برو.
+                نرخ مؤثر سالانه با فرمول (۱ + نرخ سالانه)^(۱/۱۲) − ۱ به نرخ ماهانه تبدیل می‌شود. نرخ جاری درآمد ثابت فقط
+                در حالت «ثابت ماندن» ثابت فرض می‌شود. فرض‌ها، هزینه‌ها و پوشش تاریخچه در «جزئیات مدل» دیده می‌شود.
               </p>
             </form>
             <div class="analysis-grid">
@@ -595,7 +649,7 @@
                 <div class="section-heading">
                   <div>
                     <span class="kicker">سناریوی آینده</span>
-                    <h2>دامنه‌ی برآورد</h2>
+                    <h2>دامنه‌ی سناریوهای شبیه‌سازی‌شده</h2>
                   </div>
                   <span class="info-chip">تخمینی</span>
                 </div>
@@ -621,6 +675,18 @@
                 <div id="scenario-comparison" class="scenario-comparison"></div>
               </article>
             </div>
+            <details id="simulation-model-details" class="panel collapsible-panel model-details-panel">
+              <summary class="section-heading collapsible-summary">
+                <div>
+                  <span class="kicker">روش و محدودیت‌ها</span>
+                  <h2>جزئیات مدل</h2>
+                </div>
+                <span class="info-chip">فرض‌ها · داده · ریسک</span>
+              </summary>
+              <div id="simulation-model-output" class="collapsible-content">
+                <div class="empty-state">بعد از اجرای شبیه‌سازی، جزئیات و محدودیت‌های مدل اینجا نمایش داده می‌شود.</div>
+              </div>
+            </details>
             <details id="backtest-section" class="panel collapsible-panel backtest-panel" open>
               <summary class="section-heading collapsible-summary">
                 <div>
@@ -635,7 +701,9 @@
                     >بک‌تست از مبلغ، واریز، افق و ترکیب همین فرم استفاده می‌کند و به برنامه‌ی قبلی نیاز ندارد.</span
                   ><button id="run-backtest" class="secondary-button" type="button">اجرای بک‌تست گذشته</button>
                 </div>
-                <div id="backtest-output"><div class="empty-state">بک‌تست را با ورودی‌های بالا اجرا کن.</div></div>
+                <div id="backtest-output">
+                  <div class="empty-state">بک‌تست را با ورودی‌های بالا اجرا کن.</div>
+                </div>
                 <div class="limitations-panel">
                   <strong>داده‌ی ناکافی، نتیجه‌ی ناقص</strong>
                   <p>
@@ -678,7 +746,9 @@
                   فایل خروجی فقط روی همین دستگاه ساخته می‌شود؛ دفتر پرتفوی جداست.
                 </div>
                 <div id="history-summary" class="metric-grid"></div>
-                <div id="history-chart" class="chart-box"><div class="empty-state">هنوز سابقه‌ای ثبت نشده.</div></div>
+                <div id="history-chart" class="chart-box">
+                  <div class="empty-state">هنوز سابقه‌ای ثبت نشده.</div>
+                </div>
                 <div class="subheading">
                   <strong>تفکیک دسته‌ها</strong><span>برآورد با قیمت فعلی و snapshot زمان خرید</span>
                 </div>
@@ -1139,6 +1209,14 @@
                       <option value="10000">۱۰٬۰۰۰</option>
                     </select>
                   </div>
+                  <div class="field">
+                    <label for="settings-drift-threshold">آستانه انحراف هدف برای واریز جدید</label>
+                    <div class="unit-input">
+                      <input id="settings-drift-threshold" type="number" min="0" max="25" step="0.5" value="3" /><span
+                        >واحد درصد</span
+                      >
+                    </div>
+                  </div>
                 </div>
                 <label class="check-line"
                   ><input id="settings-rebalancing" type="checkbox" checked />
@@ -1146,9 +1224,19 @@
                 >
                 <div id="settings-assumption-grid" class="settings-assumption-grid"></div>
                 <p class="small-note">
-                  این اعداد فرض مدل‌اند، نه بازده تضمینی. با کمتر از ۲۴ بازده ماهانه‌ی مشاهده‌شده، فرض تنظیم‌شده مبنای
-                  برآورد ریسک و بازده می‌شود.
+                  این عددها فرض مدل‌اند. بازده سالانه به نرخ مؤثر تعبیر می‌شود و با فرمول ماهانه‌سازی مؤثر به بازده
+                  ماهانه تبدیل می‌شود. در درآمد ثابت، ستون نوسان عدم‌قطعیت تغییر نرخ را نشان می‌دهد؛ نوسان قیمت صندوق و
+                  ریسک مدت‌زمان در دسترس نیست. با کمتر از ۲۴ بازده ماهانه، فرض تنظیم‌شده استفاده می‌شود.
                 </p>
+                <details class="settings-fee-details">
+                  <summary>فرض کارمزد خرید، فروش و فاصله قیمت</summary>
+                  <p class="small-note">
+                    پیش‌فرض بازار در ساعات معاملاتی برای طلا، نقره و مس ۰٫۵٪ خرید و ۰٫۵٪ فروش است. فاصله خرید و فروش
+                    منبع معتبر ندارد و خالی می‌ماند؛ هزینه خالی برای مدل صفر اعمال می‌شود و با برچسب «هزینه نامعلوم»
+                    گزارش خواهد شد. برای هزینه بازار خارج از ساعات معاملاتی نرخ جداگانه‌ای وجود ندارد.
+                  </p>
+                  <div id="settings-transaction-cost-grid" class="settings-assumption-grid settings-fee-grid"></div>
+                </details>
                 <button class="primary-button" type="submit">ذخیره‌ی پیش‌فرض‌ها</button>
                 <div
                   id="settings-model-status"

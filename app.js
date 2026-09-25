@@ -4,6 +4,8 @@ import {
   ASSET_KEYS,
   DEFAULT_ALLOCATION,
   DEFAULT_ASSUMPTIONS,
+  DEFAULT_TRANSACTION_COSTS,
+  MIN_PAIRED_MONTHS,
   clamp,
   contributionRebalance,
   normalizeAllocation,
@@ -189,14 +191,18 @@ function formatNumberInput(event) {
 }
 
 function formatIRR(value) {
-  return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(Math.round(Number(value) || 0));
+  const numeric = Number(value);
+  return value === null || value === undefined || value === "" || !Number.isFinite(numeric)
+    ? "—"
+    : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(Math.round(numeric));
 }
 
 function formatPercent(value, digits = 1) {
+  const numeric = Number(value);
+  if (value === null || value === undefined || value === "" || !Number.isFinite(numeric)) return "—";
   return (
-    new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(
-      Number(value) || 0,
-    ) + "\u066a"
+    new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(numeric) +
+    "\u066a"
   );
 }
 
@@ -583,6 +589,7 @@ function getPlanInputs() {
     monthlyContribution: (salary * contributionRate) / 100,
     profile,
     selectedAssets: $$("[data-recommendation-asset]:checked").map((input) => input.dataset.recommendationAsset),
+    allowMicroAllocation: Boolean($("#allow-micro-allocation")?.checked),
   };
 }
 
@@ -1594,13 +1601,17 @@ function populatePortfolioAssetOptions() {
 
 function defaultModelSettings() {
   return {
-    version: 2,
+    version: 3,
     inflationRate: 0.3,
     contributionGrowth: 0,
     paths: 2000,
     rebalance: true,
+    targetDriftThresholdPercent: 3,
     assumptions: Object.fromEntries(
       SIMULATION_ASSET_KEYS.map((assetId) => [assetId, { ...DEFAULT_ASSUMPTIONS[assetId] }]),
+    ),
+    transactionCosts: Object.fromEntries(
+      SIMULATION_ASSET_KEYS.map((assetId) => [assetId, { ...DEFAULT_TRANSACTION_COSTS[assetId] }]),
     ),
     inflationSource: null,
     inflationPeriod: null,
@@ -1630,13 +1641,31 @@ function normalizeModelSettings(raw = {}) {
   const rate = Number(raw.inflationRate);
   const growth = Number(raw.contributionGrowth);
   const paths = Number(raw.paths);
+  const driftThreshold = Number(raw.targetDriftThresholdPercent);
+  const transactionCosts = Object.fromEntries(
+    SIMULATION_ASSET_KEYS.map((assetId) => {
+      const supplied = raw.transactionCosts?.[assetId];
+      const fallback = defaults.transactionCosts[assetId];
+      if (!supplied) return [assetId, { ...fallback }];
+      const fee = (key) => {
+        if (Object.hasOwn(supplied, key) && (supplied[key] === null || supplied[key] === "")) return null;
+        const value = Number(supplied[key]);
+        return Number.isFinite(value) && value >= 0 ? clamp(value, 0, 0.99) : fallback[key];
+      };
+      return [assetId, { buyFee: fee("buyFee"), sellFee: fee("sellFee"), spread: fee("spread") }];
+    }),
+  );
   return {
     ...defaults,
     inflationRate: Number.isFinite(rate) ? clamp(rate, -0.2, 3) : defaults.inflationRate,
     contributionGrowth: Number.isFinite(growth) ? clamp(growth, -0.5, 2) : defaults.contributionGrowth,
     paths: [1000, 2000, 5000, 10000].includes(paths) ? paths : defaults.paths,
     rebalance: typeof raw.rebalance === "boolean" ? raw.rebalance : defaults.rebalance,
+    targetDriftThresholdPercent: Number.isFinite(driftThreshold)
+      ? clamp(driftThreshold, 0, 25)
+      : defaults.targetDriftThresholdPercent,
     assumptions,
+    transactionCosts,
     inflationSource: typeof raw.inflationSource === "string" ? raw.inflationSource.slice(0, 120) : null,
     inflationPeriod: typeof raw.inflationPeriod === "string" ? raw.inflationPeriod.slice(0, 40) : null,
     inflationFetchedAt: typeof raw.inflationFetchedAt === "string" ? raw.inflationFetchedAt : null,
@@ -1678,13 +1707,25 @@ function saveModelSettingsForm(event) {
       },
     ]),
   );
+  const transactionCosts = Object.fromEntries(
+    SIMULATION_ASSET_KEYS.map((assetId) => {
+      const readFee = (side) => {
+        const input = document.querySelector("#settings-fee-" + side + "-" + assetId);
+        if (!input?.value.trim()) return null;
+        return clamp(numberFromInput(input.value), 0, 99) / 100;
+      };
+      return [assetId, { buyFee: readFee("buy"), sellFee: readFee("sell"), spread: readFee("spread") }];
+    }),
+  );
   saveModelSettings({
     ...modelSettings,
     inflationRate: numberFromInput($("#settings-inflation-rate")?.value) / 100,
     contributionGrowth: numberFromInput($("#settings-contribution-growth")?.value) / 100,
     paths: numberFromInput($("#settings-simulation-paths")?.value),
     rebalance: Boolean($("#settings-rebalancing")?.checked),
+    targetDriftThresholdPercent: clamp(numberFromInput($("#settings-drift-threshold")?.value), 0, 25),
     assumptions,
+    transactionCosts,
   });
   const status = $("#settings-model-status");
   if (status) {
@@ -1751,18 +1792,45 @@ function renderSettingsAssumptions() {
   const assumptionGrid = $("#settings-assumption-grid");
   if (assumptionGrid && assumptionGrid.dataset.rendered !== "true") {
     assumptionGrid.innerHTML =
-      `<div><strong>دارایی</strong><strong>بازده سالانه</strong><strong>نوسان سالانه</strong></div>` +
+      `<div><strong>دارایی</strong><strong>بازده مؤثر سالانه‌ی فرضی</strong><strong>نوسان سالانه</strong></div>` +
       SIMULATION_ASSET_KEYS.map((assetId) => {
         const title = assetMeta(assetId).title;
-        return `<div><span>${escapeHTML(title)}</span><input id="settings-return-${escapeHTML(assetId)}" aria-label="بازده فرضی ${escapeHTML(title)}" type="number" min="-99" max="300"><input id="settings-vol-${escapeHTML(assetId)}" aria-label="نوسان فرضی ${escapeHTML(title)}" type="number" min="0" max="300"></div>`;
+        return `<div><span>${escapeHTML(title)}</span><input id="settings-return-${escapeHTML(assetId)}" aria-label="بازده مؤثر سالانه‌ی فرضی ${escapeHTML(title)}" type="number" min="-99" max="300"><input id="settings-vol-${escapeHTML(assetId)}" aria-label="نوسان فرضی ${escapeHTML(title)}" type="number" min="0" max="300"></div>`;
       }).join("");
     assumptionGrid.dataset.rendered = "true";
+  }
+  const feeGrid = $("#settings-transaction-cost-grid");
+  if (feeGrid && feeGrid.dataset.rendered !== "true") {
+    feeGrid.innerHTML =
+      "<div><strong>دارایی</strong><strong>خرید</strong><strong>فروش</strong><strong>فاصله خرید و فروش</strong></div>" +
+      SIMULATION_ASSET_KEYS.map((assetId) => {
+        const title = assetMeta(assetId).title;
+        return (
+          "<div><span>" +
+          escapeHTML(title) +
+          '</span><input id="settings-fee-buy-' +
+          escapeHTML(assetId) +
+          '" aria-label="کارمزد خرید ' +
+          escapeHTML(title) +
+          '" type="number" min="0" max="99" step="0.1"><input id="settings-fee-sell-' +
+          escapeHTML(assetId) +
+          '" aria-label="کارمزد فروش ' +
+          escapeHTML(title) +
+          '" type="number" min="0" max="99" step="0.1"><input id="settings-fee-spread-' +
+          escapeHTML(assetId) +
+          '" aria-label="فاصله خرید و فروش ' +
+          escapeHTML(title) +
+          '" type="number" min="0" max="99" step="0.1"></div>'
+        );
+      }).join("");
+    feeGrid.dataset.rendered = "true";
   }
   const scalarValues = {
     "settings-inflation-rate": modelSettings.inflationRate * 100,
     "settings-contribution-growth": modelSettings.contributionGrowth * 100,
     "settings-simulation-paths": modelSettings.paths,
     "settings-rebalancing": modelSettings.rebalance,
+    "settings-drift-threshold": modelSettings.targetDriftThresholdPercent,
   };
   Object.entries(scalarValues).forEach(([id, value]) => {
     const input = $("#" + id);
@@ -1777,6 +1845,13 @@ function renderSettingsAssumptions() {
     if (returnInput && document.activeElement !== returnInput)
       returnInput.value = String(assumptions.annualReturn * 100);
     if (volInput && document.activeElement !== volInput) volInput.value = String(assumptions.annualVolatility * 100);
+    const costs = modelSettings.transactionCosts[assetId];
+    ["buy", "sell", "spread"].forEach((side) => {
+      const input = document.querySelector("#settings-fee-" + side + "-" + assetId);
+      const value = side === "spread" ? costs?.spread : costs?.[side + "Fee"];
+      if (input && document.activeElement !== input)
+        input.value = value === null || value === undefined ? "" : String(value * 100);
+    });
   });
   const source = $("#settings-inflation-source");
   if (source)
@@ -2069,18 +2144,49 @@ function openAssetDrawer(assetId) {
   else drawer.setAttribute("open", "");
 }
 
-function renderSimulation(simulation, monteCarlo, validation = null) {
-  simulationSummaryEl.innerHTML = [
-    [text("analysis.invested"), `${formatIRR(simulation.totalInvested)} ${text("currencyUnit")}`],
-    [text("analysis.final"), `${formatIRR(simulation.finalValue)} ${text("currencyUnit")}`],
-    [text("analysis.realFinal"), `${formatIRR(simulation.finalRealValue)} ${text("currencyUnit")}`],
-    [text("analysis.drawdown"), formatPercent(simulation.maxDrawdown * 100)],
-    [text("analysis.volatility"), formatPercent((monteCarlo.volatility || 0) * 100)],
-    [text("analysis.sortino"), Number.isFinite(monteCarlo.sortino) ? monteCarlo.sortino.toFixed(2) : "—"],
-  ]
+function renderSimulation(simulation, monteCarlo, validation = null, methodComparison = null) {
+  const available = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+  const money = (value) =>
+    available(value) ? `${formatIRR(Number(value))} ${text("currencyUnit")}` : text("analysis.unavailable");
+  const percent = (value) => (available(value) ? formatPercent(Number(value) * 100) : text("analysis.unavailable"));
+  const confidenceLabels = {
+    high: text("analysis.confidenceHigh"),
+    medium: text("analysis.confidenceMedium"),
+    low: text("analysis.confidenceLow"),
+  };
+  const quality = monteCarlo.dataQuality || {};
+  const qualityLabel = confidenceLabels[quality.quality] || text("analysis.unavailable");
+  const probabilityLabel = (value) =>
+    available(value) ? formatPercent(Number(value) * 100) : text("analysis.unavailable");
+  const purchasingPowerLabel =
+    {
+      "above-inflation": text("analysis.aboveInflation"),
+      "near-preservation": text("analysis.nearPreservation"),
+      "below-inflation": text("analysis.belowInflation"),
+      unavailable: text("analysis.unavailable"),
+    }[monteCarlo.purchasingPowerChange?.status] || text("analysis.unavailable");
+  const primaryMetrics = [
+    ["P50 اسمی", money(monteCarlo.nominal?.p50), "ارزش نهایی به تومان جاری"],
+    ["P50 واقعی", money(monteCarlo.real?.p50), "ارزش نهایی به پول امروز"],
+    [
+      text("analysis.inflationBeatProbability"),
+      probabilityLabel(monteCarlo.probabilityBeatingInflation),
+      purchasingPowerLabel,
+    ],
+    ["P10 واقعی · افت دامنه", money(monteCarlo.real?.p10), "سناریوی صدک ۱۰ به پول امروز"],
+    ["P90 اسمی · دامنه بالاتر", money(monteCarlo.nominal?.p90), "سناریوی صدک ۹۰"],
+    [text("analysis.volatility"), percent(monteCarlo.volatility), "انحراف معیار بازده ماهانه × √۱۲"],
+    [text("analysis.realDrawdown"), percent(monteCarlo.realMaxDrawdown?.p50), "میانه افت شاخص واقعیِ بدون اثر واریز"],
+    [
+      text("analysis.dataQuality"),
+      qualityLabel,
+      `${formatIRR(quality.jointObservations || 0)} ${text("analysis.observations")}`,
+    ],
+  ];
+  simulationSummaryEl.innerHTML = primaryMetrics
     .map(
-      ([label, value]) =>
-        `<div class="metric"><small>${escapeHTML(label)}</small><strong>${escapeHTML(value)}</strong></div>`,
+      ([label, value, hint]) =>
+        `<div class="metric simulation-primary-metric"><small>${escapeHTML(label)}</small><strong>${escapeHTML(value)}</strong><span>${escapeHTML(hint)}</span></div>`,
     )
     .join("");
   renderLineChart(
@@ -2092,18 +2198,33 @@ function renderSimulation(simulation, monteCarlo, validation = null) {
     "nominal",
     text("analysis.path"),
   );
-  monteCarloEl.innerHTML =
+  const resultRows = (values) =>
     [
-      [text("analysis.p10"), monteCarlo.nominal.p10],
-      [text("analysis.p50"), monteCarlo.nominal.p50],
-      [text("analysis.p90"), monteCarlo.nominal.p90],
+      [text("analysis.centralScenario"), simulation.finalValue, simulation.finalRealValue, "central"],
+      [text("analysis.p10"), monteCarlo.nominal?.p10, monteCarlo.real?.p10, "p10"],
+      [text("analysis.p50"), monteCarlo.nominal?.p50, monteCarlo.real?.p50, "p50"],
+      [text("analysis.p90"), monteCarlo.nominal?.p90, monteCarlo.real?.p90, "p90"],
     ]
-      .map(
-        ([label, value]) =>
-          `<div class="range-metric"><span>${escapeHTML(label)}</span><strong>${formatIRR(value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("analysis.nominal"))}</small></div>`,
-      )
-      .join("") +
-    `<p class="data-quality">${escapeHTML(monteCarlo.estimated ? text("analysis.estimated") : text("analysis.observed"))} ${escapeHTML(text("analysis.observations"))}: ${escapeHTML(String(monteCarlo.historicalObservations || 0))}</p>`;
+      .map(([label, nominal, real, id]) => {
+        const value = values === "real" ? real : nominal;
+        const unit = values === "real" ? text("analysis.real") : text("analysis.nominal");
+        return `<div class="simulation-range-row simulation-range-${id}" role="row"><span role="cell">${escapeHTML(label)}</span><strong role="cell">${escapeHTML(money(value))}</strong><small role="cell">${escapeHTML(unit)}</small></div>`;
+      })
+      .join("");
+  monteCarloEl.innerHTML = `<div class="simulation-view-tabs" role="tablist" aria-label="نمایش ارزش نهایی">
+      <button type="button" role="tab" data-simulation-view="nominal" aria-selected="true">${escapeHTML(text("analysis.nominalView"))}</button>
+      <button type="button" role="tab" data-simulation-view="real" aria-selected="false">${escapeHTML(text("analysis.realView"))}</button>
+    </div>
+    <div class="simulation-range-table" role="table" data-simulation-results="nominal" aria-label="ارزش‌های اسمی">
+      <div class="simulation-range-heading" role="row"><span role="columnheader">سناریو</span><span role="columnheader">ارزش</span><span role="columnheader">${escapeHTML(text("analysis.nominal"))}</span></div>
+      ${resultRows("nominal")}
+    </div>
+    <div class="simulation-range-table" role="table" data-simulation-results="real" aria-label="ارزش‌های واقعی به پول امروز" hidden>
+      <div class="simulation-range-heading" role="row"><span role="columnheader">سناریو</span><span role="columnheader">ارزش</span><span role="columnheader">${escapeHTML(text("analysis.real"))}</span></div>
+      ${resultRows("real")}
+    </div>
+    <p class="data-quality">${escapeHTML(text("analysis.p10Meaning"))} ${escapeHTML(text("analysis.p50Meaning"))} ${escapeHTML(text("analysis.p90Meaning"))}</p>
+    <p class="data-note">${escapeHTML(text("analysis.simulationNotForecast"))}</p>`;
   const methodNames = {
     gaussian: text("analysis.modelGaussian"),
     ewma: text("analysis.modelEwma"),
@@ -2113,21 +2234,139 @@ function renderSimulation(simulation, monteCarlo, validation = null) {
     ? text("analysis.validationPassed")
     : text("analysis.validationInsufficient");
   const assumptionVersion = monteCarlo.model?.fixed?.assumptionVersion || "ir-planning-v2";
-  $("#analysis-method-note").textContent =
-    `${text("analysis.modelVersion")}: ${methodNames[monteCarlo.method] || methodNames.gaussian} · ${text("analysis.monteCarloVersion")}: ${monteCarlo.modelVersion} · ${text("analysis.modelAssumptionVersion")}: ${assumptionVersion} · ${text("analysis.validation")}: ${validationStatus}`;
+  const methodNote = `${text("analysis.modelVersion")}: ${methodNames[monteCarlo.method] || methodNames.gaussian} · ${text("analysis.monteCarloVersion")}: ${monteCarlo.modelVersion} · ${text("analysis.modelAssumptionVersion")}: ${assumptionVersion} · ${text("analysis.validation")}: ${validationStatus}`;
+  const modelOutput = $("#simulation-model-output");
+  const methodFallback = monteCarlo.methodFallbackReason
+    ? "روش بازنمونه‌گیری به دلیل تاریخچه مشترک ناکافی اجرا نشد؛ خروجی از روش گاوسی استفاده کرد."
+    : "";
+  const modeNames = {
+    "mean-reverting": "بازگشت تدریجی نرخ به فرض بلندمدت",
+    "constant-market": "ثابت ماندن نرخ مؤثر جاری",
+    "user-expected": "نرخ مؤثر مورد انتظار تنظیم‌شده",
+  };
+  const fixedInfo = monteCarlo.fixedIncomeAssumption || {};
+  const fixedModeLabel = fixedInfo.modeFallbackReason
+    ? "نرخ مؤثر جاری در دسترس نبود؛ از نرخ مورد انتظار تنظیم‌شده استفاده شد"
+    : modeNames[fixedInfo.mode] || modeNames["mean-reverting"];
+  const fixedDetails = `<p>درآمد ثابت: ${escapeHTML(fixedModeLabel)} · فرض سالانه مؤثر ${escapeHTML(percent(fixedInfo.configuredEffectiveAnnualReturn))} · نرخ مؤثر جاری ${escapeHTML(percent(fixedInfo.currentMarketEffectiveAnnualReturn))} · نوسان نرخ سالانه ${escapeHTML(percent(fixedInfo.yieldVolatility))}. نرخ سالانه مؤثر با (۱ + نرخ)^(۱/۱۲) − ۱ ماهانه می‌شود؛ تاریخچه بازده صندوق یا ریسک قیمت اوراق در دسترس نیست.</p>`;
+  const monthlyDates = quality.jointObservations
+    ? `${quality.jointOldestMonth ? formatDate(`${quality.jointOldestMonth}-01T00:00:00.000Z`) : "—"} تا ${quality.jointLatestMonth ? formatDate(`${quality.jointLatestMonth}-01T00:00:00.000Z`) : "—"}`
+    : text("analysis.unavailable");
+  const qualityReason =
+    quality.quality === "high"
+      ? "همه دارایی‌های بازاری تاریخچه مشترک کافی دارند؛ این برچسب همچنان تضمین دقت نیست."
+      : quality.quality === "medium"
+        ? "تاریخچه پیوسته برای دارایی‌های بازاری موجود است، اما بخشی از ریسک یا بازده از فرض‌ها می‌آید."
+        : "یک یا چند دارایی تاریخچه کافی ندارد؛ همبستگی یا بازده آن از فرض مدل می‌آید.";
+  const assetRows = (quality.assets || [])
+    .map((asset) => {
+      const title = assetMeta(asset.assetId).title;
+      const status =
+        asset.status === "fixed-rate-scenario"
+          ? text("analysis.fixedRateScenario")
+          : asset.status === "historical"
+            ? text("analysis.completeHistory")
+            : asset.status === "insufficient-history"
+              ? `${text("analysis.insufficientAssets")} · ${formatIRR(asset.observations)} بازده ماهانه`
+              : text("analysis.fallbackAssets");
+      const sources = (asset.sourceNames || []).join("، ") || asset.source || "—";
+      const dates =
+        asset.firstObservedAt && asset.lastObservedAt
+          ? `${formatDate(asset.firstObservedAt)} تا ${formatDate(asset.lastObservedAt)}`
+          : "—";
+      const proxy = asset.proxy && asset.observations ? ` · ${text("analysis.proxyAssets")}` : "";
+      const partialMonth = asset.partialMonthExcluded ? " · ماه ناقص از بازده ماهانه کنار گذاشته شد" : "";
+      const basis = asset.transformation || asset.classification || "—";
+      const fee = monteCarlo.transactionCosts?.assumptions?.find((item) => item.assetId === asset.assetId);
+      const feeState = fee?.complete
+        ? `خرید ${percent(fee.buyFee)} · فروش ${percent(fee.sellFee)} · فاصله ${available(fee.spread) ? percent(fee.spread) : "نامعلوم"}`
+        : text("analysis.feeUnknown");
+      const modelValues = `بازده اسمی سالانه‌شده بر پایه میانگین حسابی ${escapeHTML(percent(asset.arithmeticExpectedAnnualReturn))} · بازده هندسی تاریخی ${escapeHTML(percent(asset.geometricHistoricalAnnualReturn))} · نوسان سالانه ${escapeHTML(percent(asset.annualVolatility))}`;
+      const sourceCoverage =
+        asset.sourceCoverage?.observationCount !== undefined
+          ? ` · ${formatIRR(asset.sourceCoverage.observationCount)} نقطه منبع`
+          : "";
+      const missingFx = asset.sourceCoverage?.missingFxCount
+        ? ` · ${formatIRR(asset.sourceCoverage.missingFxCount)} تاریخ بدون نرخ تبدیل FX`
+        : "";
+      return `<div class="model-data-row"><strong>${escapeHTML(title)}</strong><span>${escapeHTML(status)}${escapeHTML(proxy)}${escapeHTML(partialMonth)} · پوشش ماهانه ${escapeHTML(percent(asset.coverage))}</span><small>${escapeHTML(sources)} · ${escapeHTML(dates)} · ${formatIRR(asset.observations)} بازده ماهانه${escapeHTML(sourceCoverage)}${escapeHTML(missingFx)}</small><small>طبقه‌بندی ${escapeHTML(asset.classification || "—")} · ${escapeHTML(basis)}</small><small>${modelValues}</small><small>منبع بازده: ${escapeHTML(asset.expectedReturnSource || "—")} · کارمزد: ${escapeHTML(feeState)}</small></div>`;
+    })
+    .join("");
+  const correlationRows = (quality.correlationPairs || [])
+    .map((pair) => {
+      const names = pair.assets.map((assetId) => assetMeta(assetId).title).join(" و ");
+      const label =
+        pair.source === "paired-historical"
+          ? text("analysis.historicalCorrelation")
+          : pair.observations
+            ? text("analysis.priorCorrelation")
+            : text("analysis.assumedCorrelation");
+      const prior =
+        pair.source === "paired-historical"
+          ? ""
+          : ` · همبستگی پیش‌فرض ${formatPercent(pair.priorCorrelation * 100, 0)}`;
+      return `<div class="correlation-row"><strong>${escapeHTML(names)}</strong><span>${escapeHTML(label)} · ${formatIRR(pair.observations)} مشاهده${escapeHTML(prior)}</span></div>`;
+    })
+    .join("");
+  const sortinoHelp =
+    {
+      available: `میانه ${text("analysis.sortino")} در مسیرهای شبیه‌سازی‌شده: ${available(monteCarlo.sortino) ? Number(monteCarlo.sortino).toFixed(2) : text("analysis.unavailable")}`,
+      "zero-downside-deviation": text("analysis.zeroDownside"),
+      "insufficient-downside-observations": text("analysis.insufficientDownside"),
+      "insufficient-observations": text("analysis.insufficientSortino"),
+      "benchmark-unavailable": text("analysis.unavailableBenchmark"),
+      "not-requested": text("analysis.unavailable"),
+    }[monteCarlo.sortinoStatus] || text("analysis.unavailable");
+  const advancedMetrics = [
+    [text("analysis.invested"), money(simulation.totalInvested)],
+    ["سود/زیان اسمی نسبت به کل واریزی", money(simulation.nominalGain)],
+    ["ارزش واقعی واریزی‌ها به پول امروز", money(simulation.realInvested)],
+    ["سود/زیان واقعی و تغییر قدرت خرید", money(simulation.realGain)],
+    ["تغییر قدرت خرید در سناریوی مرکزی", percent(simulation.purchasingPowerChange)],
+    ["بازده اسمی سناریوی مرکزی (CAGR)", percent(simulation.cagr)],
+    ["بازده واقعی سناریوی مرکزی (CAGR)", percent(simulation.realCagr)],
+    ["CAGR اسمی میانه", percent(monteCarlo.cagr)],
+    ["CAGR واقعی میانه", percent(monteCarlo.realCagr)],
+    ["تغییر قدرت خرید در مسیر میانه", percent(monteCarlo.purchasingPowerChange?.p50)],
+    [text("analysis.drawdown"), percent(monteCarlo.maxDrawdown?.p50)],
+    [text("analysis.realDrawdown"), percent(monteCarlo.realMaxDrawdown?.p50)],
+    [text("analysis.purchasingPowerDrawdown"), percent(monteCarlo.purchasingPowerDrawdown?.p50)],
+    ["انحراف نزولی سالانه‌شده", percent(monteCarlo.downsideDeviation)],
+    [text("analysis.nominalLossProbability"), probabilityLabel(monteCarlo.nominalLossProbability)],
+    [text("analysis.purchasingPowerLossProbability"), probabilityLabel(monteCarlo.purchasingPowerLossProbability)],
+    [text("analysis.inflationBeatProbability"), probabilityLabel(monteCarlo.probabilityBeatingInflation)],
+    [text("analysis.fixedIncomeBeatProbability"), probabilityLabel(monteCarlo.probabilityBeatingFixedIncome)],
+    ["هزینه معامله میانه", money(monteCarlo.transactionCosts?.p50)],
+    ["هزینه معامله صدک ۹۰", money(monteCarlo.transactionCosts?.p90)],
+    [text("analysis.rebalancingTurnover"), money(monteCarlo.transactionCosts?.rebalancingTurnoverP50)],
+  ];
+  const sharpe =
+    available(monteCarlo.sharpe) && available(monteCarlo.fixedIncomeBenchmark)
+      ? `<div class="metric"><small>شارپ نسبت به نرخ مؤثر درآمد ثابتِ انتخاب‌شده</small><strong>${Number(monteCarlo.sharpe).toFixed(2)}</strong><span>میانگین مازاد بازده ماهانه × ۱۲ ÷ نوسان سالانه‌شده؛ فقط با انتخاب صریح نرخ مبنا.</span></div>`
+      : "";
+  const tail = monteCarlo.tailRisk?.available
+    ? `<div class="data-note">VaR ماهانه ۹۵٪: ${escapeHTML(percent(monteCarlo.tailRisk.valueAtRisk))} · زیان مورد انتظار فراتر از آن: ${escapeHTML(percent(monteCarlo.tailRisk.expectedShortfall))} · ${escapeHTML(text("analysis.tailRiskModelBased"))}</div>`
+    : `<div class="data-note">${escapeHTML(text("analysis.tailRiskUnavailable"))} (${formatIRR(monteCarlo.tailRisk?.observations || 0)} مشاهده)</div>`;
+  const correlationSummary = `ماتریس همبستگی در صورت غیرمثبت‌معین بودن، با کاهش مشترک همبستگی‌های خارج قطر پایدار می‌شود؛ سهم همبستگی باقی‌مانده ${percent(monteCarlo.correlationOffDiagonalRetention)}. دارایی درآمد ثابت به‌صورت فرایند نرخ جداگانه مدل می‌شود و همبستگی تاریخی NAV ندارد.`;
+  const comparisonMarkup = methodComparison?.available
+    ? `<div class="method-comparison-grid"><div><strong>گاوسی · P50 اسمی</strong><span>${escapeHTML(money(methodComparison.gaussian?.nominal?.p50))}</span><small>P10 ${escapeHTML(money(methodComparison.gaussian?.nominal?.p10))} · P90 ${escapeHTML(money(methodComparison.gaussian?.nominal?.p90))}</small></div><div><strong>بازنمونه‌گیری بلوکی · P50 اسمی</strong><span>${escapeHTML(money(methodComparison.bootstrap?.nominal?.p50))}</span><small>P10 ${escapeHTML(money(methodComparison.bootstrap?.nominal?.p10))} · P90 ${escapeHTML(money(methodComparison.bootstrap?.nominal?.p90))}</small></div></div>`
+    : `<p class="data-note">برای مقایسه منصفانه گاوسی و بازنمونه‌گیری، حداقل ${MIN_PAIRED_MONTHS} بازده ماهانه مشترک برای همه دارایی‌های بازاری لازم است. در این اجرا چنین تاریخچه‌ای موجود نیست؛ روش انتخاب‌شده: ${escapeHTML(methodNames[monteCarlo.method] || methodNames.gaussian)}.</p>`;
+  if (modelOutput) {
+    modelOutput.innerHTML = `<p class="data-note simulation-model-warning">${escapeHTML(text("analysis.simulationNotForecast"))}</p>
+      <div class="model-overview"><div><strong>کیفیت داده: ${escapeHTML(qualityLabel)}</strong><span>${escapeHTML(qualityReason)}</span></div><div><strong>${formatIRR(quality.jointObservations || 0)} ماه مشترک · ${escapeHTML(monthlyDates)}</strong><span>فراوانی بازده: ماهانه · تعداد مسیر: ${formatIRR(monteCarlo.paths)} · بذر بازتولید: ${monteCarlo.seed ?? "سفارشی"}</span></div><div><strong>عامل تورم افق: ${available(monteCarlo.inflationFactor) ? Number(monteCarlo.inflationFactor).toFixed(4) : text("analysis.unavailable")}</strong><span>ارزش واقعی = ارزش اسمی ÷ (۱ + تورم سالانه)^افق؛ تورم دوباره به بازده دارایی افزوده نمی‌شود.</span></div></div>
+      <p class="data-note">${escapeHTML(methodNote)} ${escapeHTML(methodFallback)}</p>
+      ${fixedDetails}
+      <p class="data-note">${escapeHTML(sortinoHelp)}. ${escapeHTML(text("analysis.sortinoDefinition"))} MAR: ${escapeHTML(percent(monteCarlo.minimumAcceptableReturn?.annual))} سالانه و ${escapeHTML(percent(monteCarlo.minimumAcceptableReturn?.monthly))} ماهانه.</p>
+      <div class="metric-grid simulation-advanced-grid">${advancedMetrics.map(([label, value]) => `<div class="metric"><small>${escapeHTML(label)}</small><strong>${escapeHTML(value)}</strong></div>`).join("")}${sharpe}</div>
+      ${tail}
+      <p class="data-note">${escapeHTML(correlationSummary)}</p>
+      <section class="model-data-section"><h3>دارایی‌ها و تاریخچه</h3><div class="model-data-list">${assetRows || `<p>${escapeHTML(text("analysis.unavailable"))}</p>`}</div>${quality.historyFetchError ? `<p class="data-note data-note-warning">${escapeHTML(text("analysis.dataFetchFailed"))}</p>` : ""}</section>
+      <section class="model-data-section"><h3>${escapeHTML(text("analysis.correlationDetails"))}</h3><div class="correlation-list">${correlationRows || "<p>در این سبد دارایی بازاری برای مقایسه همبستگی نیست.</p>"}</div><p class="small-note">فرض همبستگی پیش‌فرض در دارایی‌های مرتبط برای جلوگیری از تنوع‌بخشیِ کاذب به کار می‌رود؛ با داده مشترک ناکافی، دقت تاریخی ادعا نمی‌شود.</p></section>
+      <section class="model-data-section"><h3>${escapeHTML(text("analysis.methodComparison"))}</h3>${comparisonMarkup}<p class="small-note">P10، P50 و P90 صدک‌های توزیع خروجی مسیرهای شبیه‌سازی‌شده‌اند. بازنمونه‌گیری از بلوک‌های سه‌ماهه‌ی پیوسته استفاده می‌کند و روش گاوسی توزیع lognormal همبسته دارد؛ هر دو روش با فرض‌های داده و نرخ انتخاب‌شده محدود می‌شوند.</p></section>`;
+  }
   const scenarioEl = $("#scenario-comparison");
   if (scenarioEl) {
-    const scenarios = [
-      ["محتاطانه", monteCarlo.nominal.p10, "نتیجه صدک ۱۰ مدل", "scenario-cautious"],
-      ["میانه", monteCarlo.nominal.p50, "نتیجه صدک ۵۰ مدل", "scenario-base"],
-      ["خوش‌بینانه", monteCarlo.nominal.p90, "نتیجه صدک ۹۰ مدل", "scenario-positive"],
-    ];
-    scenarioEl.innerHTML = scenarios
-      .map(
-        ([name, value, detail, className]) =>
-          `<div class="scenario-card ${className}"><span>${escapeHTML(name)}</span><strong>${formatIRR(value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(detail)}</small></div>`,
-      )
-      .join("");
+    scenarioEl.innerHTML = `<p class="data-note">قدرت خرید در میانه: ${escapeHTML(purchasingPowerLabel)} · تغییر نسبت به قدرت خرید واریزی‌ها: ${escapeHTML(percent(monteCarlo.purchasingPowerChange?.p50))}.</p>`;
   }
 }
 
@@ -2154,9 +2393,9 @@ function renderBacktest(result) {
   };
   const riskMetrics = `${metric(text("backtest.medianVolatility"), result.median.volatility, true)}${metric(text("backtest.medianSortino"), result.median.sortino, true)}`;
   const sharpe = Number.isFinite(result.median.sharpe)
-    ? `<details class="advanced-risk-metric"><summary>${escapeHTML(text("backtest.advancedSharpe"))}</summary><div class="metric-grid">${metric(text("backtest.medianSharpe"), result.median.sharpe, true)}<p class="data-note">${escapeHTML(text("backtest.sharpeReference"))}: ${formatPercent((result.referenceAnnualReturn || 0) * 100)} ${escapeHTML(text("backtest.referenceFixedIncome"))}</p></div></details>`
+    ? `<details class="advanced-risk-metric"><summary>${escapeHTML(text("backtest.advancedSharpe"))}</summary><div class="metric-grid">${metric(text("backtest.medianSharpe"), result.median.sharpe, true)}<p class="data-note">${escapeHTML(text("backtest.sharpeReference"))}: ${escapeHTML(result.referenceAnnualReturn === null || !Number.isFinite(result.referenceAnnualReturn) ? text("analysis.unavailable") : formatPercent(result.referenceAnnualReturn * 100))} ${escapeHTML(text("backtest.referenceFixedIncome"))}</p></div></details>`
     : "";
-  backtestEl.innerHTML = `<div class="backtest-note">${escapeHTML(result.estimated ? text("backtest.partial") : text("backtest.full"))} ${escapeHTML(text("backtest.observations"))}: ${escapeHTML(String(result.observations))}</div><div class="metric-grid">${metric(text("backtest.medianFinal"), result.median.finalValue)}${metric(text("backtest.medianCagr"), result.median.cagr, true)}${metric(text("backtest.medianReal"), result.median.inflationAdjustedReturn, true)}${metric(text("backtest.medianDrawdown"), result.median.maxDrawdown, true)}${riskMetrics}</div>${sharpe}<div class="best-worst"><div><small>${escapeHTML(text("backtest.best"))}</small><strong>${escapeHTML(result.best.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.best.end)}</strong><span>${formatPercent(result.best.cagr * 100)}</span></div><div><small>${escapeHTML(text("backtest.worst"))}</small><strong>${escapeHTML(result.worst.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.worst.end)}</strong><span>${formatPercent(result.worst.cagr * 100)}</span></div></div>`;
+  backtestEl.innerHTML = `<div class="backtest-note">${escapeHTML(result.estimated ? text("backtest.partial") : text("backtest.full"))} ${escapeHTML(text("backtest.observations"))}: ${escapeHTML(String(result.observations))}</div><div class="metric-grid">${metric(text("backtest.medianFinal"), result.median.finalValue)}${metric(text("backtest.medianCagr"), result.median.cagr, true)}${metric(text("backtest.medianReal"), result.median.inflationAdjustedReturn, true)}${metric(text("backtest.medianDrawdown"), result.median.maxDrawdown, true)}${riskMetrics}</div>${sharpe}<div class="best-worst"><div><small>${escapeHTML(text("backtest.best"))}</small><strong>${escapeHTML(result.best.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.best.end)}</strong><span>${result.best.cagr === null ? escapeHTML(text("analysis.unavailable")) : formatPercent(result.best.cagr * 100)}</span></div><div><small>${escapeHTML(text("backtest.worst"))}</small><strong>${escapeHTML(result.worst.start)} ${escapeHTML(text("to"))} ${escapeHTML(result.worst.end)}</strong><span>${result.worst.cagr === null ? escapeHTML(text("analysis.unavailable")) : formatPercent(result.worst.cagr * 100)}</span></div></div>`;
 }
 
 function renderHistory() {
@@ -2579,22 +2818,31 @@ function bindChartTooltips() {
 
 function calculatePlan(inputs) {
   const assetKeys = selectedPlanAssetKeys(inputs.selectedAssets);
-  const recommendation = recommendAllocation(inputs.profile, {
-    enabledAssets: inputs.selectedAssets,
-    assumptions: modelSettings?.assumptions || DEFAULT_ASSUMPTIONS,
-    market: liveMarket || {},
-  });
   const history = readHistory();
   const portfolio = portfolioFromHistory(history, liveMarket);
   const ledger = calculatePortfolio(readPortfolio(), liveMarket || {});
   const currentHoldings = ledger.transactions.length
     ? Object.fromEntries(PLAN_ASSET_KEYS.map((asset) => [asset, Math.max(0, Number(ledger.values[asset]?.value) || 0)]))
     : Object.fromEntries(PLAN_ASSET_KEYS.map((key) => [key, portfolio.categories[key].value]));
+  const recommendation = recommendAllocation(inputs.profile, {
+    enabledAssets: inputs.selectedAssets,
+    assumptions: modelSettings?.assumptions || DEFAULT_ASSUMPTIONS,
+    market: liveMarket || {},
+    currentHoldings,
+    inflationRate: modelSettings?.inflationRate,
+    transactionCosts: modelSettings?.transactionCosts || DEFAULT_TRANSACTION_COSTS,
+    allowMicroAllocation: inputs.allowMicroAllocation,
+    includeCurrency: inputs.selectedAssets.includes("currency"),
+  });
   const contribution = contributionRebalance(
     currentHoldings,
     recommendation.weights,
     inputs.monthlyContribution,
     assetKeys,
+    {
+      driftThresholdPercent: modelSettings?.targetDriftThresholdPercent ?? 3,
+      transactionCosts: modelSettings?.transactionCosts || DEFAULT_TRANSACTION_COSTS,
+    },
   );
   contribution.excludedInvestableTotal = ledger.transactions.length
     ? Math.max(0, ledger.investableTotal - Object.values(currentHoldings).reduce((total, value) => total + value, 0))
@@ -2782,6 +3030,10 @@ function updatePlanWeights(event) {
     lastPlan.recommendation.weights,
     lastPlan.inputs.monthlyContribution,
     assetKeys,
+    {
+      driftThresholdPercent: modelSettings?.targetDriftThresholdPercent ?? 3,
+      transactionCosts: modelSettings?.transactionCosts || DEFAULT_TRANSACTION_COSTS,
+    },
   );
   contribution.excludedInvestableTotal = lastPlan.contribution.excludedInvestableTotal;
   contribution.excludedMissingCount = lastPlan.contribution.excludedMissingCount;
@@ -3103,46 +3355,7 @@ async function runBacktest() {
     return;
   }
   backtestEl.innerHTML = `<div class="empty-state">${escapeHTML(text("backtest.running"))}</div>`;
-  let historicalMarket;
-  try {
-    const assetForPlanningKey = Object.fromEntries(
-      ASSET_KEYS.map((assetId) => [
-        assetId,
-        assetId === "fixed"
-          ? "fixedIncome"
-          : assetId === "currency"
-            ? "dollar"
-            : INSTRUMENT_REGISTRY[assetId]?.marketKey,
-      ]),
-    );
-    const historicalAssets = ASSET_KEYS.filter((assetId) => inputs.allocation[assetId] > 0).map(
-      (assetId) => assetForPlanningKey[assetId],
-    );
-    const query =
-      "/api/history?" +
-      new URLSearchParams({ assets: [...new Set(historicalAssets)].join(","), range: "all" }).toString();
-    await ensureApiSession();
-    const response = await fetchWithTimeout(
-      query,
-      { cache: "no-store", credentials: "same-origin", headers: providerRequestHeaders() },
-      20000,
-    );
-    if (!response.ok) throw new Error("history-api-unavailable");
-    const data = await response.json();
-    const history = Object.fromEntries(
-      ASSET_KEYS.filter((assetId) => assetId !== "fixed").map((assetId) => {
-        const marketKey = assetForPlanningKey[assetId];
-        return [marketKey, data.assets?.[marketKey]?.points || []];
-      }),
-    );
-    historicalMarket = {
-      funds: liveMarket?.funds || {},
-      history,
-    };
-  } catch {
-    backtestEl.innerHTML = `<div class="empty-state">تاریخچه‌ی مشاهده‌شده دریافت نشد؛ بعدا دوباره تلاش کن.</div>`;
-    return;
-  }
+  const historicalMarket = await loadSimulationHistory(inputs);
   const result = await runAnalysisWorker({
     type: "backtest",
     options: {
@@ -3154,6 +3367,13 @@ async function runBacktest() {
       inflationRate: inputs.inflationRate,
       horizonYears: inputs.horizonYears,
       rebalance: inputs.rebalance,
+      rebalanceCadence: inputs.rebalanceCadence,
+      rebalanceThresholdPercent: inputs.rebalanceThresholdPercent,
+      transactionCosts: inputs.transactionCosts,
+      marType: inputs.marType,
+      sharpeBenchmarkAnnualReturn: inputs.compareFixedIncomeBenchmark
+        ? Number(liveMarket?.funds?.fixedIncome?.effectiveAnnualReturn) / 100
+        : null,
       assumptions: modelSettings.assumptions,
     },
   }).catch(() => null);
@@ -3181,7 +3401,96 @@ function getSimulationInputs() {
       ? numberFromInput($("#simulation-path-count").value)
       : modelSettings.paths,
     rebalance: Boolean($("#simulation-rebalance")?.checked),
+    rebalanceCadence: ["monthly", "quarterly", "annually", "threshold"].includes(
+      $("#simulation-rebalance-cadence")?.value,
+    )
+      ? $("#simulation-rebalance-cadence").value
+      : "quarterly",
+    rebalanceThresholdPercent: clamp(numberFromInput($("#simulation-rebalance-threshold")?.value), 0, 25),
+    fixedIncomeMode: ["mean-reverting", "constant-market", "user-expected"].includes($("#simulation-fixed-mode")?.value)
+      ? $("#simulation-fixed-mode").value
+      : "mean-reverting",
+    marType: ["zero", "inflation", "fixed-income"].includes($("#simulation-mar")?.value)
+      ? $("#simulation-mar").value
+      : "zero",
+    compareFixedIncomeBenchmark: Boolean($("#simulation-fixed-benchmark")?.checked),
+    transactionCosts: modelSettings.transactionCosts,
+    seed: 42,
   };
+}
+
+async function loadSimulationHistory(inputs) {
+  const selectedAssets = ASSET_KEYS.filter((assetId) => inputs.allocation[assetId] > 0);
+  const marketKeyByPlanningAsset = Object.fromEntries(
+    ASSET_KEYS.map((assetId) => [
+      assetId,
+      assetId === "fixed"
+        ? "fixedIncome"
+        : assetId === "currency"
+          ? "dollar"
+          : INSTRUMENT_REGISTRY[assetId]?.marketKey || null,
+    ]),
+  );
+  const requestAssets = [
+    ...new Set(selectedAssets.map((assetId) => marketKeyByPlanningAsset[assetId]).filter(Boolean)),
+  ];
+  if (!requestAssets.length)
+    return { ...(liveMarket || {}), history: {}, historyCoverage: {}, historyFetchError: null };
+  try {
+    await ensureApiSession();
+    const query = new URLSearchParams({ assets: requestAssets.join(","), range: "all" });
+    const response = await fetchWithTimeout(
+      "/api/history?" + query.toString(),
+      { cache: "no-store", credentials: "same-origin", headers: providerRequestHeaders() },
+      20000,
+    );
+    if (!response.ok) throw new Error("history-api-unavailable");
+    const data = await response.json();
+    const history = {};
+    const historyCoverage = {};
+    selectedAssets.forEach((assetId) => {
+      const marketKey = marketKeyByPlanningAsset[assetId];
+      if (assetId === "fixed") {
+        historyCoverage.fixedIncome = data.assets?.fixedIncome?.coverage
+          ? { ...data.assets.fixedIncome.coverage, sourceUrl: data.assets.fixedIncome.sourceUrl || null }
+          : null;
+        return;
+      }
+      const assetData = data.assets?.[marketKey];
+      const source = assetData?.coverage?.source || null;
+      history[marketKey] = (assetData?.points || []).map((point) => ({
+        ...point,
+        currency: point.currency || assetData?.currency || null,
+        source: point.source || source,
+      }));
+      historyCoverage[marketKey] = assetData?.coverage
+        ? { ...assetData.coverage, sourceUrl: assetData.sourceUrl || null }
+        : null;
+    });
+    Object.entries(history).forEach(([marketKey, points]) => {
+      if (points.length || !Array.isArray(liveMarket?.history?.[marketKey])) return;
+      history[marketKey] = liveMarket.history[marketKey];
+      historyCoverage[marketKey] = {
+        ...(historyCoverage[marketKey] || {}),
+        source: "live-market-fallback",
+      };
+    });
+    return {
+      ...(liveMarket || {}),
+      funds: { ...(data.funds || {}), ...(liveMarket?.funds || {}) },
+      history,
+      historyCoverage,
+      historyFetchError: null,
+      historyAsOfDate: data.updatedAt || liveMarket?.updatedAt || null,
+    };
+  } catch {
+    return {
+      ...(liveMarket || {}),
+      history: liveMarket?.history || {},
+      historyCoverage: {},
+      historyFetchError: "history-provider-unavailable",
+    };
+  }
 }
 
 async function runIndependentSimulation(event) {
@@ -3191,17 +3500,19 @@ async function runIndependentSimulation(event) {
     simulationSummaryEl.innerHTML = `<div class="empty-state">حداقل یک وزن مثبت و افق بین ۱ تا ۵۰ سال وارد کن.</div>`;
     return;
   }
-  simulationSummaryEl.innerHTML = `<div class="empty-state">در حال محاسبه‌ی سناریوهای مستقل…</div>`;
+  simulationSummaryEl.innerHTML = '<div class="empty-state">در حال محاسبه‌ی سناریوهای مستقل…</div>';
   try {
+    const market = await loadSimulationHistory(inputs);
+    if (appStore.getState().activeView !== "simulation") return;
     const result = await runAnalysisWorker({
       type: "plan-analysis",
-      options: { ...inputs, assumptions: modelSettings.assumptions, market: liveMarket || {} },
+      options: { ...inputs, assumptions: modelSettings.assumptions, market },
     });
     if (!result || appStore.getState().activeView !== "simulation") return;
-    renderSimulation(result.simulation, result.monteCarlo, result.validation);
+    renderSimulation(result.simulation, result.monteCarlo, result.validation, result.methodComparison);
     const note = $("#analysis-method-note");
     if (note)
-      note.textContent = `نتیجه‌ی آینده تخمینی است · افق ${formatIRR(inputs.horizonYears)} سال · وزن‌ها پس از نرمال‌سازی اعمال شدند · هیچ داده‌ی پرتفوی یا برنامه‌ی ذخیره‌شده استفاده نشد.`;
+      note.textContent = `دامنه‌ی سناریوها تخمینی است · افق ${formatIRR(inputs.horizonYears)} سال · وزن‌ها پس از نرمال‌سازی اعمال شدند · هیچ داده‌ی پرتفوی یا برنامه‌ی ذخیره‌شده استفاده نشد.`;
   } catch {
     if (appStore.getState().activeView === "simulation")
       simulationSummaryEl.innerHTML = `<div class="empty-state">محاسبه کامل نشد؛ مقدار ورودی‌ها را بررسی کن و دوباره اجرا کن.</div>`;
@@ -3381,6 +3692,17 @@ function bindEvents() {
   $("#refresh-market").addEventListener("click", () => loadMarket(true));
   $("#run-backtest").addEventListener("click", runBacktest);
   $("#simulation-form")?.addEventListener("submit", runIndependentSimulation);
+  monteCarloEl?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-simulation-view]");
+    if (!button) return;
+    const selected = button.dataset.simulationView;
+    monteCarloEl.querySelectorAll("[data-simulation-view]").forEach((tab) => {
+      tab.setAttribute("aria-selected", String(tab === button));
+    });
+    monteCarloEl.querySelectorAll("[data-simulation-results]").forEach((view) => {
+      view.hidden = view.dataset.simulationResults !== selected;
+    });
+  });
   $("#export-history").addEventListener("click", exportHistory);
   $("#import-history").addEventListener("click", () => $("#history-file").click());
   $("#history-file").addEventListener("change", importHistoryFile);

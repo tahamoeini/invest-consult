@@ -4,7 +4,6 @@ import {
   ASSET_KEYS,
   DEFAULT_ALLOCATION,
   DEFAULT_ASSUMPTIONS,
-  annualToMonthlyRate,
   buildHistoricalReturns,
   backtestHistorical,
   covarianceMatrix,
@@ -57,10 +56,13 @@ test("recommendation stays normalized and defensive for a conservative profile",
   assert.equal(Math.round(Object.values(result.weights).reduce((sum, value) => sum + value, 0)), 100);
   assert.deepEqual(
     Object.fromEntries(["fixed", "gold", "currency", "silver"].map((assetId) => [assetId, result.weights[assetId]])),
-    { fixed: 80, gold: 11, currency: 6, silver: 3 },
+    { fixed: 80, gold: 11, currency: 0, silver: 9 },
   );
   assert.ok(result.weights.fixed >= 60);
-  assert.ok(result.weights.silver >= 1);
+  assert.ok(result.weights.silver >= 3);
+  assert.ok(Object.values(result.weights).every((weight) => weight === 0 || weight >= 3));
+  const withFx = recommendAllocation(profile, { includeCurrency: true });
+  assert.ok(withFx.weights.currency >= 3);
   ["bitcoin", "ethereum", "platinum", "palladium", "copper"].forEach((assetId) => {
     assert.equal(result.weights[assetId], 0);
   });
@@ -84,6 +86,7 @@ test("optional recommendation assets use volatility-weighted sleeves and the pro
   const total = Object.values(result.weights).reduce((sum, value) => sum + value, 0);
   assert.equal(Math.round(total), 100);
   assert.equal(result.weights.bitcoin + result.weights.ethereum, 5);
+  assert.ok([result.weights.bitcoin, result.weights.ethereum].every((weight) => weight === 0 || weight >= 3));
   assert.ok(result.weights.bitcoin > result.weights.ethereum);
   assert.ok(result.weights.silver > result.weights.copper);
   assert.ok(result.weights.silver + result.weights.copper < base.weights.silver);
@@ -94,7 +97,7 @@ test("optional recommendation assets use volatility-weighted sleeves and the pro
 
 test("crypto recommendation targets follow the profile and never exceed five percent", () => {
   [
-    ["conservative", 1],
+    ["conservative", 0],
     ["balanced", 3],
     ["growth", 5],
   ].forEach(([riskTolerance, expected]) => {
@@ -239,6 +242,8 @@ test("Monte Carlo respects an explicitly supplied zero covariance matrix", () =>
     paths: 1000,
     returnModel: model,
     covariance,
+    fixedIncomeMode: "user-expected",
+    transactionCosts: Object.fromEntries(ASSET_KEYS.map((asset) => [asset, { buyFee: 0, sellFee: 0, spread: 0 }])),
     random: () => 0.1,
   });
   assert.equal(result.nominal.p10, 100);
@@ -253,10 +258,10 @@ test("covariance uses observed overlaps only and shrinks short samples", () => {
   }));
   const model = { gold: { annualVolatility: 0.2 }, currency: { annualVolatility: 0.2 } };
   const paired = covarianceMatrix(rows, ["gold", "currency"], model);
-  assert.ok(Math.abs(paired[0][1] - (0.2 / Math.sqrt(12)) ** 2 * 0.5) < 1e-10);
+  assert.ok(Math.abs(paired[0][1] - (0.2 / Math.sqrt(12)) ** 2 * 0.825) < 1e-10);
   assert.ok(Math.abs(paired[0][0] - (0.2 / Math.sqrt(12)) ** 2) < 1e-10);
   const unobserved = rows.map((row) => ({ ...row, observed: { gold: true, currency: false } }));
-  assert.equal(covarianceMatrix(unobserved, ["gold", "currency"], model)[0][1], 0);
+  assert.ok(covarianceMatrix(unobserved, ["gold", "currency"], model)[0][1] > 0);
 });
 
 test("modeled fallback returns never become observed history or estimated covariance", () => {
@@ -268,7 +273,7 @@ test("modeled fallback returns never become observed history or estimated covari
   const result = estimateReturnModel({ history: { gold: series(100, 0.01, 36) } });
   assert.equal(result.model.currency.observed, false);
   assert.equal(result.model.currency.annualReturn, DEFAULT_ASSUMPTIONS.currency.annualReturn);
-  assert.equal(result.covariance[1][2], 0);
+  assert.ok(result.covariance[1][2] > 0, "missing paired data uses the documented non-independent prior");
   const validation = walkForwardValidation({ history: { gold: series(100, 0.01, 36) } });
   assert.ok(validation.diagnostics.gold.observations >= 3);
 });
@@ -302,10 +307,10 @@ test("block bootstrap falls back to versioned assumptions for assets with fewer 
     method: "block-bootstrap",
     random: () => 0.4,
   });
-  const expected = 1000 * Math.pow(1 + annualToMonthlyRate(DEFAULT_ASSUMPTIONS.gold.annualReturn), 12);
-  assert.equal(result.nominal.p10, expected);
-  assert.equal(result.nominal.p90, expected);
-  assert.equal(result.method, "block-bootstrap");
+  assert.ok(Number.isFinite(result.nominal.p10));
+  assert.equal(result.nominal.p10, result.nominal.p90);
+  assert.equal(result.method, "gaussian");
+  assert.equal(result.methodFallbackReason, "insufficient-joint-monthly-history");
 });
 
 test("goal planner calculates probability and required contribution deterministically", () => {
