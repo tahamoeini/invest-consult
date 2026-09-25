@@ -521,11 +521,14 @@ export function marketPriceDetailsAt(market, assetId, asOf = new Date().toISOStr
   const retrievedTime = retrievedAt ? new Date(retrievedAt).getTime() : NaN;
   const currentQuoteUsable =
     currentPrice !== null && current?.status !== "conflicted" && current?.status !== "unavailable";
+  const marketUpdatedTime = market?.updatedAt ? new Date(market.updatedAt).getTime() : NaN;
+  const historicalAsOf = !Number.isFinite(marketUpdatedTime) || timestamp < marketUpdatedTime;
   const rawSeries = market && market.history && market.history[marketHistoryKey(assetId)];
   const points = (Array.isArray(rawSeries) ? rawSeries : [])
     .map(seriesPointValue)
     .filter(
       (point) =>
+        historicalAsOf &&
         point &&
         point.value !== null &&
         point.value > 0 &&
@@ -572,6 +575,7 @@ export function marketPriceDetailsAt(market, assetId, asOf = new Date().toISOStr
     currentQuoteUsable &&
     !latestManual &&
     Number.isFinite(retrievedTime) &&
+    retrievedTime >= historyTime &&
     timestamp >= retrievedTime &&
     (!Number.isFinite(currentUnavailableAt) || timestamp < currentUnavailableAt)
   ) {

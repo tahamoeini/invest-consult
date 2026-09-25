@@ -23,8 +23,10 @@ import {
   portfolioSeries,
 } from "./src/portfolio.js";
 import { INSTRUMENT_REGISTRY } from "./src/market/catalog.js";
+import { marketCacheAge } from "./src/market/cache.js";
 import { prepareHistoricalAnalysis } from "./src/market/history.js";
 import { lastKnownMarketQuote } from "./src/market/last-known.js";
+import { reconcileMarketWithRecentAcceptedQuote } from "./src/market/reconcile.js";
 import { AppShell } from "./src/ui/components.js";
 import { clampTooltipCenter, donutChartMarkup, lineChartMarkup } from "./src/ui/charts.js";
 import { createNavigationController } from "./src/ui/navigation.js";
@@ -656,6 +658,10 @@ function marketSnapshot(market) {
           Number.isFinite(Number(item.agreementTolerancePct))
             ? Number(item.agreementTolerancePct)
             : null,
+        consensusMethod: item.consensusMethod || null,
+        consensusDisagreement: item.consensusDisagreement === true,
+        unknownObservationCount: Number(item.unknownObservationCount) || 0,
+        acceptedSpreadPct: Number.isFinite(Number(item.acceptedSpreadPct)) ? Number(item.acceptedSpreadPct) : null,
       };
   });
   const fixed = market.funds && market.funds.fixedIncome;
@@ -736,9 +742,11 @@ function renderMarket(data, cachedMarket = lastKnownMarket) {
         : text("market.noChange", "\u2014");
       const changeClass = change > 0.05 ? "positive" : change < -0.05 ? "negative" : "muted";
       const timeLabels = marketTimeLabels(item, currentMarket.updatedAt);
-      const quality = text(`market.quality.${item.status || "healthy"}`);
+      const quality = item.consensusDisagreement
+        ? "اختلاف منابع؛ عدد میانه با اطمینان پایین"
+        : text(`market.quality.${item.status || "healthy"}`);
       const basis = text(`market.quoteType.${item.quoteType || "direct"}`);
-      return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)} · ${escapeHTML(basis)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(quality)} · ${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(timeLabels)}</small>${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</div></div>`;
+      return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)} · ${escapeHTML(basis)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(quality)} · ${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(timeLabels)}</small>${marketConsensusNote(item)}${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</div></div>`;
     })
     .join("");
   const fixed = currentMarket.funds && currentMarket.funds.fixedIncome;
@@ -830,8 +838,12 @@ function marketTimeLabels(item, retrievedFallback = null) {
 
 function confidenceLabel(item) {
   const count = Number(item?.sourceCount) || 0;
+  if (item?.consensusDisagreement) return { label: "اختلاف منابع؛ برآورد میانه", className: "confidence-low" };
+  if (Number(item?.unknownObservationCount) > 0)
+    return { label: "زمان مشاهده‌ی برخی نرخ‌ها نامشخص", className: "confidence-low" };
   if (item?.status === "provisional" || item?.confidence === "medium")
     return { label: "اعتماد متوسط", className: "confidence-medium" };
+  if (item?.confidence === "low" && count > 1) return { label: "اطمینان پایین", className: "confidence-low" };
   if (count >= 3) return { label: "اعتماد بالا", className: "confidence-high" };
   if (count === 2) return { label: "اعتماد متوسط", className: "confidence-medium" };
   if (count === 1) return { label: "یک منبع", className: "confidence-low" };
@@ -851,74 +863,33 @@ function marketSourceValuesMarkup(item) {
         (accepted.size > 0 && !accepted.has(source.source));
       const quote = `${formatIRR(source.price)} · ${source.source}`;
       const observed = source.observedAt ? ` · ${formatDateTime(source.observedAt)}` : "";
-      return `<span class="${conflict ? "is-outlier" : ""}" title="${escapeHTML(quote + observed)}">${escapeHTML(formatIRR(source.price))} · ${escapeHTML(source.source)}</span>`;
+      const exclusion =
+        source.accepted === false
+          ? source.exclusionReason === "older-observation"
+            ? " · قدیمی‌تر از نرخ‌های تازه"
+            : source.exclusionReason === "statistical-outlier"
+              ? " · پرت؛ در برآورد لحاظ نشد"
+              : " · در برآورد لحاظ نشد"
+          : "";
+      return `<span class="${conflict ? "is-outlier" : ""}" title="${escapeHTML(quote + observed + exclusion)}">${escapeHTML(formatIRR(source.price))} · ${escapeHTML(source.source)}${escapeHTML(exclusion)}</span>`;
     })
     .join("")}</div>`;
 }
 
-function reconcileMarketWithRecentAcceptedQuote(market, previousMarket) {
-  if (!market?.assets || !previousMarket?.assets) return market;
-  const previous = previousMarket.assets;
-  const next = { ...market, assets: { ...market.assets } };
-  Object.entries(next.assets).forEach(([assetId, item]) => {
-    const prior = previous[assetId];
-    const priorPrice = Number(prior?.price);
-    const priorTime = new Date(prior?.observedAt || prior?.asOf || "").getTime();
-    if (
-      item?.status !== "conflicted" ||
-      !(priorPrice > 0) ||
-      !Number.isFinite(priorTime) ||
-      prior.status === "conflicted"
-    )
-      return;
-    const sourceValues = Array.isArray(item.sourceValues) ? item.sourceValues : [];
-    const currentTimes = sourceValues
-      .map((source) => new Date(source.observedAt || "").getTime())
-      .filter(Number.isFinite);
-    if (!currentTimes.length) return;
-    const latestTime = Math.max(...currentTimes);
-    const ageLimit = ["bitcoin", "ethereum", "tether"].includes(assetId) ? 15 * 60_000 : 3 * 60 * 60_000;
-    if (Date.now() - priorTime > ageLimit || latestTime < priorTime || latestTime - priorTime > ageLimit) return;
-    const tolerance =
-      assetId === "dollar"
-        ? 0.02
-        : ["bitcoin", "ethereum", "tether"].includes(assetId)
-          ? 0.1
-          : assetId === "gold"
-            ? 0.04
-            : 0.08;
-    const observationWindow = ["bitcoin", "ethereum", "tether"].includes(assetId)
-      ? 5 * 60_000
-      : assetId === "dollar"
-        ? 60 * 60_000
-        : 30 * 60_000;
-    const aligned = sourceValues.filter((source) => {
-      const observedTime = new Date(source.observedAt || "").getTime();
-      return (
-        Number.isFinite(observedTime) &&
-        observedTime >= priorTime &&
-        latestTime - observedTime <= observationWindow &&
-        Number(source.price) > 0 &&
-        Math.abs(Number(source.price) / priorPrice - 1) <= tolerance
-      );
-    });
-    if (!aligned.length) return;
-    const price = aligned.reduce((sum, source) => sum + Number(source.price), 0) / aligned.length;
-    const acceptedSources = new Set(aligned.map((source) => source.source));
-    next.assets[assetId] = {
-      ...item,
-      price: Math.round(price),
-      status: "degraded",
-      confidence: "low",
-      sourceCount: aligned.length,
-      sources: [...acceptedSources],
-      observedAt: new Date(Math.max(...aligned.map((source) => new Date(source.observedAt).getTime()))).toISOString(),
-      asOf: new Date(Math.max(...aligned.map((source) => new Date(source.observedAt).getTime()))).toISOString(),
-      reconciliationNote: "منابع تازه اختلاف داشتند؛ مقدارهای نزدیک به آخرین قیمت پذیرفته‌شده مبنا شدند.",
-      sourceValues: sourceValues.map((source) => ({ ...source, accepted: acceptedSources.has(source.source) })),
-    };
-  });
-  return next;
+function marketConsensusNote(item) {
+  if (!item?.consensusDisagreement && !(Number(item?.unknownObservationCount) > 0)) return "";
+  const sourceCount = Number(item.sourceCount) || 0;
+  const spread = Number(item.spreadPct);
+  const notes = [];
+  if (item.consensusDisagreement) {
+    const spreadLabel = Number.isFinite(spread)
+      ? `اختلاف حدود ${formatPercent(spread / 100, 2)} بین منابع`
+      : "اختلاف بین منابع";
+    notes.push(`${spreadLabel}؛ میانه‌ی ${formatIRR(sourceCount)} منبع به‌عنوان برآورد استفاده شده است.`);
+  }
+  if (Number(item.unknownObservationCount) > 0)
+    notes.push(`زمان مشاهده‌ی ${formatIRR(item.unknownObservationCount)} منبع مشخص نیست.`);
+  return `<small class="data-note-warning">${escapeHTML(notes.join(" "))}</small>`;
 }
 
 function dashboardPerformancePoints(portfolio, result) {
@@ -1167,7 +1138,7 @@ function renderMarketSnapshot(data, cachedMarket = lastKnownMarket) {
     const changeLabel = Number.isFinite(change)
       ? `${change > 0 ? "+" : ""}${formatPercent(change)}`
       : text("market.noChange");
-    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, currentMarket.updatedAt))}</small>${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</article>`;
+    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, currentMarket.updatedAt))}</small>${marketConsensusNote(item)}${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</article>`;
   });
   const fixed = currentMarket.funds?.fixedIncome;
   items.push(
@@ -3088,8 +3059,7 @@ async function loadMarket(force = false) {
   const cachedMarket = cacheDisabled ? null : readJson(MARKET_CACHE_KEY, null);
   lastKnownMarket =
     cachedMarket && typeof cachedMarket === "object" && !Array.isArray(cachedMarket) ? cachedMarket : null;
-  const cachedUpdatedAt = Date.parse(lastKnownMarket?.updatedAt || "");
-  const cacheAge = Number.isFinite(cachedUpdatedAt) ? Date.now() - cachedUpdatedAt : Infinity;
+  const cacheAge = marketCacheAge(lastKnownMarket);
   if (!force && !cacheDisabled && lastKnownMarket?.assets && cacheAge >= 0 && cacheAge < 90_000) {
     liveMarket = lastKnownMarket;
     appStore.setState({ market: liveMarket, marketStatus: "cached" });
@@ -3116,6 +3086,7 @@ async function loadMarket(force = false) {
       Array.isArray(payload) ||
       !payload.assets ||
       typeof payload.assets !== "object" ||
+      Array.isArray(payload.assets) ||
       !Number.isFinite(Date.parse(payload.updatedAt || ""))
     )
       throw new Error("Market response was invalid");

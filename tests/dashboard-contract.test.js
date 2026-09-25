@@ -20,7 +20,7 @@ test("dashboard exposes the complete financial summary contract", () => {
 });
 
 test("all internal views remain sibling sections", () => {
-  const views = [...index.matchAll(/<section data-app-view="([^"]+)"/g)].map((match) => match[1]);
+  const views = [...index.matchAll(/<section\b(?=[^>]*\bdata-app-view="([^"]+)")[^>]*>/g)].map((match) => match[1]);
   assert.deepEqual(views, ["dashboard", "plan", "simulation", "history", "portfolio", "assets", "settings"]);
 });
 

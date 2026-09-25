@@ -88,7 +88,7 @@ test("new contributions close allocation gaps without selling", () => {
 test("historical backtest returns requested risk metrics", () => {
   const result = backtestHistorical({
     market,
-    allocation: { fixed: 60, gold: 20, currency: 15, silver: 5 },
+    allocation: { fixed: 0, gold: 40, currency: 40, silver: 20 },
     initialInvestment: 1000,
     monthlyContribution: 100,
     contributionGrowth: 0,

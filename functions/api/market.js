@@ -17,9 +17,10 @@ const fundPages = { fixedIncome: "https://charisma.ir/funds/fixedincomefund" };
 const UPSTREAM_TIMEOUT_MS = 1800;
 const INTERACTIVE_BUDGET_MS = 3500;
 const CONSENSUS_POLICY = Object.freeze({
-  version: "quote-consensus-v2-provisional",
+  version: "quote-consensus-v3-robust-median",
   calibrated: false,
   agreementTolerancePct: Object.freeze({ fx: 0.25, gold: 0.1, commodities: null, crypto: null, iranEquity: null }),
+  spreadWarningPct: Object.freeze({ fx: 0.25, gold: 0.1, commodities: 1, crypto: 1, iranEquity: 0.5 }),
 });
 const CONFIGURED_SOURCE_COUNTS = Object.freeze({
   dollar: 3,
@@ -531,14 +532,24 @@ export function aggregate(asset, quotes) {
   const configuredTolerance = CONSENSUS_POLICY.agreementTolerancePct[sleeveId];
   const hasAgreementTolerance = Number.isFinite(configuredTolerance);
   const agreementTolerancePct = hasAgreementTolerance ? configuredTolerance : 0;
+  const spreadWarningPct = CONSENSUS_POLICY.spreadWarningPct[sleeveId] ?? 1;
   const timedQuotes = valid
     .map((item) => ({ item, time: new Date(item.observedAt || item.sourceTime || "").getTime() }))
     .filter((entry) => Number.isFinite(entry.time));
+  const untimedQuotes = valid.filter(
+    (item) => !Number.isFinite(new Date(item.observedAt || item.sourceTime || "").getTime()),
+  );
   const timeWindow = sleeveId === "crypto" ? 5 * 60_000 : sleeveId === "fx" ? 60 * 60_000 : 30 * 60_000;
   const newestTime = timedQuotes.length ? Math.max(...timedQuotes.map((entry) => entry.time)) : null;
   const comparisonQuotes = timedQuotes.length
-    ? timedQuotes.filter((entry) => newestTime - entry.time <= timeWindow).map((entry) => entry.item)
+    ? [
+        ...timedQuotes.filter((entry) => newestTime - entry.time <= timeWindow).map((entry) => entry.item),
+        ...untimedQuotes,
+      ]
     : valid;
+  const unknownObservationCount = comparisonQuotes.filter(
+    (item) => !Number.isFinite(new Date(item.observedAt || item.sourceTime || "").getTime()),
+  ).length;
   const allPrices = comparisonQuotes.map((item) => Number(item.price));
   const center = median(allPrices);
   const mad = median(allPrices.map((price) => Math.abs(price - center)));
@@ -550,15 +561,25 @@ export function aggregate(asset, quotes) {
             Math.abs(Number(item.price) - center) <= Math.max(outlierLimit, (center * agreementTolerancePct) / 100),
         )
       : comparisonQuotes;
+  const comparisonPrices = comparisonQuotes.map((item) => Number(item.price));
   const acceptedPrices = accepted.map((item) => Number(item.price));
   const spreadPct =
+    comparisonPrices.length > 1
+      ? ((Math.max(...comparisonPrices) - Math.min(...comparisonPrices)) / Math.max(median(comparisonPrices), 1)) * 100
+      : 0;
+  const acceptedSpreadPct =
     acceptedPrices.length > 1
       ? ((Math.max(...acceptedPrices) - Math.min(...acceptedPrices)) / Math.max(median(acceptedPrices), 1)) * 100
       : 0;
-  const conflicted = accepted.length >= 2 && spreadPct > agreementTolerancePct;
-  const usable = conflicted ? [] : accepted;
-  const provisional = !CONSENSUS_POLICY.calibrated && hasAgreementTolerance && accepted.length >= 2 && !conflicted;
-  const changes = comparisonQuotes
+  const consensusDisagreement = accepted.length >= 2 && spreadPct > spreadWarningPct;
+  const usable = accepted;
+  const provisional =
+    !CONSENSUS_POLICY.calibrated &&
+    hasAgreementTolerance &&
+    accepted.length >= 2 &&
+    !consensusDisagreement &&
+    unknownObservationCount === 0;
+  const changes = accepted
     .map((item) => item.changePct)
     .filter((value) => value !== null && value !== undefined && value !== "")
     .map(Number)
@@ -593,19 +614,21 @@ export function aggregate(asset, quotes) {
     ).values(),
   ];
   const degradedDependency = conversionDependencies.some((dependency) => dependency.status !== "healthy");
-  const status = conflicted
-    ? "conflicted"
-    : provisional
-      ? "provisional"
-      : usable.length === 1 ||
-          accepted.length < comparisonQuotes.length ||
-          comparisonQuotes.length < valid.length ||
-          degradedDependency
-        ? "degraded"
-        : "healthy";
+  const status = provisional
+    ? "provisional"
+    : usable.length === 1 ||
+        consensusDisagreement ||
+        unknownObservationCount > 0 ||
+        accepted.length < comparisonQuotes.length ||
+        comparisonQuotes.length < valid.length ||
+        degradedDependency
+      ? "degraded"
+      : "healthy";
   const confidenceRank = { none: 0, low: 1, medium: 2, high: 3 };
-  let confidence = conflicted
-    ? "none"
+  let confidence = consensusDisagreement
+    ? accepted.length >= 3
+      ? "medium"
+      : "low"
     : provisional
       ? "medium"
       : usable.length >= 3 && accepted.length === valid.length
@@ -617,6 +640,7 @@ export function aggregate(asset, quotes) {
     if ((confidenceRank[dependency.confidence] ?? 1) < confidenceRank[confidence])
       confidence = dependency.confidence || "low";
   });
+  if (unknownObservationCount > 0) confidence = "low";
   return {
     price: usable.length ? Math.round(median(usable.map((item) => item.price))) : null,
     changePct: changes.length ? Number(median(changes).toFixed(3)) : null,
@@ -631,6 +655,11 @@ export function aggregate(asset, quotes) {
     sourceCount: usable.length,
     configuredSourceCount: CONFIGURED_SOURCE_COUNTS[asset] || valid.length,
     spreadPct: Number(spreadPct.toFixed(3)),
+    acceptedSpreadPct: Number(acceptedSpreadPct.toFixed(3)),
+    spreadWarningPct,
+    consensusMethod: "median_mad",
+    consensusDisagreement,
+    unknownObservationCount,
     consensusPolicyVersion: CONSENSUS_POLICY.version,
     consensusCalibrated: CONSENSUS_POLICY.calibrated,
     agreementTolerancePct: hasAgreementTolerance ? agreementTolerancePct : null,
@@ -641,15 +670,12 @@ export function aggregate(asset, quotes) {
       price: Math.round(item.price),
       quoteType: item.quoteType,
       observedAt: item.observedAt || item.sourceTime || null,
-      accepted: accepted.includes(item) && !conflicted,
-      exclusionReason:
-        conflicted && accepted.includes(item)
-          ? "price-disagreement"
-          : accepted.includes(item)
-            ? null
-            : timedQuotes.length && !comparisonQuotes.includes(item)
-              ? "older-observation"
-              : "statistical-outlier",
+      accepted: accepted.includes(item),
+      exclusionReason: accepted.includes(item)
+        ? null
+        : timedQuotes.length && !comparisonQuotes.includes(item)
+          ? "older-observation"
+          : "statistical-outlier",
     })),
     observedAt: sourceTimes.at(-1) || null,
     retrievedAt: new Date().toISOString(),

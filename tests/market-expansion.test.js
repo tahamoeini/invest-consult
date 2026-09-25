@@ -13,17 +13,44 @@ import {
 import { lastKnownMarketQuote } from "../src/market/last-known.js";
 import { createHistoryExport, parseHistoryExport } from "../src/history.js";
 
-test("un-calibrated two-source disagreements are conflicted instead of averaged", () => {
+test("two-source disagreement still returns a median estimate with lower confidence", () => {
   const result = aggregate("bitcoin", [
     { asset: "bitcoin", price: 2000000000, source: "CoinGecko", unit: "coin" },
-    { asset: "bitcoin", price: 2020000000, source: "Binance", unit: "coin" },
+    { asset: "bitcoin", price: 2200000000, source: "Binance", unit: "coin" },
   ]);
-  assert.equal(result.price, null);
+  assert.equal(result.price, 2100000000);
   assert.equal(result.unit, "coin");
-  assert.equal(result.sourceCount, 0);
-  assert.equal(result.status, "conflicted");
-  assert.equal(result.confidence, "none");
+  assert.equal(result.sourceCount, 2);
+  assert.equal(result.status, "degraded");
+  assert.equal(result.confidence, "low");
+  assert.equal(result.consensusDisagreement, true);
   assert.equal(result.consensusCalibrated, false);
+});
+
+test("fresh FX and gold quotes produce midpoint estimates and exclude older observations", () => {
+  const dollar = aggregate("dollar", [
+    { asset: "dollar", price: 234615, source: "Provider A", unit: "TOMAN", observedAt: "2026-09-25T11:18:00.000Z" },
+    { asset: "dollar", price: 232700, source: "Provider B", unit: "TOMAN", observedAt: "2026-09-25T11:26:00.000Z" },
+    { asset: "dollar", price: 234000, source: "Provider C", unit: "TOMAN", observedAt: "2026-09-24T17:30:00.000Z" },
+  ]);
+  assert.equal(dollar.price, 233658);
+  assert.equal(dollar.status, "degraded");
+  assert.equal(dollar.sourceCount, 2);
+  assert.equal(dollar.consensusDisagreement, true);
+  assert.equal(
+    dollar.sourceValues.find((source) => source.source === "Provider C").exclusionReason,
+    "older-observation",
+  );
+
+  const gold = aggregate("gold", [
+    { asset: "gold", price: 24124600, source: "Provider A", unit: "gram", observedAt: "2026-09-25T11:18:00.000Z" },
+    { asset: "gold", price: 23881527, source: "Provider B", unit: "gram", observedAt: "2026-09-25T11:26:00.000Z" },
+    { asset: "gold", price: 24054670, source: "Provider C", unit: "gram", observedAt: "2026-09-25T02:10:00.000Z" },
+  ]);
+  assert.equal(gold.price, 24003064);
+  assert.equal(gold.status, "degraded");
+  assert.equal(gold.sourceCount, 2);
+  assert.equal(gold.consensusDisagreement, true);
 });
 
 test("two identical source values can be combined while thresholds await calibration", () => {
@@ -32,7 +59,8 @@ test("two identical source values can be combined while thresholds await calibra
     { asset: "bitcoin", price: 2000000000, source: "B", unit: "coin" },
   ]);
   assert.equal(result.price, 2000000000);
-  assert.equal(result.status, "healthy");
+  assert.equal(result.status, "degraded");
+  assert.equal(result.unknownObservationCount, 2);
   assert.equal(result.sourceCount, 2);
 });
 
@@ -56,8 +84,8 @@ test("attached FX and gold readings use provisional bands after outlier filterin
     { asset: "dollar", price: 232000, source: "Navasan", unit: "TOMAN" },
   ]);
   assert.equal(dollar.price, 231705);
-  assert.equal(dollar.status, "provisional");
-  assert.equal(dollar.confidence, "medium");
+  assert.equal(dollar.status, "degraded");
+  assert.equal(dollar.confidence, "low");
   assert.equal(dollar.sourceCount, 3);
   assert.equal(dollar.agreementTolerancePct, 0.25);
   assert.equal(dollar.consensusCalibrated, false);
@@ -68,8 +96,8 @@ test("attached FX and gold readings use provisional bands after outlier filterin
     { asset: "gold", price: 23777640, source: "Navasan", unit: "gram" },
   ]);
   assert.equal(gold.price, 23771770);
-  assert.equal(gold.status, "provisional");
-  assert.equal(gold.confidence, "medium");
+  assert.equal(gold.status, "degraded");
+  assert.equal(gold.confidence, "low");
   assert.equal(gold.sourceCount, 2);
   assert.equal(gold.agreementTolerancePct, 0.1);
   assert.equal(gold.sources.includes("Bonbast"), false);
@@ -78,8 +106,9 @@ test("attached FX and gold readings use provisional bands after outlier filterin
     { asset: "dollar", price: 231705, source: "A", unit: "TOMAN" },
     { asset: "dollar", price: 232300, source: "B", unit: "TOMAN" },
   ]);
-  assert.equal(beyondBand.status, "conflicted");
-  assert.equal(beyondBand.price, null);
+  assert.equal(beyondBand.status, "degraded");
+  assert.equal(beyondBand.price, 232003);
+  assert.equal(beyondBand.consensusDisagreement, true);
 
   const now = new Date().toISOString();
   const provisionalMarket = { updatedAt: now, assets: { gold: { ...gold, retrievedAt: now } }, history: {} };

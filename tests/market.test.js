@@ -8,6 +8,11 @@ import {
   onRequestGet,
   parseRequestedAssets,
 } from "../functions/api/market.js";
+import { createSecureApiContext } from "./helpers/api-context.js";
+
+async function marketRequest(url, env = {}, headers = {}) {
+  return onRequestGet(await createSecureApiContext(url, env, headers));
+}
 
 test("metal history converts troy-ounce closes to grams", () => {
   const [gold] = normalizeMetalHistory([{ date: "2026-09-18", close: 4379.74 }]);
@@ -36,14 +41,16 @@ test("TGJU history does not use a synthetic FX conversion", () => {
   assert.equal(gold.value, 23363000);
 });
 
-test("market aggregation refuses to invent a midpoint when two sources disagree", () => {
+test("market aggregation returns a midpoint with a disagreement warning when two sources differ", () => {
   const result = aggregate("dollar", [
-    { asset: "dollar", price: 100, source: "A", changePct: null, sourceTime: "2026-01-01T00:00:00.000Z" },
+    { asset: "dollar", price: 100, source: "A", changePct: null, sourceTime: "2026-01-02T00:00:00.000Z" },
     { asset: "dollar", price: 110, source: "B", changePct: undefined, sourceTime: "2026-01-02T00:00:00.000Z" },
   ]);
-  assert.equal(result.price, null);
-  assert.equal(result.status, "conflicted");
-  assert.equal(result.sourceCount, 0);
+  assert.equal(result.price, 105);
+  assert.equal(result.status, "degraded");
+  assert.equal(result.sourceCount, 2);
+  assert.equal(result.consensusDisagreement, true);
+  assert.equal(result.confidence, "low");
   assert.equal(result.changePct, null);
   assert.equal(result.asOf, "2026-01-02T00:00:00.000Z");
 });
@@ -91,7 +98,9 @@ test("selected crypto requests fetch only that instrument and preserve partial d
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bitcoin") });
+    const response = await marketRequest("https://app.test/api/market?assets=bitcoin", {
+      COINGECKO_DEMO_API_KEY: "platform-test-key",
+    });
     const data = await response.json();
     assert.deepEqual(Object.keys(data.assets), ["bitcoin"]);
     assert.equal(data.assets.bitcoin.price, 3000000000);
@@ -101,7 +110,7 @@ test("selected crypto requests fetch only that instrument and preserve partial d
     assert.equal(data.assets.bitcoin.sourceCount, 1);
     assert.equal(data.assets.bitcoin.sleeveId, "crypto");
     assert.equal(data.assets.bitcoin.dependencies[0].instrumentId, "dollar");
-    assert.equal(data.assets.bitcoin.dependencies[0].status, "provisional");
+    assert.equal(data.assets.bitcoin.dependencies[0].status, "degraded");
     assert.equal(data.assets.dollar, undefined);
     assert.equal(data.assets.bitcoin.observedAt, null);
     assert.ok(data.assets.bitcoin.retrievedAt);
@@ -116,7 +125,7 @@ test("selected crypto requests fetch only that instrument and preserve partial d
   }
 });
 
-test("fixture FX and gold quotes produce provisional values and permit USD conversion", async () => {
+test("fixture FX and gold quotes produce marked estimates and permit USD conversion", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
@@ -145,21 +154,21 @@ test("fixture FX and gold quotes produce provisional values and permit USD conve
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({
-      request: new Request("https://app.test/api/market?assets=dollar,gold,bitcoin"),
+    const response = await marketRequest("https://app.test/api/market?assets=dollar,gold,bitcoin", {
+      COINGECKO_DEMO_API_KEY: "platform-test-key",
     });
     const data = await response.json();
-    assert.equal(data.assets.dollar.price, 231705);
-    assert.equal(data.assets.dollar.status, "provisional");
-    assert.equal(data.assets.dollar.confidence, "medium");
+    assert.equal(data.assets.dollar.price, 231603);
+    assert.equal(data.assets.dollar.status, "degraded");
+    assert.equal(data.assets.dollar.confidence, "low");
     assert.equal(data.assets.dollar.consensusCalibrated, false);
-    assert.equal(data.assets.gold.price, 23771770);
-    assert.equal(data.assets.gold.status, "provisional");
+    assert.equal(data.assets.gold.price, 23824868);
+    assert.equal(data.assets.gold.status, "degraded");
     assert.equal(data.assets.gold.sourceCount, 2);
-    assert.equal(data.assets.gold.sources.includes("Provider B"), false);
-    assert.equal(data.assets.bitcoin.price, 60000 * 231705);
+    assert.equal(data.assets.gold.sources.includes("Provider B"), true);
+    assert.equal(data.assets.bitcoin.price, 60000 * data.assets.dollar.price);
     assert.equal(data.assets.bitcoin.quoteType, "derived");
-    assert.equal(data.assets.bitcoin.dependencies[0].status, "provisional");
+    assert.equal(data.assets.bitcoin.dependencies[0].status, "degraded");
     assert.equal(data.diagnostics.providers.auxiliary.quoteCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -186,7 +195,9 @@ test("USDT exchange pairs are not converted as if USDT were USD cash", async () 
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bitcoin") });
+    const response = await marketRequest("https://app.test/api/market?assets=bitcoin", {
+      COINGECKO_DEMO_API_KEY: "platform-test-key",
+    });
     const data = await response.json();
     assert.equal(data.assets.bitcoin.price, 3000000000);
     assert.equal(data.assets.bitcoin.sourceCount, 1);
@@ -204,7 +215,7 @@ test("TSETMC retrieval time is not misreported as the market observation time", 
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ indexValue: 2000000, previousValue: 1990000 }), { status: 200 });
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bourseIndex") });
+    const response = await marketRequest("https://app.test/api/market?assets=bourseIndex");
     const data = await response.json();
     assert.equal(data.assets.bourseIndex.observedAt, null);
     assert.ok(data.assets.bourseIndex.retrievedAt);
@@ -228,7 +239,7 @@ test("TGJU gc30 supplies Tehran index points and history when TSETMC fails", asy
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bourseIndex") });
+    const response = await marketRequest("https://app.test/api/market?assets=bourseIndex");
     const data = await response.json();
     assert.equal(data.assets.bourseIndex.price, 7167457);
     assert.equal(data.assets.bourseIndex.unit, "point");
@@ -258,7 +269,7 @@ test("TGJU index history remains available as a prior reading when its current q
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bourseIndex") });
+    const response = await marketRequest("https://app.test/api/market?assets=bourseIndex");
     const data = await response.json();
     assert.equal(data.assets.bourseIndex, undefined);
     assert.deepEqual(data.diagnostics.providers.tsetmc, { status: "fulfilled", quoteCount: 0 });
@@ -278,7 +289,9 @@ test("a successful provider response with no parsed quote differs from a failed 
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bitcoin") });
+    const response = await marketRequest("https://app.test/api/market?assets=bitcoin", {
+      COINGECKO_DEMO_API_KEY: "platform-test-key",
+    });
     const data = await response.json();
     assert.deepEqual(data.diagnostics.providers.coinGecko, { status: "fulfilled", quoteCount: 0 });
     assert.deepEqual(data.diagnostics.providers.binance, { status: "rejected", quoteCount: 0 });
@@ -320,13 +333,13 @@ test("gold auxiliary quotes are fetched only after primary and fallback sources 
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=gold") });
+    const response = await marketRequest("https://app.test/api/market?assets=gold");
     const data = await response.json();
     assert.ok(requestedUrls.some((url) => url.hostname === "www.chartgoldprice.com"));
     assert.equal(data.diagnostics.providers.auxiliary.status, "fulfilled");
     assert.equal(data.diagnostics.providers.auxiliary.quoteCount, 1);
-    assert.equal(data.assets.gold.status, "conflicted");
-    assert.equal(data.assets.gold.price, null);
+    assert.equal(data.assets.gold.status, "degraded");
+    assert.ok(data.assets.gold.price > 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -346,7 +359,7 @@ test("primary, fallback, and auxiliary provider timeouts return within the inter
     });
   try {
     const startedAt = Date.now();
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=gold") });
+    const response = await marketRequest("https://app.test/api/market?assets=gold");
     const data = await response.json();
     const elapsed = Date.now() - startedAt;
     assert.equal(data.assets.gold, undefined);
@@ -364,9 +377,7 @@ test("fixed income diagnostics report the fund separately from instrument quotes
   let html = "<p>بازده مؤثر سالانه 40%</p>";
   globalThis.fetch = async () => new Response(html, { status: 200 });
   try {
-    const successResponse = await onRequestGet({
-      request: new Request("https://app.test/api/market?assets=fixedIncome"),
-    });
+    const successResponse = await marketRequest("https://app.test/api/market?assets=fixedIncome");
     const success = await successResponse.json();
     assert.equal(success.funds.fixedIncome.effectiveAnnualReturn, 40);
     assert.equal(success.assets.fixedIncome, undefined);
@@ -375,9 +386,7 @@ test("fixed income diagnostics report the fund separately from instrument quotes
     assert.deepEqual(success.diagnostics.providers.fixedIncome, { status: "fulfilled", quoteCount: 1 });
 
     html = "<p>اطلاعات بازده منتشر نشده است.</p>";
-    const failedResponse = await onRequestGet({
-      request: new Request("https://app.test/api/market?assets=fixedIncome"),
-    });
+    const failedResponse = await marketRequest("https://app.test/api/market?assets=fixedIncome");
     const failed = await failedResponse.json();
     assert.deepEqual(failed.funds, {});
     assert.deepEqual(failed.diagnostics.funds.fixedIncome, { attempted: 1, successful: 0, status: "unavailable" });
@@ -387,7 +396,7 @@ test("fixed income diagnostics report the fund separately from instrument quotes
   }
 });
 
-test("derived quote diagnostics distinguish blocked currency conversion from provider quote returns", async () => {
+test("derived quotes use the FX median while unavailable rates remain unavailable", async () => {
   const originalFetch = globalThis.fetch;
   for (const dollarStatus of ["conflicted", "unavailable"]) {
     globalThis.fetch = async (input, options = {}) => {
@@ -411,16 +420,21 @@ test("derived quote diagnostics distinguish blocked currency conversion from pro
       throw new Error(`Unexpected request: ${url.href}`);
     };
     try {
-      const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=bitcoin") });
+      const response = await marketRequest("https://app.test/api/market?assets=bitcoin", {
+        COINGECKO_DEMO_API_KEY: "platform-test-key",
+      });
       const data = await response.json();
-      assert.equal(data.assets.bitcoin, undefined);
-      assert.equal(data.diagnostics.assets.bitcoin.status, "unavailable");
-      assert.equal(
-        data.diagnostics.assets.bitcoin.reason,
-        dollarStatus === "conflicted" ? "currency_conflicted" : "currency_unavailable",
-      );
-      assert.equal(data.diagnostics.assets.bitcoin.successful, 0);
-      assert.equal(data.diagnostics.assets.bitcoin.excludedForCurrency, 1);
+      if (dollarStatus === "conflicted") {
+        assert.ok(data.assets.bitcoin.price > 0);
+        assert.equal(data.diagnostics.assets.bitcoin.status, "degraded");
+        assert.equal(data.assets.dollar, undefined);
+      } else {
+        assert.equal(data.assets.bitcoin, undefined);
+        assert.equal(data.diagnostics.assets.bitcoin.status, "unavailable");
+        assert.equal(data.diagnostics.assets.bitcoin.reason, "currency_unavailable");
+        assert.equal(data.diagnostics.assets.bitcoin.successful, 0);
+        assert.equal(data.diagnostics.assets.bitcoin.excludedForCurrency, 1);
+      }
       assert.equal(data.diagnostics.providers.coinGecko.quoteCount, 1);
     } finally {
       globalThis.fetch = originalFetch;
@@ -428,7 +442,7 @@ test("derived quote diagnostics distinguish blocked currency conversion from pro
   }
 });
 
-test("auxiliary provider counts parsed raw quotes even when FX blocks their conversion", async () => {
+test("auxiliary quotes are diagnosed and filtered as outliers when inconsistent", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
@@ -451,13 +465,13 @@ test("auxiliary provider counts parsed raw quotes even when FX blocks their conv
     throw new Error(`Unexpected request: ${url.href}`);
   };
   try {
-    const response = await onRequestGet({ request: new Request("https://app.test/api/market?assets=gold") });
+    const response = await marketRequest("https://app.test/api/market?assets=gold");
     const data = await response.json();
     assert.equal(data.diagnostics.providers.auxiliary.status, "fulfilled");
     assert.equal(data.diagnostics.providers.auxiliary.quoteCount, 1);
-    assert.equal(data.diagnostics.assets.gold.successful, 0);
-    assert.equal(data.diagnostics.assets.gold.status, "conflicted");
-    assert.equal(data.diagnostics.assets.gold.excludedForCurrency, 1);
+    assert.equal(data.diagnostics.assets.gold.successful, 3);
+    assert.equal(data.diagnostics.assets.gold.status, "degraded");
+    assert.equal(data.assets.gold.price, 40500000);
   } finally {
     globalThis.fetch = originalFetch;
   }

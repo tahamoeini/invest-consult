@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { onRequestGet, parseHistoryRequest } from "../functions/api/history.js";
+import { createSecureApiContext } from "./helpers/api-context.js";
 
 function tgjuPage(points) {
   return '$("#ChartBlock-3").msHighcharts({ chartData: ' + JSON.stringify(points) + ', chartType: "line" });';
@@ -16,10 +17,16 @@ function withFetch(handler, callback) {
     });
 }
 
+async function historyRequest(url, env = {}) {
+  return onRequestGet(await createSecureApiContext(url, env));
+}
+
 test("history requests accept only known assets and ranges", () => {
   assert.deepEqual(parseHistoryRequest("https://app.test/api/history?assets=gold,unknown,silver&range=6m"), {
     assets: ["gold", "silver"],
     range: "6m",
+    start: null,
+    end: null,
   });
   assert.equal(
     parseHistoryRequest("https://app.test/api/history?assets=unknown&range=all").error,
@@ -45,9 +52,8 @@ test("history endpoint returns source-labelled Toman observations using dated FX
       throw new Error("unexpected-provider " + url.href);
     },
     async () =>
-      onRequestGet({
-        request: new Request("https://app.test/api/history?assets=bitcoin,dollar&range=all"),
-        env: { COINGECKO_DEMO_API_KEY: "demo-key" },
+      historyRequest("https://app.test/api/history?assets=bitcoin,dollar&range=all", {
+        COINGECKO_DEMO_API_KEY: "demo-key",
       }),
   );
   const data = await response.json();
@@ -70,11 +76,7 @@ test("crypto history stays unavailable without the optional Demo key", async () 
       if (url.hostname === "www.tgju.org") return new Response(tgjuPage([[Date.now(), 2300000]]), { status: 200 });
       throw new Error("unexpected-provider " + url.href);
     },
-    async () =>
-      onRequestGet({
-        request: new Request("https://app.test/api/history?assets=bitcoin&range=1y"),
-        env: {},
-      }),
+    async () => historyRequest("https://app.test/api/history?assets=bitcoin&range=1y"),
   );
   const data = await response.json();
   assert.equal(response.status, 200);
@@ -117,10 +119,7 @@ test("a failed local history provider returns partial results and labels the una
       }
       throw new Error("unexpected-provider " + url.href);
     },
-    async () =>
-      onRequestGet({
-        request: new Request("https://app.test/api/history?assets=gold,dollar&range=all"),
-      }),
+    async () => historyRequest("https://app.test/api/history?assets=gold,dollar&range=all"),
   );
   const data = await response.json();
   assert.equal(response.status, 200);
@@ -130,7 +129,7 @@ test("a failed local history provider returns partial results and labels the una
 });
 
 test("unsupported range and empty allowlist return a clear 400 response", async () => {
-  const response = await onRequestGet({ request: new Request("https://app.test/api/history?assets=gold&range=bad") });
+  const response = await historyRequest("https://app.test/api/history?assets=gold&range=bad");
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid-range" });
 });

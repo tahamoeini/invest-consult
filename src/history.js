@@ -96,6 +96,8 @@ function sanitizeSnapshot(snapshot, fallbackDate) {
               price: sourcePrice,
               quoteType: ["direct", "derived"].includes(value.quoteType) ? value.quoteType : "direct",
               observedAt: validDate(value.observedAt),
+              accepted: value.accepted === true,
+              exclusionReason: typeof value.exclusionReason === "string" ? value.exclusionReason.slice(0, 60) : null,
             };
           })
           .filter(Boolean);
@@ -106,6 +108,10 @@ function sanitizeSnapshot(snapshot, fallbackDate) {
       if (typeof source.consensusPolicyVersion === "string")
         item.consensusPolicyVersion = source.consensusPolicyVersion.slice(0, 60);
       if (typeof source.consensusCalibrated === "boolean") item.consensusCalibrated = source.consensusCalibrated;
+      if (typeof source.consensusDisagreement === "boolean") item.consensusDisagreement = source.consensusDisagreement;
+      if (typeof source.consensusMethod === "string") item.consensusMethod = source.consensusMethod.slice(0, 60);
+      const acceptedSpreadPct = finite(source.acceptedSpreadPct);
+      if (acceptedSpreadPct !== null && acceptedSpreadPct >= 0) item.acceptedSpreadPct = acceptedSpreadPct;
       const agreementTolerancePct = finite(source.agreementTolerancePct);
       if (agreementTolerancePct !== null && agreementTolerancePct >= 0)
         item.agreementTolerancePct = agreementTolerancePct;
