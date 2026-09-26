@@ -9,6 +9,8 @@ import {
   createEmptyPortfolio,
   createTransaction,
   marketPriceAt,
+  portfolioContributionSeries,
+  portfolioCostBasis,
 } from "../src/portfolio.js";
 import { lastKnownMarketQuote } from "../src/market/last-known.js";
 import { createHistoryExport, parseHistoryExport } from "../src/history.js";
@@ -338,6 +340,37 @@ test("conflicted live quotes are excluded from portfolio valuation", () => {
   );
   assert.equal(valuation.values.bitcoin.value, null);
   assert.deepEqual(valuation.missingPrices, ["bitcoin"]);
+});
+
+test("cost basis follows buys, average-cost sales, and transfers without changing ledger values", () => {
+  const transactions = [
+    { type: "BUY", assetId: "gold", quantity: 2, unitPrice: 100, fee: 10, date: "2026-01-01" },
+    { type: "BUY", assetId: "gold", quantity: 1, unitPrice: 130, fee: 0, date: "2026-01-02" },
+    { type: "SELL", assetId: "gold", quantity: 1, unitPrice: 150, fee: 0, date: "2026-01-03" },
+    { type: "TRANSFER", assetId: "gold", quantity: 1, targetAssetId: "silver", targetQuantity: 2, date: "2026-01-04" },
+  ];
+  const basis = portfolioCostBasis(transactions, "2026-01-05");
+  assert.equal(basis.gold.quantity, 1);
+  assert.ok(Math.abs(basis.gold.basis - 340 / 3) < 1e-10);
+  assert.equal(basis.silver.quantity, 2);
+  assert.ok(Math.abs(basis.silver.basis - 340 / 3) < 1e-10);
+});
+
+test("monthly contribution series uses only months with recorded ledger inflows", () => {
+  const series = portfolioContributionSeries(
+    [
+      { type: "OPENING", assetId: "gold", quantity: 1, unitPrice: 100, fee: 5, date: "2026-01-12" },
+      { type: "DEPOSIT", assetId: "cash", amount: 50, date: "2026-02-02" },
+      { type: "SELL", assetId: "gold", quantity: 1, unitPrice: 125, date: "2026-03-02" },
+    ],
+    "2026-03-15",
+    12,
+  );
+  assert.deepEqual(
+    series.map((point) => point.value),
+    [105, 50],
+  );
+  assert.equal(series.length, 2);
 });
 
 test("silver conflict values and a last-known reading stay outside current portfolio valuation", () => {

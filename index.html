@@ -43,6 +43,7 @@
       href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <script src="src/ui/preferences-boot.js"></script>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="app.js" defer></script>
   </head>
@@ -233,6 +234,9 @@
                 </p>
                 <div id="dashboard-allocation-chart" class="dashboard-donut">
                   <div class="empty-state">هنوز تخصیصی برای نمایش نیست.</div>
+                </div>
+                <div id="dashboard-allocation-bars" class="chart-box allocation-bars">
+                  <div class="empty-state">تخصیص فعلی و هدف پس از ثبت داده نمایش داده می‌شود.</div>
                 </div>
                 <div class="allocation-compare-header" aria-hidden="true">
                   <span>دارایی</span><span>فعلی</span><span>هدف</span><span>اختلاف</span>
@@ -881,6 +885,52 @@
                     </div>
                   </div>
                 </div>
+                <section class="portfolio-holdings-section" aria-labelledby="portfolio-holdings-title">
+                  <div class="subheading">
+                    <strong id="portfolio-holdings-title">نمای فهرستی دارایی‌ها</strong>
+                    <span id="portfolio-holdings-count">۰ دارایی</span>
+                  </div>
+                  <div class="holdings-toolbar">
+                    <label class="field holdings-search-field">
+                      <span>جستجوی دارایی</span>
+                      <input id="portfolio-holdings-search" type="search" placeholder="نام دارایی" />
+                    </label>
+                    <label class="field holdings-filter-field">
+                      <span>وضعیت قیمت</span>
+                      <select id="portfolio-holdings-filter">
+                        <option value="all">همه دارایی‌ها</option>
+                        <option value="priced">دارای قیمت معتبر</option>
+                        <option value="missing">قیمت ناموجود یا متعارض</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="holdings-table-scroll">
+                    <table class="holdings-table">
+                      <thead>
+                        <tr>
+                          <th scope="col"><button type="button" data-holdings-sort="asset">دارایی</button></th>
+                          <th scope="col"><button type="button" data-holdings-sort="quantity">مقدار</button></th>
+                          <th scope="col"><button type="button" data-holdings-sort="value">ارزش فعلی</button></th>
+                          <th scope="col"><button type="button" data-holdings-sort="basis">بهای تمام‌شده</button></th>
+                          <th scope="col">
+                            <button type="button" data-holdings-sort="profitLoss">سود یا زیان باز</button>
+                          </th>
+                          <th scope="col"><button type="button" data-holdings-sort="allocation">وزن فعلی</button></th>
+                          <th scope="col"><button type="button" data-holdings-sort="target">وزن هدف</button></th>
+                          <th scope="col">منبع قیمت و زمان</th>
+                        </tr>
+                      </thead>
+                      <tbody id="portfolio-holdings-body">
+                        <tr>
+                          <td colspan="8" class="holdings-empty">با ثبت موجودی، فهرست اینجا نمایش داده می‌شود.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p id="portfolio-currency-note" class="small-note">
+                    ارزش‌ها و بهای تمام‌شده با مبنای تومان محاسبه می‌شوند.
+                  </p>
+                </section>
                 <div class="stock-entry-card market-asset-entry-card">
                   <div class="subheading">
                     <strong>ثبت موجودی یا خرید</strong><span>یک مسیر اصلی برای همه دارایی‌ها</span>
@@ -967,6 +1017,12 @@
                 </div>
                 <div id="portfolio-chart" class="chart-box">
                   <div class="empty-state">هنوز دارایی‌ای در پرتفوی ثبت نشده.</div>
+                </div>
+                <div class="subheading contribution-chart-heading">
+                  <strong>واریزهای دفتر به تفکیک ماه</strong><span>مبالغ بر پایه تومان هستند.</span>
+                </div>
+                <div id="portfolio-contribution-chart" class="chart-box contribution-chart">
+                  <div class="empty-state">بعد از ثبت واریز یا خرید، روند ماهانه نمایش داده می‌شود.</div>
                 </div>
 
                 <details class="advanced-portfolio">
@@ -1116,6 +1172,9 @@
                 <div class="empty-state">بعد از دریافت داده، وضعیت منابع اینجا نمایش داده می‌شود.</div>
               </div>
             </details>
+            <section id="market-global-references" class="panel market-global-references" aria-live="polite">
+              <div class="empty-state">نرخ‌های مرجع روزانه پس از دریافت داده نمایش داده می‌شوند.</div>
+            </section>
             <article class="panel assets-explainer">
               <div class="section-heading">
                 <div>
@@ -1141,6 +1200,46 @@
               <span class="page-badge">محلی و قابل کنترل</span>
             </div>
             <div class="settings-grid">
+              <article class="panel settings-card appearance-settings-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="kicker">زبان و نمایش</span>
+                    <h3>شخصی‌سازی محیط</h3>
+                  </div>
+                </div>
+                <div class="field-grid preference-grid">
+                  <div class="field">
+                    <label for="settings-locale">زبان برنامه</label>
+                    <select id="settings-locale">
+                      <option value="fa">فارسی</option>
+                      <option value="en">English</option>
+                      <option value="ru">Русский</option>
+                      <option value="zh">中文</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="settings-display-currency">ارز نمایشی پرتفوی</label>
+                    <select id="settings-display-currency">
+                      <option value="auto">پیش‌فرض زبان</option>
+                      <option value="TOMAN">تومان</option>
+                      <option value="USD">USD · دلار آمریکا</option>
+                      <option value="RUB">RUB · روبل روسیه</option>
+                      <option value="CNY">CNY · یوان چین</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="settings-theme">پوسته</label>
+                    <select id="settings-theme">
+                      <option value="system">همگام با سیستم</option>
+                      <option value="light">روشن</option>
+                      <option value="dark">تیره</option>
+                    </select>
+                  </div>
+                </div>
+                <p class="small-note">
+                  این انتخاب‌ها فقط در همین مرورگر ذخیره می‌شوند. ثبت‌ها و محاسبات پرتفوی همچنان بر پایه تومان می‌مانند.
+                </p>
+              </article>
               <article class="panel settings-card">
                 <div class="section-heading">
                   <div>

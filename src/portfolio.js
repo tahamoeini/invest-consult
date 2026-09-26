@@ -660,6 +660,87 @@ export function ledgerState(transactions, asOf = new Date().toISOString(), asset
   return { holdings, contributed, returned, dividends, netInvested: Math.max(0, contributed - returned), applied };
 }
 
+export function portfolioCostBasis(transactions, asOf = new Date().toISOString()) {
+  const positions = new Map();
+  const positionFor = (assetId) => positions.get(assetId) || { quantity: 0, basis: 0 };
+  const add = (assetId, quantity, basis) => {
+    if (!assetId || quantity <= EPSILON || basis < 0) return;
+    const position = positionFor(assetId);
+    positions.set(assetId, { quantity: position.quantity + quantity, basis: position.basis + basis });
+  };
+  const remove = (assetId, quantity) => {
+    const position = positionFor(assetId);
+    if (position.quantity <= EPSILON || quantity <= EPSILON) return 0;
+    const removedQuantity = Math.min(position.quantity, quantity);
+    const removedBasis = position.basis * (removedQuantity / position.quantity);
+    positions.set(assetId, {
+      quantity: Math.max(0, position.quantity - removedQuantity),
+      basis: Math.max(0, position.basis - removedBasis),
+    });
+    return removedBasis;
+  };
+
+  sortedTransactions(transactions, asOf).forEach((transaction) => {
+    const quantity = Math.abs(Number(transaction.quantity) || 0);
+    const amount = transactionAmount(transaction);
+    const fee = Number(transaction.fee) || 0;
+    if (["OPENING", "BUY"].includes(transaction.type)) add(transaction.assetId, quantity, amount + fee);
+    if (transaction.type === "SELL") remove(transaction.assetId, quantity);
+    if (transaction.type === "ADJUSTMENT") {
+      if (Number(transaction.quantity) > 0) add(transaction.assetId, quantity, amount + fee);
+      else remove(transaction.assetId, quantity);
+    }
+    if (["DEPOSIT", "DIVIDEND"].includes(transaction.type)) add("cash", amount, amount);
+    if (transaction.type === "WITHDRAWAL") remove("cash", amount);
+    if (transaction.type === "TRANSFER") {
+      const movedBasis = remove(transaction.assetId, quantity);
+      add(transaction.targetAssetId, Number(transaction.targetQuantity) || 0, movedBasis);
+    }
+  });
+
+  return Object.fromEntries(
+    [...positions].map(([assetId, position]) => [
+      assetId,
+      {
+        quantity: position.quantity,
+        basis: position.basis,
+        averageCost: position.quantity > EPSILON ? position.basis / position.quantity : null,
+      },
+    ]),
+  );
+}
+
+export function portfolioContributionSeries(transactions, asOf = new Date().toISOString(), monthCount = 12) {
+  const asOfDate = new Date(asOf);
+  if (Number.isNaN(asOfDate.getTime())) return [];
+  const contributions = new Map();
+  const contributionTransactions = sortedTransactions(transactions, asOf).filter((transaction) =>
+    ["OPENING", "BUY", "DEPOSIT"].includes(transaction.type),
+  );
+  if (!contributionTransactions.length) return [];
+
+  const endMonth = Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 1);
+  const requestedStart = new Date(endMonth);
+  requestedStart.setUTCMonth(requestedStart.getUTCMonth() - Math.max(1, Math.floor(monthCount)) + 1);
+  const startMonth = requestedStart.getTime();
+
+  contributionTransactions.forEach((transaction) => {
+    const date = new Date(transaction.date);
+    const month = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+    if (month < startMonth || month > endMonth) return;
+    const amount =
+      transaction.type === "DEPOSIT"
+        ? transactionAmount(transaction)
+        : transactionAmount(transaction) + (Number(transaction.fee) || 0);
+    contributions.set(month, (contributions.get(month) || 0) + amount);
+  });
+
+  return [...contributions.entries()]
+    .filter(([month]) => month >= startMonth && month <= endMonth)
+    .sort(([left], [right]) => left - right)
+    .map(([month, value]) => ({ date: new Date(month).toISOString(), value }));
+}
+
 function valueState(holdings, market, asOf, assets = PORTFOLIO_ASSETS) {
   const values = {};
   const missingPrices = [];

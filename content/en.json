@@ -1,0 +1,348 @@
+{
+  "currencyUnit": "Toman",
+  "to": "to",
+  "status": {
+    "loading": "Loading market data",
+    "connected": "Market data updated",
+    "cached": "Showing cached market data",
+    "unavailable": "Live market data is unavailable",
+    "timeout": "Market data timed out; try again"
+  },
+  "sleeves": {
+    "liquidity": "Cash and equivalents",
+    "fixedIncome": "Fixed income",
+    "gold": "Gold",
+    "fx": "Foreign currency",
+    "iranEquity": "Iranian equities",
+    "globalEquity": "Global equities",
+    "crypto": "Crypto",
+    "commodities": "Commodities"
+  },
+  "assets": {
+    "fixed": {
+      "title": "Fixed income",
+      "description": "Defensive allocation"
+    },
+    "gold": {
+      "title": "Gold",
+      "description": "A partial hedge against purchasing-power loss"
+    },
+    "currency": {
+      "title": "Foreign currency",
+      "description": "Track your recorded currency holdings"
+    },
+    "silver": {
+      "title": "Silver",
+      "description": "A smaller, more volatile diversifier"
+    },
+    "stocks": {
+      "title": "Recorded stocks",
+      "description": "Stocks you named yourself"
+    },
+    "cash": {
+      "title": "Cash",
+      "description": "Available cash balance"
+    },
+    "other": {
+      "title": "Other assets",
+      "description": "Assets entered manually"
+    },
+    "bitcoin": {
+      "title": "Bitcoin",
+      "description": "Digital asset with high volatility and risk"
+    },
+    "ethereum": {
+      "title": "Ethereum",
+      "description": "Volatile digital asset for tracking"
+    },
+    "tether": {
+      "title": "Tether",
+      "description": "Digital asset intended to track the US dollar"
+    },
+    "platinum": {
+      "title": "Platinum",
+      "description": "Global precious metal"
+    },
+    "palladium": {
+      "title": "Palladium",
+      "description": "Global industrial precious metal"
+    },
+    "copper": {
+      "title": "Copper",
+      "description": "Industrial metal with cyclical volatility"
+    },
+    "bourseIndex": {
+      "title": "Tehran exchange index",
+      "description": "Market index; not a tradable asset price"
+    }
+  },
+  "market": {
+    "labels": {
+      "dollar": {
+        "title": "US dollar",
+        "detail": "Iran market reference quote"
+      },
+      "gold": {
+        "title": "Gold",
+        "detail": "18-karat gold per gram"
+      },
+      "silver": {
+        "title": "Silver",
+        "detail": "Silver per gram"
+      },
+      "bitcoin": {
+        "title": "Bitcoin",
+        "detail": "Per coin, converted to Toman"
+      },
+      "ethereum": {
+        "title": "Ethereum",
+        "detail": "Per coin, converted to Toman"
+      },
+      "tether": {
+        "title": "Tether",
+        "detail": "Per coin, converted to Toman"
+      },
+      "platinum": {
+        "title": "Platinum",
+        "detail": "Per gram, converted to Toman"
+      },
+      "palladium": {
+        "title": "Palladium",
+        "detail": "Per gram, converted to Toman"
+      },
+      "copper": {
+        "title": "Copper",
+        "detail": "Per gram, converted to Toman"
+      },
+      "bourseIndex": {
+        "title": "Tehran exchange index",
+        "detail": "Index points for market context"
+      }
+    },
+    "empty": "Live data is currently unavailable.",
+    "noChange": "Daily change unavailable",
+    "sourceQuotes": "valid quotes",
+    "observedAt": "Source observation",
+    "retrievedAt": "Retrieved",
+    "observationUnknown": "Source observation time is unknown",
+    "unavailable": "No valid quote is available",
+    "providerResponded": "Responded",
+    "providerEmpty": "Responded without a readable quote",
+    "providerFailed": "Failed",
+    "providerSkipped": "Not requested",
+    "providerQuotesReturned": "quotes returned",
+    "quality": {
+      "healthy": "In agreement",
+      "degraded": "Limited coverage or wide source spread",
+      "provisional": "Provisional agreement; medium confidence",
+      "conflicted": "Conflicted",
+      "unavailable": "Unavailable"
+    },
+    "quoteType": {
+      "direct": "Direct quote",
+      "derived": "Derived quote",
+      "mixed": "Direct and derived quotes"
+    },
+    "globalReferences": "International reference data",
+    "referenceRatesTitle": "Daily currency and metal references",
+    "referenceRatesNote": "Dated reference rates are not Iranian live retail quotes.",
+    "referenceRatesLoading": "Loading dated reference data",
+    "dailyReference": "Daily reference",
+    "staleReference": "Stale reference",
+    "millionToman": "per 1,000,000 Toman",
+    "metalsReferenceNote": "Daily RUB per gram reference; not an Iranian retail price.",
+    "providers": {
+      "synthora-iran-dollar": "Synthora Iran market USD/Toman quote",
+      "cbr-rates": "Bank of Russia daily exchange rate",
+      "frankfurter-cfets": "CFETS rate via Frankfurter",
+      "cbr-metals": "Bank of Russia daily metal rates"
+    }
+  },
+  "dashboard": {
+    "investedSeries": "Net contributions (Toman basis)",
+    "nominalSeries": "Nominal value (Toman basis)",
+    "realSeries": "Inflation-adjusted value (Toman basis)",
+    "performanceChart": "Portfolio value and net contributions over time",
+    "allocationChart": "Current and target allocation by percent",
+    "allocationChartEmpty": "No allocation data is available for this chart."
+  },
+  "allocation": {
+    "current": "Actual",
+    "target": "Target"
+  },
+  "portfolio": {
+    "empty": "No holdings to show yet.",
+    "complete": "All holdings have usable prices.",
+    "missingPrices": "One or more holdings have no valid price.",
+    "unavailable": "Unavailable",
+    "notStarted": "Not started",
+    "initialLabel": "Initial portfolio",
+    "versionCount": "versions",
+    "auditCount": "events",
+    "noLedger": "No transactions have been recorded.",
+    "noAudit": "No changes have been recorded.",
+    "noStocks": "No stock holdings have been added.",
+    "chart": "Portfolio value over time",
+    "chartNote": "Historical performance remains on a Toman basis.",
+    "startsToday": "Tracking starts today.",
+    "transactionTypes": {
+      "OPENING": "Opening balance",
+      "BUY": "Buy",
+      "SELL": "Sell",
+      "DIVIDEND": "Dividend",
+      "TRANSFER": "Transfer",
+      "ADJUSTMENT": "Adjustment",
+      "DEPOSIT": "Deposit",
+      "WITHDRAWAL": "Withdrawal"
+    },
+    "units": {
+      "gold": "g",
+      "silver": "g",
+      "currency": "USD",
+      "bitcoin": "BTC",
+      "ethereum": "ETH",
+      "tether": "USDT",
+      "cash": "Toman"
+    },
+    "tomanBasisNote": "Ledger values and historical returns remain on a Toman basis.",
+    "displayCurrencyNote": "Current values use the latest accepted reference rate; historical returns remain on a Toman basis.",
+    "fxUnavailableNote": "The conversion rate is unavailable; values remain in Toman. Ledger values and historical returns are unchanged.",
+    "fxStaleNote": "The conversion rate is stale; converted values use the dated rate shown.",
+    "fxAsOf": "Rate date",
+    "contributionChart": "Recorded monthly contributions, Toman basis",
+    "noContributionHistory": "No recorded contributions are available for this chart.",
+    "holdingCount": "holdings",
+    "noTarget": "No target set",
+    "sleeveTarget": "category target",
+    "disputedPrice": "Conflicted quote",
+    "missingPrice": "Price unavailable",
+    "manualPrice": "Manual quote",
+    "noMatchingHoldings": "No holdings match this filter."
+  },
+  "phrases": {
+    "داشبورد": "Dashboard",
+    "خلاصه وضعیت و اقدام بعدی": "Overview and next step",
+    "برنامه سرمایه‌گذاری": "Investment plan",
+    "ساخت برنامه ماهانه": "Create monthly plan",
+    "پرتفوی من": "My portfolio",
+    "دارایی‌ها و دفتر تراکنش": "Holdings and transaction ledger",
+    "شبیه‌سازی و بک‌تست": "Simulation and backtest",
+    "تحلیل تاریخی": "Historical analysis",
+    "دارایی‌ها و بازار": "Assets and markets",
+    "قیمت‌های چندمنبعی": "Multi-source prices",
+    "تنظیمات": "Settings",
+    "داده محلی و ظاهر برنامه": "Local data and appearance",
+    "محاسبه روی همین دستگاه": "Calculated on this device",
+    "برنامه‌ریزی سرمایه‌گذاری": "Investment planning",
+    "سلام. وضعیت پولت را یکجا ببین.": "See your financial picture in one place.",
+    "ارزش فعلی پرتفوی": "Current portfolio value",
+    "کل سرمایه‌گذاری خالص": "Net contributions",
+    "سود یا زیان": "Gain or loss",
+    "سود یا زیان درصدی": "Gain or loss (%)",
+    "مدت پیگیری": "Tracking period",
+    "تخصیص فعلی": "Current allocation",
+    "پرتفوی در طول زمان": "Portfolio over time",
+    "فعلی در برابر هدف": "Actual vs target",
+    "ترکیب سبد": "Portfolio allocation",
+    "مدیریت": "Manage",
+    "ارزش‌گذاری و تخصیص": "Valuation and allocation",
+    "نمای فهرستی دارایی‌ها": "Holdings list",
+    "جستجوی دارایی": "Search holdings",
+    "نام دارایی": "Asset name",
+    "وضعیت قیمت": "Price status",
+    "همه دارایی‌ها": "All holdings",
+    "دارای قیمت معتبر": "Valid price",
+    "قیمت ناموجود یا متعارض": "Missing or conflicted price",
+    "دارایی": "Asset",
+    "مقدار": "Quantity",
+    "ارزش فعلی": "Current value",
+    "بهای تمام‌شده": "Cost basis",
+    "سود یا زیان باز": "Unrealized gain or loss",
+    "وزن فعلی / هدف دسته": "Actual weight / category target",
+    "منبع قیمت و زمان": "Price source and time",
+    "بهای خرید": "Cost basis",
+    "تعارض قیمت": "Price conflict",
+    "قیمت موجود نیست": "Price unavailable",
+    "قیمت دستی": "Manual quote",
+    "هدف ثبت نشده": "No target set",
+    "هدف دسته": "sleeve target",
+    "تاریخچه ساختگی اضافه نمی‌شود.": "No historical data is fabricated.",
+    "روند ارزش‌گذاری": "Portfolio value history",
+    "واریزهای دفتر به تفکیک ماه": "Monthly ledger contributions",
+    "مبالغ بر پایه تومان هستند.": "Amounts use a Toman basis.",
+    "مدیریت پیشرفته تراکنش‌ها": "Advanced transaction management",
+    "زبان و نمایش": "Language and display",
+    "شخصی‌سازی محیط": "Personalize your workspace",
+    "زبان برنامه": "Language",
+    "ارز نمایشی پرتفوی": "Portfolio display currency",
+    "پیش‌فرض زبان": "Language default",
+    "پوسته": "Theme",
+    "همگام با سیستم": "Follow system",
+    "روشن": "Light",
+    "تیره": "Dark",
+    "این انتخاب‌ها فقط در همین مرورگر ذخیره می‌شوند.": "These preferences are saved in this browser.",
+    "مقادیر و بازده تاریخی بر پایه تومان محاسبه می‌شوند.": "Ledger values and historical returns remain on a Toman basis.",
+    "دارایی‌ها و بازده تاریخی بر پایه تومان محاسبه می‌شوند.": "Ledger values and historical returns remain on a Toman basis.",
+    "تومان": "Toman",
+    "پرتفوی": "portfolio",
+    "دارایی‌ها": "holdings",
+    "دارایی‌های": "holdings",
+    "قیمت معتبر": "valid quote",
+    "در دسترس نیست": "Unavailable",
+    "زمان مشاهده نامشخص": "Observation time unknown",
+    "منبع بازار": "Market source",
+    "ثبت در دفتر تراکنش": "Record in ledger",
+    "ثبت قیمت در تاریخچه": "Save quote history",
+    "قیمت دستی · مشاهده": "Manual quote · observed",
+    "تومان مبنا": "Toman basis",
+    "بازه نمودار": "Chart range",
+    "همه": "All",
+    "۱ ماه": "1 month",
+    "۶ ماه": "6 months",
+    "۱ سال": "1 year",
+    "داده بازار": "Market data",
+    "بازار الان": "Market now",
+    "به‌روزرسانی": "Refresh",
+    "تشخیص منبع و تازگی داده": "Source and freshness diagnostics",
+    "منابع": "Sources",
+    "پوشش دارایی": "Asset coverage",
+    "روش تجمیع": "Aggregation method",
+    "قیمت‌های دارای توافق موقت": "Quotes with provisional agreement",
+    "وارد ارزش‌گذاری نمی‌شوند.": "are excluded from valuation.",
+    "نرخ مرجع": "Reference rate",
+    "نرخ تبدیل در دسترس نیست": "Conversion rate unavailable",
+    "فعلی": "Actual",
+    "هدف": "Target",
+    "وزن فعلی": "Actual weight",
+    "ارز نمایشی": "Display currency",
+    "وزن هدف": "Target weight",
+    "نرخ‌های مرجع روزانه پس از دریافت داده نمایش داده می‌شوند.": "Daily reference data appears after it loads.",
+    "نرخ مرجع قدیمی است؛ مقادیر تبدیل‌شده با برچسب تاریخ نرخ نمایش داده می‌شوند و بازده تاریخی بر پایه تومان می‌ماند.": "The reference rate is stale; converted values use the dated rate shown. Historical returns remain on a Toman basis.",
+    "دلار آمریکا": "US dollar",
+    "روبل روسیه": "Russian ruble",
+    "یوان چین": "Chinese yuan",
+    "این انتخاب‌ها فقط در همین مرورگر ذخیره می‌شوند. ثبت‌ها و محاسبات پرتفوی همچنان بر پایه تومان می‌مانند.": "These preferences stay in this browser. Portfolio records and calculations remain in Toman.",
+    "بازده تاریخی بر پایه تومان": "Historical returns use a Toman basis."
+  },
+  "reference": {
+    "kicker": "Global references",
+    "title": "Global reference rates",
+    "note": "Daily reference rates are for display conversion, not Iranian retail prices.",
+    "unavailable": "Reference rates will appear after data loads.",
+    "conversionUnavailable": "Toman conversion is unavailable",
+    "metalsTitle": "Precious metals · RUB per gram",
+    "source": {
+      "iran": "Iran market dollar reference",
+      "cfets": "CFETS reference via Frankfurter",
+      "cbr": "Central Bank of Russia daily reference rate",
+      "metals": "Central Bank of Russia daily metal references"
+    },
+    "status": {
+      "available": "Available",
+      "stale": "Stale",
+      "unavailable": "Unavailable"
+    },
+    "iranRate": "Iran market reference rate"
+  },
+  "pageTitle": "Synthora | Investment planning"
+}

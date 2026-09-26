@@ -272,8 +272,15 @@ test("TGJU index history remains available as a prior reading when its current q
     const response = await marketRequest("https://app.test/api/market?assets=bourseIndex");
     const data = await response.json();
     assert.equal(data.assets.bourseIndex, undefined);
-    assert.deepEqual(data.diagnostics.providers.tsetmc, { status: "fulfilled", quoteCount: 0 });
-    assert.deepEqual(data.diagnostics.providers.tgjuIndex, { status: "fulfilled", quoteCount: 0 });
+    assert.deepEqual(data.diagnostics.providers.tsetmc, {
+      status: "fulfilled",
+      quoteCount: 0,
+      cacheStatus: "refreshed",
+    });
+    assert.deepEqual(data.diagnostics.providers.tgjuIndex, {
+      status: "fulfilled",
+      quoteCount: 0,
+    });
     assert.equal(data.history.bourseIndex[0].price, 7167000);
   } finally {
     globalThis.fetch = originalFetch;
@@ -293,7 +300,11 @@ test("a successful provider response with no parsed quote differs from a failed 
       COINGECKO_DEMO_API_KEY: "platform-test-key",
     });
     const data = await response.json();
-    assert.deepEqual(data.diagnostics.providers.coinGecko, { status: "fulfilled", quoteCount: 0 });
+    assert.deepEqual(data.diagnostics.providers.coinGecko, {
+      status: "fulfilled",
+      quoteCount: 0,
+      cacheStatus: "refreshed",
+    });
     assert.deepEqual(data.diagnostics.providers.binance, { status: "rejected", quoteCount: 0 });
   } finally {
     globalThis.fetch = originalFetch;
@@ -383,7 +394,11 @@ test("fixed income diagnostics report the fund separately from instrument quotes
     assert.equal(success.assets.fixedIncome, undefined);
     assert.equal(success.diagnostics.assets.fixedIncome, undefined);
     assert.deepEqual(success.diagnostics.funds.fixedIncome, { attempted: 1, successful: 1, status: "available" });
-    assert.deepEqual(success.diagnostics.providers.fixedIncome, { status: "fulfilled", quoteCount: 1 });
+    assert.deepEqual(success.diagnostics.providers.fixedIncome, {
+      status: "fulfilled",
+      quoteCount: 1,
+      cacheStatus: "refreshed",
+    });
 
     html = "<p>اطلاعات بازده منتشر نشده است.</p>";
     const failedResponse = await marketRequest("https://app.test/api/market?assets=fixedIncome");
@@ -472,6 +487,59 @@ test("auxiliary quotes are diagnosed and filtered as outliers when inconsistent"
     assert.equal(data.diagnostics.assets.gold.successful, 3);
     assert.equal(data.diagnostics.assets.gold.status, "degraded");
     assert.equal(data.assets.gold.price, 40500000);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("CoinMarketCap uses one batched request for only selected crypto assets", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input, options = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    requests.push({ url, options });
+    if (url.hostname === "pro-api.coinmarketcap.com") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            1: {
+              slug: "bitcoin",
+              quote: { USD: { price: 60000, percent_change_24h: 1, last_updated: new Date().toISOString() } },
+            },
+            825: {
+              slug: "tether",
+              quote: { USD: { price: 1, percent_change_24h: 0, last_updated: new Date().toISOString() } },
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.hostname === "api.coingecko.com") return new Response("blocked", { status: 503 });
+    if (url.hostname === "api.binance.com") return new Response("blocked", { status: 503 });
+    if (url.hostname === "www.tgju.org")
+      return new Response('<td data-col="info.last_trade.PDrCotVal">2317050</td>', { status: 200 });
+    if (url.hostname === "www.bonbast.com" && options.method !== "POST")
+      return new Response('$.post("/json", {param: "token"});', { status: 200 });
+    if (url.hostname === "www.bonbast.com")
+      return new Response(JSON.stringify({ usd1: "231500", gol18: "23883835" }), { status: 200 });
+    if (url.hostname === "raw.githubusercontent.com")
+      return new Response(JSON.stringify({ usd: { value: "232000", date: 1780000000 } }), { status: 200 });
+    throw new Error("Unexpected request: " + url.href);
+  };
+  try {
+    const response = await marketRequest("https://app.test/api/market?assets=bitcoin,tether", {
+      COINMARKETCAP_API_KEY: "cmc-test-key",
+      COINGECKO_DEMO_API_KEY: "cg-test-key",
+    });
+    const data = await response.json();
+    const cmcRequests = requests.filter((request) => request.url.hostname === "pro-api.coinmarketcap.com");
+    assert.equal(cmcRequests.length, 1);
+    assert.equal(cmcRequests[0].url.searchParams.get("slug"), "bitcoin,tether");
+    assert.equal(cmcRequests[0].options.headers["X-CMC_PRO_API_KEY"], "cmc-test-key");
+    assert.equal(data.diagnostics.providers.coinMarketCap.status, "fulfilled");
+    assert.equal(data.diagnostics.providers.coinMarketCap.quoteCount, 2);
+    assert.ok(data.assets.bitcoin.sources.includes("CoinMarketCap"));
   } finally {
     globalThis.fetch = originalFetch;
   }

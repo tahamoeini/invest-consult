@@ -6,6 +6,7 @@ function createUsageDatabase() {
   const sessions = new Map();
   const routeUsage = new Map();
   const providerUsage = new Map();
+  const providerCache = new Map();
 
   return {
     prepare(statement) {
@@ -20,6 +21,16 @@ function createUsageDatabase() {
             sessions.set(values[0], { expires_at: values[2] });
             return { success: true };
           }
+          if (statement.includes("INSERT INTO provider_quote_cache")) {
+            providerCache.set(values[0], { quotes_json: values[1], fetched_at: values[2] });
+            return { success: true };
+          }
+          if (statement.includes("UPDATE provider_monthly_usage")) {
+            const [provider, month, nextAllowedAt] = values;
+            const row = providerUsage.get([provider, month].join(":"));
+            if (row) row.nextAllowedAt = Math.max(row.nextAllowedAt, nextAllowedAt);
+            return { success: true };
+          }
           throw new Error(`Unexpected test database statement: ${statement}`);
         },
         async first() {
@@ -31,11 +42,16 @@ function createUsageDatabase() {
             return { request_count: requestCount };
           }
           if (statement.includes("INSERT INTO provider_monthly_usage")) {
-            const key = values.slice(0, 2).join(":");
-            const requestCount = (providerUsage.get(key) || 0) + 1;
-            providerUsage.set(key, requestCount);
+            const [provider, month, limit, now, nextAllowedAt, quotaUnits = 1] = values;
+            const key = [provider, month].join(":");
+            const previous = providerUsage.get(key);
+            if (previous && (previous.nextAllowedAt > now || previous.requestCount + quotaUnits > limit)) return null;
+            const requestCount = (previous?.requestCount || 0) + quotaUnits;
+            providerUsage.set(key, { requestCount, nextAllowedAt });
             return { request_count: requestCount };
           }
+          if (statement.includes("SELECT quotes_json, fetched_at FROM provider_quote_cache"))
+            return providerCache.get(values[0]) || null;
           throw new Error(`Unexpected test database statement: ${statement}`);
         },
       };

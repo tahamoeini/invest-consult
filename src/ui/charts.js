@@ -207,6 +207,100 @@ export function donutChartMarkup({
   return `<div class="donut-layout"><div class="donut-chart" role="img" aria-label="${escapeHTML(ariaLabel)}" style="--donut-stops:${escapeHTML(stops)}"><div><small>${escapeHTML(centerLabel)}</small><strong>${escapeHTML(centerValue)}</strong></div></div>${legend}</div>`;
 }
 
+export function barChartMarkup({
+  items = [],
+  ariaLabel = "Bar chart",
+  emptyLabel = "Not enough data to draw this chart.",
+  valueLabel = defaultValueLabel,
+  height = 250,
+} = {}) {
+  const values = (Array.isArray(items) ? items : [])
+    .map((item, index) => ({
+      label: String(item?.label || ""),
+      value: finite(item?.value),
+      color: item?.color || "var(--chart-portfolio)",
+      index,
+    }))
+    .filter((item) => item.value !== null && item.value >= 0);
+  if (!values.length) return `<div class="empty-state chart-empty">${escapeHTML(emptyLabel)}</div>`;
+
+  const width = 760;
+  const padding = { top: 16, right: 18, bottom: 42, left: 78 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const max = Math.max(...values.map((item) => item.value), 1);
+  const slotWidth = plotWidth / values.length;
+  const barWidth = Math.min(44, slotWidth * 0.58);
+  const grid = [0, 0.5, 1]
+    .map((ratio) => {
+      const lineY = padding.top + plotHeight * (1 - ratio);
+      return `<line x1="${padding.left}" y1="${lineY.toFixed(2)}" x2="${width - padding.right}" y2="${lineY.toFixed(2)}" class="chart-grid-line" /><text x="${padding.left - 8}" y="${(lineY + 4).toFixed(2)}" text-anchor="end" class="chart-axis-label">${escapeHTML(valueLabel(max * ratio))}</text>`;
+    })
+    .join("");
+  const baseline = padding.top + plotHeight;
+  const bars = values
+    .map((item) => {
+      const barHeight = (item.value / max) * plotHeight;
+      const x = padding.left + item.index * slotWidth + (slotWidth - barWidth) / 2;
+      const y = baseline - barHeight;
+      const description = `${item.label} · ${valueLabel(item.value)}`;
+      return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barWidth.toFixed(2)}" height="${Math.max(barHeight, 1).toFixed(2)}" rx="5" fill="${escapeHTML(item.color)}" class="chart-bar" tabindex="0" focusable="true" role="img" aria-label="${escapeHTML(description)}" data-sequence="${item.index}"><title>${escapeHTML(description)}</title></rect><text x="${(x + barWidth / 2).toFixed(2)}" y="${height - 12}" text-anchor="middle" class="chart-axis-label">${escapeHTML(item.label)}</text>`;
+    })
+    .join("");
+  return `<div class="line-chart bar-chart-visualization"><svg viewBox="0 0 ${width} ${height}" role="group" tabindex="0" aria-label="${escapeHTML(ariaLabel)}" preserveAspectRatio="none"><title>${escapeHTML(ariaLabel)}</title>${grid}<line x1="${padding.left}" y1="${baseline}" x2="${width - padding.right}" y2="${baseline}" class="chart-baseline" />${bars}</svg><div class="chart-tooltip" role="status" aria-live="polite" hidden></div></div>`;
+}
+
+export function allocationBarChartMarkup({
+  items = [],
+  ariaLabel = "Actual versus target allocation",
+  emptyLabel = "No allocation data to display.",
+  actualLabel = "Actual",
+  targetLabel = "Target",
+  valueLabel = defaultValueLabel,
+} = {}) {
+  const values = (Array.isArray(items) ? items : [])
+    .map((item, index) => ({
+      label: String(item?.label || ""),
+      actual: finite(item?.actual),
+      target: finite(item?.target),
+      color: item?.color || "var(--chart-portfolio)",
+      index,
+    }))
+    .filter((item) => item.actual !== null || item.target !== null);
+  if (!values.length) return `<div class="empty-state chart-empty">${escapeHTML(emptyLabel)}</div>`;
+
+  const width = 760;
+  const rowHeight = 52;
+  const padding = { top: 38, right: 20, bottom: 20, left: 160 };
+  const height = padding.top + padding.bottom + values.length * rowHeight;
+  const plotWidth = width - padding.left - padding.right;
+  const max = 100;
+  const scale = (value) => (Math.max(0, Math.min(max, value)) / max) * plotWidth;
+  const grid = [0, 50, 100]
+    .map((value) => {
+      const x = padding.left + scale(value);
+      return `<line x1="${x.toFixed(2)}" y1="${padding.top - 18}" x2="${x.toFixed(2)}" y2="${height - padding.bottom}" class="chart-grid-line" /><text x="${x.toFixed(2)}" y="14" text-anchor="middle" class="chart-axis-label">${escapeHTML(valueLabel(value))}</text>`;
+    })
+    .join("");
+  let pointSequence = 0;
+  const rows = values
+    .map((item, index) => {
+      const y = padding.top + index * rowHeight;
+      const actualY = y + 2;
+      const targetY = y + 26;
+      const actualWidth = item.actual === null ? 0 : scale(item.actual);
+      const targetWidth = item.target === null ? 0 : scale(item.target);
+      const actualSequence = pointSequence++;
+      const targetSequence = pointSequence++;
+      const actualDescription = `${item.label} · ${actualLabel} · ${item.actual === null ? emptyLabel : valueLabel(item.actual)}`;
+      const targetDescription = `${item.label} · ${targetLabel} · ${item.target === null ? emptyLabel : valueLabel(item.target)}`;
+      return `<text x="${padding.left - 12}" y="${(y + 20).toFixed(2)}" text-anchor="end" class="chart-axis-label">${escapeHTML(item.label)}</text>${item.actual === null ? "" : `<rect x="${padding.left}" y="${actualY}" width="${actualWidth.toFixed(2)}" height="14" rx="4" fill="${escapeHTML(item.color)}" class="chart-bar" tabindex="0" focusable="true" role="img" aria-label="${escapeHTML(actualDescription)}" data-sequence="${actualSequence}"><title>${escapeHTML(actualDescription)}</title></rect>`}${item.target === null ? "" : `<rect x="${padding.left}" y="${targetY}" width="${targetWidth.toFixed(2)}" height="14" rx="4" fill="var(--chart-target)" class="chart-bar chart-bar-target" tabindex="0" focusable="true" role="img" aria-label="${escapeHTML(targetDescription)}" data-sequence="${targetSequence}"><title>${escapeHTML(targetDescription)}</title></rect>`}`;
+    })
+    .join("");
+  const legend = `<div class="chart-legend"><span><i style="--legend-color:var(--chart-portfolio)"></i>${escapeHTML(actualLabel)}</span><span><i style="--legend-color:var(--chart-target)"></i>${escapeHTML(targetLabel)}</span></div>`;
+  return `<div class="line-chart bar-chart-visualization"><svg viewBox="0 0 ${width} ${height}" role="group" tabindex="0" aria-label="${escapeHTML(ariaLabel)}" preserveAspectRatio="none"><title>${escapeHTML(ariaLabel)}</title>${grid}${rows}</svg>${legend}<div class="chart-tooltip" role="status" aria-live="polite" hidden></div></div>`;
+}
+
 export function normalizeSeriesIndex(points, fallbackLabel = "") {
   const values = (Array.isArray(points) ? points : []).map((point, index) => ({
     value: finite(point && (point.value ?? point.nominal)),

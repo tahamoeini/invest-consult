@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clampTooltipCenter,
+  allocationBarChartMarkup,
+  barChartMarkup,
   donutChartMarkup,
   lineChartMarkup,
   lineSegments,
@@ -84,4 +86,29 @@ test("dated line charts position dots by observation dates and expose date value
   assert.ok(coordinates[1] - coordinates[0] < coordinates[2] - coordinates[1]);
   assert.match(markup, /aria-label="طلا · ۱ فروردین · 100"/);
   assert.match(markup, /aria-keyshortcuts="ArrowLeft ArrowRight Home End"/);
+});
+
+test("bar charts expose keyboard-focusable values and preserve a visible zero baseline", () => {
+  const markup = barChartMarkup({
+    ariaLabel: "Monthly contributions",
+    items: [
+      { label: "Jan", value: 0 },
+      { label: "Feb", value: 40 },
+    ],
+    valueLabel: (value) => `$${value}`,
+  });
+  assert.match(markup, /class="chart-baseline"/);
+  assert.match(markup, /class="chart-bar" tabindex="0"/);
+  assert.match(markup, /aria-label="Feb · \$40"/);
+
+  const comparison = allocationBarChartMarkup({
+    items: [{ label: "Gold", actual: 60, target: 50 }],
+    actualLabel: "Actual",
+    targetLabel: "Target",
+  });
+  assert.match(comparison, /Gold/);
+  assert.match(comparison, /Actual/);
+  assert.match(comparison, /Target/);
+  assert.match(comparison, /role="group"/);
+  assert.match(allocationBarChartMarkup({ items: [] }), /No allocation data/);
 });

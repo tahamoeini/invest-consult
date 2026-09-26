@@ -90,7 +90,10 @@ test("copper history converts USD per pound to Toman per gram with same-date FX 
         );
       throw new Error(`unexpected-provider:${url.hostname}`);
     },
-    async () => historyRequest("https://app.test/api/history?assets=copper&range=all"),
+    async () =>
+      historyRequest("https://app.test/api/history?assets=copper&range=all", {
+        YAHOO_METALS_LICENSE_CONFIRMED: "true",
+      }),
   );
   const data = await response.json();
   const copper = data.assets.copper;
@@ -171,4 +174,11 @@ test("unsupported range and empty allowlist return a clear 400 response", async 
   const response = await historyRequest("https://app.test/api/history?assets=gold&range=bad");
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid-range" });
+});
+
+test("Yahoo metal history remains inactive until its license is explicitly confirmed", async () => {
+  const response = await historyRequest("https://app.test/api/history?assets=copper&range=all");
+  const data = await response.json();
+  assert.equal(data.assets.copper.coverage.status, "unavailable");
+  assert.equal(data.assets.copper.coverage.reason, "yahoo-license-not-confirmed");
 });

@@ -1,6 +1,12 @@
 import { extractTgjuChartData, normalizeHistorySeries, normalizeMetalHistory, normalizeTgjuHistory } from "./market.js";
 import { INSTRUMENT_REGISTRY } from "../../src/market/catalog.js";
-import { consumeRouteQuota, reservePlatformProviderRequest, securityJson, selectedProviderKey } from "./_security.js";
+import {
+  consumeRouteQuota,
+  deferPlatformProviderRequest,
+  reservePlatformProviderRequest,
+  securityJson,
+  selectedProviderKey,
+} from "./_security.js";
 import {
   HISTORY_RANGE_DAYS,
   convertUsdHistoryToToman,
@@ -85,7 +91,20 @@ async function fetchResponse(url, options = {}) {
       signal: controller.signal,
       headers: { ...HEADERS, ...(options.headers || {}) },
     });
-    if (!response.ok) throw new Error("provider-response-not-ok");
+    if (!response.ok) {
+      const error = new Error("provider-response-not-ok");
+      error.status = response.status;
+      const retryAfter = response.headers.get("retry-after");
+      const seconds = Number(retryAfter);
+      const date = Date.parse(retryAfter || "");
+      error.retryAfterSeconds =
+        Number.isFinite(seconds) && seconds > 0
+          ? Math.min(24 * 60 * 60, Math.ceil(seconds))
+          : Number.isFinite(date)
+            ? Math.max(1, Math.min(24 * 60 * 60, Math.ceil((date - Date.now()) / 1000)))
+            : null;
+      throw error;
+    }
     return response;
   } finally {
     clearTimeout(timeout);
@@ -151,13 +170,33 @@ async function fetchYahooSeries(assetId) {
 
 async function fetchCryptoSeries(assetId, apiKey, userSuppliedKey, env) {
   if (!apiKey) throw new Error("coingecko-demo-key-missing");
-  if (!userSuppliedKey && !(await reservePlatformProviderRequest(env)))
-    throw new Error("platform-key-monthly-quota-exceeded");
+  let providerId = "coingecko";
+  const budget = { minimumIntervalSeconds: 60 };
+  if (userSuppliedKey) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
+    providerId =
+      "coingecko-user-" +
+      [...new Uint8Array(digest)]
+        .slice(0, 10)
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("");
+    budget.monthlyLimit = 9500;
+  } else {
+    budget.monthlyLimit = 8000;
+  }
+  if (!(await reservePlatformProviderRequest(env, providerId, budget))) throw new Error("provider-rate-limited");
   const sourceUrl =
     COINGECKO_BASE +
     encodeURIComponent(COINGECKO_IDS[assetId]) +
     "/market_chart?vs_currency=usd&days=365&precision=full";
-  const data = await fetchJson(sourceUrl, { headers: { "x-cg-demo-api-key": apiKey } });
+  let data;
+  try {
+    data = await fetchJson(sourceUrl, { headers: { "x-cg-demo-api-key": apiKey } });
+  } catch (error) {
+    if (Number(error?.status) === 429 && error.retryAfterSeconds)
+      await deferPlatformProviderRequest(env, providerId, error.retryAfterSeconds);
+    throw error;
+  }
   const points = normalizeObservedHistory(data?.prices, "CoinGecko").map((point) => ({
     ...point,
     source: "CoinGecko",
@@ -170,6 +209,8 @@ async function fetchCryptoSeries(assetId, apiKey, userSuppliedKey, env) {
 function errorReason(error) {
   if (error?.message === "coingecko-demo-key-missing") return "coingecko-demo-key-missing";
   if (error?.message === "platform-key-monthly-quota-exceeded") return "platform-key-monthly-quota-exceeded";
+  if (error?.message === "provider-rate-limited") return "provider-rate-limited";
+  if (error?.message === "yahoo-license-not-confirmed") return "yahoo-license-not-confirmed";
   if (error?.message === "provider-history-empty") return "provider-history-empty";
   return "provider-unavailable";
 }
@@ -197,7 +238,10 @@ async function loadRawSeries(assetId, apiKey, userSuppliedKey, env) {
     }
   }
   if (assetId === "bourseIndex") return fetchIndexSeries();
-  if (YAHOO_SERIES[assetId]) return fetchYahooSeries(assetId);
+  if (YAHOO_SERIES[assetId]) {
+    if (env?.YAHOO_METALS_LICENSE_CONFIRMED !== "true") throw new Error("yahoo-license-not-confirmed");
+    return fetchYahooSeries(assetId);
+  }
   if (COINGECKO_IDS[assetId]) return fetchCryptoSeries(assetId, apiKey, userSuppliedKey, env);
   throw new Error("history-unavailable");
 }

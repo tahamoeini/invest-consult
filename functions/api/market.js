@@ -1,11 +1,20 @@
 import { INSTRUMENT_REGISTRY, SLEEVE_REGISTRY } from "../../src/market/catalog.js";
-import { consumeRouteQuota, reservePlatformProviderRequest, selectedProviderKey } from "./_security.js";
+import {
+  consumeRouteQuota,
+  deferPlatformProviderRequest,
+  readPlatformProviderCache,
+  reservePlatformProviderRequest,
+  selectedProviderKey,
+  writePlatformProviderCache,
+  waitForPlatformProviderCache,
+} from "./_security.js";
 
 const TGJU_BASE = "https://www.tgju.org/profile/";
 const BONBAST_BASE = "https://www.bonbast.com";
 const NAVASAN_RAW_BASE = "https://raw.githubusercontent.com/HosseinOdd/Navasan-API/main/data/";
 const CHART_GOLD_URL = "https://www.chartgoldprice.com/api/data?history=both";
 const COINGECKO_SIMPLE_URL = "https://api.coingecko.com/api/v3/simple/price";
+const COINMARKETCAP_QUOTES_URL = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 const BINANCE_TICKER_URL = "https://api.binance.com/api/v3/ticker/24hr";
 const METALS_LIVE_URL = "https://api.metals.live/v1/spot";
 const YAHOO_METAL_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
@@ -26,9 +35,9 @@ const CONFIGURED_SOURCE_COUNTS = Object.freeze({
   dollar: 3,
   gold: 5,
   silver: 3,
-  bitcoin: 2,
-  ethereum: 2,
-  tether: 1,
+  bitcoin: 3,
+  ethereum: 3,
+  tether: 2,
   platinum: 2,
   palladium: 2,
   copper: 2,
@@ -127,11 +136,24 @@ async function fetchContent(url, options = {}, read = (response) => response.tex
       headers: { ...headers, ...(options.headers || {}) },
       cf: { cacheTtl: 300, cacheEverything: true, ...(options.cf || {}) },
     });
-    if (!response.ok) throw new Error(`Source returned ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(`Source returned ${response.status}`);
+      error.status = response.status;
+      error.retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
+      throw error;
+    }
     return await read(response);
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function parseRetryAfter(value) {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(24 * 60 * 60, Math.ceil(seconds));
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(1, Math.min(24 * 60 * 60, Math.ceil((date - Date.now()) / 1000))) : null;
 }
 
 async function fetchText(url, options = {}) {
@@ -252,28 +274,194 @@ async function providerCrypto(
   const mapping = { bitcoin: "bitcoin", ethereum: "ethereum", tether: "tether" };
   const selected = Object.entries(mapping).filter(([, asset]) => requested.includes(asset));
   if (!selected.length) return [];
-  if (!apiKey) throw new Error("coingecko-demo-key-missing");
-  if (!userSuppliedKey && !(await reservePlatformProviderRequest(env)))
-    throw new Error("platform-key-monthly-quota-exceeded");
   const url =
     COINGECKO_SIMPLE_URL +
     `?ids=${selected.map(([id]) => id).join(",")}&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true`;
-  const data = await fetchJson(url, { headers: { "x-cg-demo-api-key": apiKey } });
-  return selected
-    .map(([id, asset]) => {
-      const item = data && data[id];
-      if (!item) return null;
-      const usd = parseNumber(item.usd);
-      return quote(asset, usd, "CoinGecko", {
-        changePct: parseNumber(item.usd_24h_change),
-        sourceUrl: url,
-        sourceTime: item.last_updated_at ? new Date(Number(item.last_updated_at) * 1000).toISOString() : null,
-        unit: "coin",
-        currency: "USD",
-        quoteType: "direct",
-      });
-    })
-    .filter(Boolean);
+  const fetchQuotes = async () => {
+    if (!apiKey) throw new Error("coingecko-demo-key-missing");
+    const data = await fetchJson(url, { headers: { "x-cg-demo-api-key": apiKey } });
+    return selected
+      .map(([id, asset]) => {
+        const item = data && data[id];
+        if (!item) return null;
+        const usd = parseNumber(item.usd);
+        return quote(asset, usd, "CoinGecko", {
+          changePct: parseNumber(item.usd_24hr_change ?? item.usd_24h_change),
+          sourceUrl: url,
+          sourceTime: item.last_updated_at ? new Date(Number(item.last_updated_at) * 1000).toISOString() : null,
+          unit: "coin",
+          currency: "USD",
+          quoteType: "direct",
+        });
+      })
+      .filter(Boolean);
+  };
+  if (userSuppliedKey) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
+    const keyId = [...new Uint8Array(digest)]
+      .slice(0, 10)
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+    return await loadPlatformProviderQuotes(env, `coingecko-user-${keyId}`, {
+      maxAgeMs: 60_000,
+      maxStaleMs: 60 * 60_000,
+      monthlyLimit: 9500,
+      minimumIntervalSeconds: 60,
+      fetchQuotes,
+    });
+  }
+  return await loadPlatformProviderQuotes(env, "coingecko", {
+    maxAgeMs: 6 * 60_000,
+    maxStaleMs: 24 * 60 * 60_000,
+    monthlyLimit: 8000,
+    minimumIntervalSeconds: 6 * 60,
+    fetchQuotes,
+  });
+}
+
+async function providerCoinMarketCap(requested, env) {
+  const apiKey = typeof env?.COINMARKETCAP_API_KEY === "string" ? env.COINMARKETCAP_API_KEY.trim() : "";
+  const mapping = { bitcoin: "bitcoin", ethereum: "ethereum", tether: "tether" };
+  const selected = Object.entries(mapping).filter(([, asset]) => requested.includes(asset));
+  if (!selected.length) return { quotes: [], cacheStatus: "skipped" };
+  const slugs = selected.map(([slug]) => slug).join(",");
+  const url = `${COINMARKETCAP_QUOTES_URL}?slug=${encodeURIComponent(slugs)}&convert=USD`;
+  const fetchQuotes = async () => {
+    if (!apiKey) throw new Error("coinmarketcap-key-missing");
+    const data = await fetchJson(url, {
+      headers: { "X-CMC_PRO_API_KEY": apiKey },
+      cf: { cacheTtl: 900, cacheEverything: true },
+    });
+    const rows = Object.values(data?.data || {}).flatMap((row) => (Array.isArray(row) ? row : [row]));
+    return rows
+      .map((item) => {
+        const asset = item?.slug;
+        if (!selected.some(([, selectedAsset]) => selectedAsset === asset)) return null;
+        const usd = parseNumber(item?.quote?.USD?.price);
+        return quote(asset, usd, "CoinMarketCap", {
+          changePct: parseNumber(item?.quote?.USD?.percent_change_24h),
+          sourceUrl: url,
+          sourceTime: item?.quote?.USD?.last_updated || item?.last_updated || null,
+          unit: "coin",
+          currency: "USD",
+          quoteType: "direct",
+        });
+      })
+      .filter(Boolean);
+  };
+  return await loadPlatformProviderQuotes(env, "coinmarketcap", {
+    maxAgeMs: 15 * 60_000,
+    maxStaleMs: 24 * 60 * 60_000,
+    monthlyLimit: 15000,
+    quotaUnits: selected.length,
+    minimumIntervalSeconds: 15 * 60,
+    fetchQuotes,
+  });
+}
+
+const providerFlights = new Map();
+
+async function loadPlatformProviderQuotes(env, provider, options) {
+  const now = Date.now();
+  const cached = await readPlatformProviderCache(env, provider);
+  const cacheAge = cached ? now - cached.fetchedAt : Infinity;
+  if (cached && cacheAge >= 0 && cacheAge < options.maxAgeMs) return { quotes: cached.quotes, cacheStatus: "cached" };
+  const cachedStale = () =>
+    cached && cacheAge >= 0 && cacheAge <= options.maxStaleMs
+      ? cached.quotes.map((item) => ({ ...item, cacheStale: true }))
+      : [];
+  if (providerFlights.has(provider)) return providerFlights.get(provider);
+
+  const operation = (async () => {
+    const canFetch = await reservePlatformProviderRequest(env, provider, {
+      monthlyLimit: options.monthlyLimit,
+      minimumIntervalSeconds: options.minimumIntervalSeconds,
+    });
+    if (!canFetch) {
+      const latest = await waitForPlatformProviderCache(env, provider, cached?.fetchedAt || 0);
+      const latestAge = latest ? Date.now() - latest.fetchedAt : Infinity;
+      if (latest && latestAge >= 0 && latestAge < options.maxAgeMs)
+        return { quotes: latest.quotes, cacheStatus: "cached" };
+      const quotes =
+        latest && latestAge >= 0 && latestAge <= options.maxStaleMs
+          ? latest.quotes.map((item) => ({ ...item, cacheStale: true }))
+          : cachedStale();
+      return { quotes, cacheStatus: quotes.length ? "stale" : "rate-limited" };
+    }
+    try {
+      const quotes = await options.fetchQuotes();
+      await writePlatformProviderCache(env, provider, quotes);
+      return { quotes, cacheStatus: "refreshed" };
+    } catch (error) {
+      if (Number(error?.status) === 429 && error.retryAfterSeconds)
+        await deferPlatformProviderRequest(env, provider, error.retryAfterSeconds);
+      if (cached) return { quotes: cachedStale(), cacheStatus: "stale" };
+      throw error;
+    }
+  })();
+  providerFlights.set(provider, operation);
+  try {
+    return await operation;
+  } finally {
+    if (providerFlights.get(provider) === operation) providerFlights.delete(provider);
+  }
+}
+
+const coordinatedProviderFlights = new Map();
+
+function staleProviderPayload(value) {
+  if (Array.isArray(value)) return value.map((item) => ({ ...item, cacheStale: true }));
+  if (!value || typeof value !== "object") return value;
+  return {
+    ...value,
+    cacheStale: true,
+    quotes: Array.isArray(value.quotes) ? value.quotes.map((item) => ({ ...item, cacheStale: true })) : value.quotes,
+  };
+}
+
+async function loadCoordinatedProviderPayload(env, provider, fetchPayload, options = {}) {
+  const maxAgeMs = options.maxAgeMs ?? 60_000;
+  const maxStaleMs = options.maxStaleMs ?? 60 * 60_000;
+  const quotaProvider = options.quotaProvider || provider;
+  const cached = await readPlatformProviderCache(env, provider);
+  const age = cached ? Date.now() - cached.fetchedAt : Infinity;
+  if (cached && age >= 0 && age < maxAgeMs) return { payload: cached.quotes, cacheStatus: "cached" };
+  const stale = () => (cached && age >= 0 && age <= maxStaleMs ? staleProviderPayload(cached.quotes) : null);
+  if (coordinatedProviderFlights.has(provider)) return coordinatedProviderFlights.get(provider);
+
+  const operation = (async () => {
+    const canFetch = await reservePlatformProviderRequest(env, quotaProvider, {
+      monthlyLimit: options.monthlyLimit ?? 8000,
+      minimumIntervalSeconds: options.minimumIntervalSeconds ?? 60,
+    });
+    if (!canFetch) {
+      const latest = await waitForPlatformProviderCache(env, provider, cached?.fetchedAt || 0);
+      const latestAge = latest ? Date.now() - latest.fetchedAt : Infinity;
+      if (latest && latestAge >= 0 && latestAge < maxAgeMs) return { payload: latest.quotes, cacheStatus: "cached" };
+      if (latest && latestAge >= 0 && latestAge <= maxStaleMs)
+        return { payload: staleProviderPayload(latest.quotes), cacheStatus: "stale" };
+      const payload = stale();
+      if (payload !== null) return { payload, cacheStatus: "stale" };
+      throw new Error("provider-rate-limited");
+    }
+    try {
+      const payload = await fetchPayload();
+      await writePlatformProviderCache(env, provider, payload);
+      return { payload, cacheStatus: "refreshed" };
+    } catch (error) {
+      if (Number(error?.status) === 429 && error.retryAfterSeconds)
+        await deferPlatformProviderRequest(env, quotaProvider, error.retryAfterSeconds);
+      const payload = stale();
+      if (payload !== null) return { payload, cacheStatus: "stale" };
+      throw error;
+    }
+  })();
+  coordinatedProviderFlights.set(provider, operation);
+  try {
+    return await operation;
+  } finally {
+    if (coordinatedProviderFlights.get(provider) === operation) coordinatedProviderFlights.delete(provider);
+  }
 }
 
 async function providerCryptoBinance(requested = ["bitcoin", "ethereum"]) {
@@ -525,7 +713,12 @@ function median(values) {
 
 export function aggregate(asset, quotes) {
   const valid = quotes.filter(
-    (item) => item && item.asset === asset && Number.isFinite(Number(item.price)) && Number(item.price) > 0,
+    (item) =>
+      item &&
+      item.asset === asset &&
+      item.cacheStale !== true &&
+      Number.isFinite(Number(item.price)) &&
+      Number(item.price) > 0,
   );
   if (!valid.length) return null;
   const sleeveId = INSTRUMENT_REGISTRY[asset]?.sleeveId || "commodities";
@@ -765,14 +958,33 @@ export async function onRequestGet(context = {}) {
   if (needsConversion) baseAssets.add("dollar");
 
   const primaryDefinitions = [
-    { id: "providerA", run: () => providerA([...baseAssets]), enabled: baseAssets.size > 0 },
-    { id: "providerB", run: providerB, enabled: baseAssets.has("dollar") || baseAssets.has("gold") },
+    {
+      id: "providerA",
+      run: () => providerA([...baseAssets]),
+      providerKey: `providerA-${[...baseAssets].sort().join("-")}`,
+      quotaProvider: "providerA",
+      enabled: baseAssets.size > 0,
+    },
+    {
+      id: "providerB",
+      run: providerB,
+      providerKey: "providerB",
+      quotaProvider: "providerB",
+      enabled: baseAssets.has("dollar") || baseAssets.has("gold"),
+    },
   ].filter((provider) => provider.enabled);
   const wantsAny = (...assets) => assets.some((asset) => selected.has(asset));
   const extendedDefinitions = [
     {
       id: "coinGecko",
       run: () => providerCrypto([...selected], providerKey.key, providerKey.userSupplied, context.env),
+      coordinated: false,
+      enabled: wantsAny("bitcoin", "ethereum", "tether"),
+    },
+    {
+      id: "coinMarketCap",
+      run: () => providerCoinMarketCap([...selected], context.env),
+      coordinated: false,
       enabled: wantsAny("bitcoin", "ethereum", "tether"),
     },
     { id: "binance", run: () => providerCryptoBinance([...selected]), enabled: wantsAny("bitcoin", "ethereum") },
@@ -780,26 +992,53 @@ export async function onRequestGet(context = {}) {
     {
       id: "yahooMetals",
       run: () => providerYahooMetals([...selected]),
-      enabled: wantsAny("platinum", "palladium", "copper"),
+      enabled: context.env?.YAHOO_METALS_LICENSE_CONFIRMED === "true" && wantsAny("platinum", "palladium", "copper"),
     },
     { id: "tsetmc", run: providerTsetmc, enabled: selected.has("bourseIndex") },
   ].filter((provider) => provider.enabled);
   const activeDefinitions = [...primaryDefinitions, ...extendedDefinitions];
   const providerRuns = activeDefinitions.map(async (provider) => {
-    const result = await provider.run();
+    let result;
+    let cacheStatus = null;
+    if (provider.coordinated === false) result = await provider.run();
+    else {
+      const coordinated = await loadCoordinatedProviderPayload(
+        context.env,
+        provider.providerKey || provider.id,
+        provider.run,
+        { quotaProvider: provider.quotaProvider },
+      );
+      result = coordinated.payload;
+      cacheStatus = coordinated.cacheStatus;
+    }
     return {
       id: provider.id,
       quotes: Array.isArray(result) ? result : result.quotes || [],
       history: Array.isArray(result) ? {} : result.history || {},
+      cacheStatus: cacheStatus || (Array.isArray(result) ? null : result.cacheStatus || null),
     };
   });
-  const fixedIncomeRequest = selected.has("fixedIncome") ? getFixedIncomeMetric() : null;
+  const fixedIncomeRequest = selected.has("fixedIncome")
+    ? loadCoordinatedProviderPayload(context.env, "fixedIncome", getFixedIncomeMetric, {
+        maxAgeMs: 15 * 60_000,
+        maxStaleMs: 24 * 60 * 60_000,
+        quotaProvider: "fixedIncome",
+        minimumIntervalSeconds: 60,
+      })
+    : null;
   const [settledProviders, fixedIncomeSettled] = await Promise.all([
     Promise.allSettled(providerRuns),
     fixedIncomeRequest ? Promise.allSettled([fixedIncomeRequest]) : Promise.resolve([]),
   ]);
   const fixedIncomeOutcome = fixedIncomeSettled[0] || { status: "skipped" };
-  const fixedIncome = fixedIncomeOutcome.status === "fulfilled" ? fixedIncomeOutcome.value : null;
+  const fixedIncome =
+    fixedIncomeOutcome.status === "fulfilled"
+      ? {
+          ...fixedIncomeOutcome.value.payload,
+          status: fixedIncomeOutcome.value.cacheStatus === "stale" ? "stale" : "available",
+          cacheStatus: fixedIncomeOutcome.value.cacheStatus,
+        }
+      : null;
   const providerResults = new Map();
   settledProviders.forEach((result, index) => {
     providerResults.set(activeDefinitions[index].id, result);
@@ -809,8 +1048,14 @@ export async function onRequestGet(context = {}) {
   let tgjuIndexOutcome = { status: "skipped" };
   if (selected.has("bourseIndex") && !tsetmcQuotes.some((item) => item.asset === "bourseIndex")) {
     try {
-      const result = await providerTgjuIndex();
-      tgjuIndexOutcome = { status: "fulfilled", value: { quotes: result.quotes || [], history: result.history || {} } };
+      const coordinated = await loadCoordinatedProviderPayload(context.env, "tgjuIndex", providerTgjuIndex, {
+        quotaProvider: "providerA",
+      });
+      const result = coordinated.payload;
+      tgjuIndexOutcome = {
+        status: "fulfilled",
+        value: { quotes: result.quotes || [], history: result.history || {}, cacheStatus: coordinated.cacheStatus },
+      };
     } catch {
       tgjuIndexOutcome = { status: "rejected" };
     }
@@ -826,8 +1071,15 @@ export async function onRequestGet(context = {}) {
   let fallbackResult = { status: "skipped", quoteCount: 0 };
   if (fallbackAssets.length) {
     try {
-      const fallback = await providerC(600, fallbackAssets);
+      const coordinated = await loadCoordinatedProviderPayload(
+        context.env,
+        `providerC-${fallbackAssets.slice().sort().join("-")}`,
+        () => providerC(600, fallbackAssets),
+        { quotaProvider: "providerC" },
+      );
+      const fallback = coordinated.payload;
       const fallbackQuotes = fallback.filter((item) => fallbackAssets.includes(item.asset));
+      if (coordinated.cacheStatus === "stale") fallbackQuotes.forEach((item) => (item.cacheStale = true));
       primaryQuotes.push(...fallbackQuotes);
       fallbackResult = { status: "fulfilled", quoteCount: fallbackQuotes.length };
     } catch {
@@ -836,7 +1088,7 @@ export async function onRequestGet(context = {}) {
   }
 
   const preliminaryDollar = aggregate("dollar", primaryQuotes);
-  const rawGlobalQuotes = ["coinGecko", "binance", "metalsLive", "yahooMetals"].flatMap((id) => {
+  const rawGlobalQuotes = ["coinGecko", "coinMarketCap", "binance", "metalsLive", "yahooMetals"].flatMap((id) => {
     const result = providerResults.get(id);
     return result?.status === "fulfilled" ? result.value.quotes : [];
   });
@@ -912,9 +1164,16 @@ export async function onRequestGet(context = {}) {
   const providerDiagnostics = {};
   [...providers, ...extendedDefinitions].forEach((provider) => {
     const settled = providerResults.get(provider.id);
-    providerDiagnostics[provider.id] = settled
-      ? { status: settled.status, quoteCount: settled.status === "fulfilled" ? settled.value.quotes.length : 0 }
-      : { status: "skipped", quoteCount: 0 };
+    if (!settled) {
+      providerDiagnostics[provider.id] = { status: "skipped", quoteCount: 0 };
+      return;
+    }
+    providerDiagnostics[provider.id] = {
+      status: settled.status,
+      quoteCount: settled.status === "fulfilled" ? settled.value.quotes.length : 0,
+    };
+    if (settled.status === "fulfilled" && settled.value.cacheStatus)
+      providerDiagnostics[provider.id].cacheStatus = settled.value.cacheStatus;
   });
   providerDiagnostics.providerC = fallbackResult;
   providerDiagnostics.tgjuIndex = {
@@ -925,6 +1184,7 @@ export async function onRequestGet(context = {}) {
   providerDiagnostics.fixedIncome = {
     status: fixedIncomeOutcome.status,
     quoteCount: fixedIncome ? 1 : 0,
+    ...(fixedIncome?.cacheStatus ? { cacheStatus: fixedIncome.cacheStatus } : {}),
   };
 
   const history = {};
@@ -1009,6 +1269,7 @@ export async function onRequestGet(context = {}) {
           { id: "providerC", name: "Navasan public mirror", url: "https://github.com/HosseinOdd/Navasan-API" },
           { id: "auxiliary", name: "ChartGoldPrice", url: "https://www.chartgoldprice.com/gold-price-api" },
           { id: "coinGecko", name: "CoinGecko", url: COINGECKO_SIMPLE_URL },
+          { id: "coinMarketCap", name: "CoinMarketCap", url: COINMARKETCAP_QUOTES_URL },
           { id: "binance", name: "Binance public ticker", url: BINANCE_TICKER_URL },
           { id: "metalsLive", name: "Metals.live", url: METALS_LIVE_URL },
           { id: "yahooMetals", name: "Yahoo Finance futures chart", url: YAHOO_METAL_CHART_BASE },

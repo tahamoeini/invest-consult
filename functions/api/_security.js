@@ -6,6 +6,7 @@ const ROUTE_LIMITS = Object.freeze({
   market: { count: 120, windowSeconds: 60 * 60 },
   history: { count: 24, windowSeconds: 60 * 60 },
   inflation: { count: 6, windowSeconds: 24 * 60 * 60 },
+  fx: { count: 60, windowSeconds: 60 * 60 },
 });
 
 function jsonResponse(body, status = 200, headers = {}) {
@@ -158,20 +159,93 @@ export async function consumeRouteQuota(context, route) {
   }
 }
 
-export async function reservePlatformProviderRequest(env, provider = "coingecko") {
+export async function reservePlatformProviderRequest(
+  env,
+  provider = "coingecko",
+  { monthlyLimit, minimumIntervalSeconds = 60, quotaUnits = 1 } = {},
+) {
   const db = databaseFor(env);
   if (!db) return false;
-  const configuredLimit = Number(env?.COINGECKO_PLATFORM_MONTHLY_LIMIT);
-  const limit = Number.isFinite(configuredLimit) ? Math.max(1, Math.min(9500, Math.floor(configuredLimit))) : 8000;
+  const limitName = `${provider.toUpperCase()}_PLATFORM_MONTHLY_LIMIT`;
+  const configuredLimit = Number(env?.[limitName]);
+  const defaultLimit = provider === "coinmarketcap" ? 15000 : 8000;
+  const maximumLimit = provider === "coinmarketcap" ? 15000 : 9500;
+  const requestedLimit = Number.isFinite(configuredLimit) ? configuredLimit : Number(monthlyLimit);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(maximumLimit, Math.floor(requestedLimit)))
+    : defaultLimit;
   const month = new Date().toISOString().slice(0, 7);
+  const now = Math.floor(Date.now() / 1000);
+  const nextAllowedAt = now + Math.max(60, Math.floor(Number(minimumIntervalSeconds) || 60));
   try {
     const row = await db
       .prepare(
-        "INSERT INTO provider_monthly_usage (provider, month_key, request_count) VALUES (?1, ?2, 1) ON CONFLICT(provider, month_key) DO UPDATE SET request_count = request_count + 1 WHERE request_count < ?3 RETURNING request_count",
+        "INSERT INTO provider_monthly_usage (provider, month_key, request_count, next_allowed_at) VALUES (?1, ?2, ?6, ?5) ON CONFLICT(provider, month_key) DO UPDATE SET request_count = request_count + ?6, next_allowed_at = ?5 WHERE provider_monthly_usage.next_allowed_at <= ?4 AND provider_monthly_usage.request_count + ?6 <= ?3 RETURNING request_count",
       )
-      .bind(provider, month, limit)
+      .bind(provider, month, limit, now, nextAllowedAt, Math.max(1, Math.floor(Number(quotaUnits) || 1)))
       .first();
     return Boolean(row && Number(row.request_count) <= limit);
+  } catch {
+    return false;
+  }
+}
+
+export async function readPlatformProviderCache(env, provider) {
+  const db = databaseFor(env);
+  if (!db) return null;
+  try {
+    const row = await db
+      .prepare("SELECT quotes_json, fetched_at FROM provider_quote_cache WHERE provider = ?1")
+      .bind(provider)
+      .first();
+    const quotes = JSON.parse(row?.quotes_json || "null");
+    return quotes !== null && Number.isFinite(Number(row?.fetched_at))
+      ? { quotes, fetchedAt: Number(row.fetched_at) * 1000 }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function waitForPlatformProviderCache(env, provider, previousFetchedAt = 0, waitMs = 900) {
+  const deadline = Date.now() + Math.max(0, Math.min(2000, waitMs));
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const cached = await readPlatformProviderCache(env, provider);
+    if (cached && cached.fetchedAt > previousFetchedAt) return cached;
+  }
+  return await readPlatformProviderCache(env, provider);
+}
+
+export async function writePlatformProviderCache(env, provider, quotes, fetchedAt = Date.now()) {
+  const db = databaseFor(env);
+  if (!db || quotes === undefined) return false;
+  try {
+    await db
+      .prepare(
+        "INSERT INTO provider_quote_cache (provider, quotes_json, fetched_at) VALUES (?1, ?2, ?3) ON CONFLICT(provider) DO UPDATE SET quotes_json = excluded.quotes_json, fetched_at = excluded.fetched_at",
+      )
+      .bind(provider, JSON.stringify(quotes), Math.floor(fetchedAt / 1000))
+      .run();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deferPlatformProviderRequest(env, provider, seconds = 60) {
+  const db = databaseFor(env);
+  if (!db) return false;
+  const now = Math.floor(Date.now() / 1000);
+  const nextAllowedAt = now + Math.max(60, Math.min(24 * 60 * 60, Math.floor(Number(seconds) || 60)));
+  try {
+    await db
+      .prepare(
+        "UPDATE provider_monthly_usage SET next_allowed_at = MAX(next_allowed_at, ?3) WHERE provider = ?1 AND month_key = ?2",
+      )
+      .bind(provider, new Date().toISOString().slice(0, 7), nextAllowedAt)
+      .run();
+    return true;
   } catch {
     return false;
   }

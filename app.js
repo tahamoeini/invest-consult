@@ -23,6 +23,8 @@ import {
   createTransaction,
   marketPriceAt,
   normalizePortfolio,
+  portfolioContributionSeries,
+  portfolioCostBasis,
   portfolioSeries,
 } from "./src/portfolio.js";
 import {
@@ -37,7 +39,22 @@ import { prepareHistoricalAnalysis } from "./src/market/history.js";
 import { lastKnownMarketQuote } from "./src/market/last-known.js";
 import { reconcileMarketWithRecentAcceptedQuote } from "./src/market/reconcile.js";
 import { AppShell } from "./src/ui/components.js";
-import { clampTooltipCenter, donutChartMarkup, lineChartMarkup } from "./src/ui/charts.js";
+import {
+  allocationBarChartMarkup,
+  barChartMarkup,
+  clampTooltipCenter,
+  donutChartMarkup,
+  lineChartMarkup,
+} from "./src/ui/charts.js";
+import {
+  LOCALES,
+  applyUiPreferences,
+  displayCurrencyValue,
+  preferredCurrency,
+  readUiPreferences,
+  writeUiPreferences,
+} from "./src/ui/preferences.js";
+import { createLocalizedCatalog } from "./src/ui/localization.js";
 import { createNavigationController } from "./src/ui/navigation.js";
 import { createAppStore } from "./src/ui/state.js";
 
@@ -83,6 +100,12 @@ const appShell = AppShell(document);
 const navigationController = createNavigationController(appShell, appStore);
 
 let copy;
+let uiPreferences = readUiPreferences();
+let fxData = null;
+let fxLoadPromise = null;
+let holdingsSort = { key: "value", direction: "desc" };
+let holdingsFilter = "all";
+let holdingsSearch = "";
 let liveMarket = null;
 let lastKnownMarket = null;
 let lastPlan = null;
@@ -135,6 +158,285 @@ function text(key, fallback = "") {
   return key.split(".").reduce((value, part) => value && value[part], copy) ?? fallback;
 }
 
+const originalTextByNode = new WeakMap();
+const originalAttributesByElement = new WeakMap();
+let localeMutationObserver = null;
+
+function translateInline(value) {
+  const phrases = copy?.phrases;
+  if (!phrases || typeof value !== "string") return value;
+  return Object.keys(phrases)
+    .sort((left, right) => right.length - left.length)
+    .reduce((result, phrase) => result.replaceAll(phrase, phrases[phrase]), value);
+}
+
+function translateVisibleCopy(root = document.body) {
+  if (!root || !copy?.phrases) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.parentElement || node.parentElement.closest("script,style,textarea,[data-user-content]")) continue;
+    const previous = originalTextByNode.get(node);
+    const source = previous && node.nodeValue === previous.rendered ? previous.source : node.nodeValue || "";
+    const rendered = translateInline(source);
+    originalTextByNode.set(node, { source, rendered });
+    if (node.nodeValue !== rendered) node.nodeValue = rendered;
+  }
+  const elements =
+    root.nodeType === Node.ELEMENT_NODE ? [root, ...root.querySelectorAll("*")] : [...root.querySelectorAll("*")];
+  elements.forEach((element) => {
+    const states = originalAttributesByElement.get(element) || {};
+    ["placeholder", "title", "aria-label"].forEach((name) => {
+      if (!element.hasAttribute(name)) return;
+      const current = element.getAttribute(name) || "";
+      const previous = states[name];
+      const source = previous && current === previous.rendered ? previous.source : current;
+      const rendered = translateInline(source);
+      states[name] = { source, rendered };
+      if (current !== rendered) element.setAttribute(name, rendered);
+    });
+    originalAttributesByElement.set(element, states);
+  });
+  if (!localeMutationObserver) {
+    localeMutationObserver = new MutationObserver((records) => {
+      records.forEach((record) =>
+        record.addedNodes.forEach((added) => {
+          if (added.nodeType === Node.TEXT_NODE) translateVisibleCopy(added.parentElement);
+          else if (added.nodeType === Node.ELEMENT_NODE) translateVisibleCopy(added);
+        }),
+      );
+    });
+    localeMutationObserver.observe(document.body, { childList: true, subtree: true });
+  }
+}
+
+function currencyName(currency) {
+  const names = {
+    fa: { TOMAN: "تومان", USD: "دلار", RUB: "روبل", CNY: "یوان" },
+    en: { TOMAN: "Toman", USD: "USD", RUB: "RUB", CNY: "CNY" },
+    ru: { TOMAN: "туман", USD: "доллар США", RUB: "рубль", CNY: "юань" },
+    zh: { TOMAN: "托曼", USD: "美元", RUB: "俄罗斯卢布", CNY: "人民币" },
+  };
+  return names[uiPreferences.locale]?.[currency] || currency;
+}
+
+function activeFxQuotes() {
+  const usd = liveMarket?.assets?.dollar;
+  const usdToman = usd && usd.status !== "conflicted" && Number(usd.price) > 0 ? Number(usd.price) : null;
+  const quotes = fxData?.quotes || {};
+  return Object.fromEntries(
+    ["USD", "RUB", "CNY"].map((currency) => {
+      const quote = quotes[currency];
+      const quotePerUsd = Number(quote?.quotePerUsd);
+      const providerStatus = quote?.status || (currency === "USD" && usdToman ? "available" : "unavailable");
+      const status =
+        !usdToman || providerStatus === "unavailable"
+          ? "unavailable"
+          : fxData?._clientStale || providerStatus === "stale" || usd?.status === "stale"
+            ? "stale"
+            : "available";
+      return [
+        currency,
+        {
+          ...quote,
+          source: currency === "USD" ? usd?.source || quote?.source : quote?.source,
+          observedAt: currency === "USD" ? usd?.observedAt || usd?.asOf || quote?.observedAt : quote?.observedAt,
+          retrievedAt: currency === "USD" ? usd?.retrievedAt || quote?.retrievedAt : quote?.retrievedAt,
+          rate:
+            usdToman && currency === "USD" ? 1 / usdToman : usdToman && quotePerUsd > 0 ? quotePerUsd / usdToman : null,
+          status,
+          reason: !usdToman ? "usd-toman-reference-unavailable" : quote?.reason || null,
+        },
+      ];
+    }),
+  );
+}
+
+function referenceStatusLabel(status) {
+  return text(
+    "reference.status." + (status === "available" ? "available" : status === "stale" ? "stale" : "unavailable"),
+    status === "available" ? "در دسترس" : status === "stale" ? "کهنه" : "در دسترس نیست",
+  );
+}
+
+function renderGlobalReferences() {
+  const container = $("#market-global-references");
+  if (!container) return;
+  if (!fxData) {
+    container.innerHTML =
+      '<div class="empty-state">' +
+      escapeHTML(text("reference.unavailable", "نرخ‌های مرجع روزانه پس از دریافت داده نمایش داده می‌شوند.")) +
+      "</div>";
+    return;
+  }
+  const quotes = fxData.quotes || {};
+  const rateCards = ["USD", "CNY", "RUB"]
+    .map((currency) => {
+      const quote = quotes[currency];
+      if (!quote) return "";
+      const providerRate = Number(quote.quotePerUsd);
+      const active = activeFxQuotes()[currency];
+      const status = active?.status || quote.status || "unavailable";
+      const oneUnitToman = Number(active?.rate) > 0 ? 1 / Number(active.rate) : null;
+      const number = (value, digits = 4) =>
+        Number.isFinite(Number(value))
+          ? new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: digits }).format(Number(value))
+          : "—";
+      const quoteText =
+        currency === "USD"
+          ? oneUnitToman === null
+            ? text("reference.conversionUnavailable", "تبدیل به تومان در دسترس نیست")
+            : "1 USD = " + number(oneUnitToman, 0) + " " + currencyName("TOMAN")
+          : Number.isFinite(providerRate) && providerRate > 0
+            ? "1 USD = " + number(providerRate) + " " + currencyName(currency)
+            : "—";
+      const tomanText =
+        currency === "USD"
+          ? text("reference.iranRate", "Iran market reference rate")
+          : oneUnitToman === null
+            ? text("reference.conversionUnavailable", "تبدیل به تومان در دسترس نیست")
+            : "1 " + currencyName(currency) + " ≈ " + number(oneUnitToman, 0) + " " + currencyName("TOMAN");
+      const sourceKey = currency === "USD" ? "iran" : currency === "CNY" ? "cfets" : "cbr";
+      return (
+        '<article class="reference-rate-card"><div class="reference-rate-heading"><strong>' +
+        escapeHTML(currencyName(currency)) +
+        '</strong><span class="reference-status reference-status-' +
+        escapeHTML(status) +
+        '">' +
+        escapeHTML(referenceStatusLabel(status)) +
+        '</span></div><p class="reference-rate-value">' +
+        escapeHTML(quoteText) +
+        "</p><p>" +
+        escapeHTML(tomanText) +
+        "</p><small>" +
+        escapeHTML(text("reference.source." + sourceKey, quote.source || "")) +
+        " · " +
+        escapeHTML(quote.observedAt ? formatDate(quote.observedAt) : text("market.observationUnknown")) +
+        "</small></article>"
+      );
+    })
+    .join("");
+  const metals = fxData.preciousMetals;
+  const metalRows = (metals?.references || [])
+    .map((item) => {
+      const title = text("assets." + item.asset + ".title", item.asset);
+      const amount = new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: 2 }).format(
+        Number(item.referenceRubPerGram),
+      );
+      return "<li><span>" + escapeHTML(title) + "</span><strong>" + escapeHTML(amount) + " RUB/g</strong></li>";
+    })
+    .join("");
+  const metalCard = metals
+    ? '<article class="reference-rate-card reference-metals-card"><div class="reference-rate-heading"><strong>' +
+      escapeHTML(text("reference.metalsTitle", "فلزات گران‌بها · روبل بر گرم")) +
+      '</strong><span class="reference-status reference-status-' +
+      escapeHTML(metals.status || "unavailable") +
+      '">' +
+      escapeHTML(referenceStatusLabel(metals.status)) +
+      '</span></div><ul class="reference-metals-list">' +
+      (metalRows || "<li>—</li>") +
+      "</ul><small>" +
+      escapeHTML(text("reference.source.metals", metals.source || "")) +
+      " · " +
+      escapeHTML(metals.observedAt ? formatDate(metals.observedAt) : text("market.observationUnknown")) +
+      "</small></article>"
+    : "";
+  container.innerHTML =
+    '<div class="section-heading"><div><span class="kicker">' +
+    escapeHTML(text("reference.kicker", "داده بین‌المللی")) +
+    "</span><h3>" +
+    escapeHTML(text("reference.title", "نرخ‌های مرجع جهانی")) +
+    "</h3><p>" +
+    escapeHTML(text("reference.note", "این نرخ‌های روزانه برای تبدیل نمایشی هستند و قیمت خرده‌فروشی ایران نیستند.")) +
+    '</p></div></div><div class="reference-rates-grid">' +
+    rateCards +
+    metalCard +
+    "</div>";
+}
+
+async function loadFx() {
+  if (fxLoadPromise) return fxLoadPromise;
+  const lastUpdated = Date.parse(fxData?.updatedAt || "");
+  if (Number.isFinite(lastUpdated) && Date.now() - lastUpdated < 60_000) return;
+  const dollar = liveMarket?.assets?.dollar;
+  const validDollar = dollar && dollar.status !== "conflicted" && Number(dollar.price) > 0;
+  const params = new URLSearchParams({ quotes: "USD,RUB,CNY", include: "metals" });
+  if (validDollar) {
+    params.set("usdToman", String(dollar.price));
+    if (dollar.observedAt || dollar.asOf) params.set("usdObservedAt", dollar.observedAt || dollar.asOf);
+  }
+  fxLoadPromise = (async () => {
+    try {
+      await ensureApiSession();
+      const response = await fetchWithTimeout("/api/fx?" + params.toString(), {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error("FX reference request failed");
+      const payload = await response.json();
+      if (!payload || typeof payload !== "object" || !payload.quotes) throw new Error("FX response was invalid");
+      fxData = payload;
+    } catch {
+      if (fxData) fxData = { ...fxData, _clientStale: true };
+    } finally {
+      fxLoadPromise = null;
+      renderGlobalReferences();
+      renderPortfolio();
+      renderDashboard();
+    }
+  })();
+  return fxLoadPromise;
+}
+
+function syncUiPreferenceControls() {
+  const locale = $("#settings-locale");
+  const currency = $("#settings-display-currency");
+  const theme = $("#settings-theme");
+  if (locale) locale.value = uiPreferences.locale;
+  if (currency) currency.value = uiPreferences.currency || "auto";
+  if (theme) theme.value = uiPreferences.theme;
+}
+
+function rerenderLocalizedViews() {
+  translateVisibleCopy();
+  renderMarket(liveMarket, lastKnownMarket);
+  renderHistory();
+  renderPortfolio();
+  renderDashboard();
+  renderSettingsAssumptions();
+  renderGlobalReferences();
+}
+
+async function changeLocale(locale) {
+  setUiPreferences({ ...uiPreferences, locale });
+  syncUiPreferenceControls();
+  await loadCopy();
+  rerenderLocalizedViews();
+  void loadFx();
+}
+
+function setUiPreferences(next) {
+  uiPreferences = writeUiPreferences(next);
+  applyUiPreferences(uiPreferences);
+  syncUiPreferenceControls();
+}
+function formatToman(value) {
+  return value === null || value === undefined || !Number.isFinite(Number(value))
+    ? text("portfolio.unavailable", "Unavailable")
+    : `${formatIRR(value)} ${escapeHTML(currencyName("TOMAN"))}`;
+}
+
+function formatDisplayMoney(tomanValue, { fallbackToToman = true } = {}) {
+  const currency = preferredCurrency(uiPreferences);
+  const converted = displayCurrencyValue(tomanValue, currency, activeFxQuotes());
+  if (!converted) return fallbackToToman ? formatToman(tomanValue) : "—";
+  const digits = currency === "TOMAN" ? 0 : converted.amount < 100 ? 2 : 0;
+  const amount = new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: digits }).format(
+    converted.amount,
+  );
+  return `${amount} ${escapeHTML(currencyName(currency))}`;
+}
+
 function escapeHTML(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -142,6 +444,10 @@ function escapeHTML(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function currentLocale() {
+  return LOCALES[uiPreferences?.locale] || LOCALES.fa;
 }
 
 function normalizeDigits(value) {
@@ -170,9 +476,10 @@ function groupedNumber(value) {
   const fraction = fractionParts.join("").replace(/[^0-9]/g, "");
   const hasDecimal = unsigned.includes(".");
   const integer = integerPart.replace(/^0+(?=\d)/, "") || "0";
-  const formattedInteger = new Intl.NumberFormat("fa-IR", { useGrouping: true, maximumFractionDigits: 0 }).format(
-    Number(integer),
-  );
+  const formattedInteger = new Intl.NumberFormat(currentLocale().numberLocale, {
+    useGrouping: true,
+    maximumFractionDigits: 0,
+  }).format(Number(integer));
   return `${negative ? "-" : ""}${formattedInteger}${hasDecimal ? `٫${fraction}` : ""}`;
 }
 
@@ -194,28 +501,29 @@ function formatIRR(value) {
   const numeric = Number(value);
   return value === null || value === undefined || value === "" || !Number.isFinite(numeric)
     ? "—"
-    : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(Math.round(numeric));
+    : new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: 0 }).format(Math.round(numeric));
 }
 
 function formatPercent(value, digits = 1) {
   const numeric = Number(value);
   if (value === null || value === undefined || value === "" || !Number.isFinite(numeric)) return "—";
-  return (
-    new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(numeric) +
-    "\u066a"
-  );
+  const percent = new Intl.NumberFormat(currentLocale().numberLocale, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  }).format(numeric);
+  return uiPreferences.locale === "fa" ? `${percent}\u066a` : `${percent}%`;
 }
 
 function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "\u2014";
-  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat(currentLocale().numberLocale, { dateStyle: "short" }).format(date);
 }
 
 function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "\u2014";
-  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat(currentLocale().numberLocale, { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 function formatTrackingDuration(start, end = new Date()) {
@@ -816,7 +1124,7 @@ function readDashboardPortfolio() {
 }
 
 function dashboardCurrency(value) {
-  return Number.isFinite(Number(value)) ? `${formatIRR(value)} ${text("currencyUnit")}` : "—";
+  return Number.isFinite(Number(value)) ? formatDisplayMoney(value) : "—";
 }
 
 function setDashboardMetric(valueId, noteId, value, note, state = "ready") {
@@ -839,11 +1147,12 @@ function freshnessLabel(value) {
   const timestamp = new Date(value || 0).getTime();
   if (!Number.isFinite(timestamp)) return "زمان نامشخص";
   const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
-  if (minutes < 2) return "همین الان";
-  if (minutes < 60) return `${formatIRR(minutes)} دقیقه قبل`;
+  const relative = new Intl.RelativeTimeFormat(currentLocale().numberLocale, { numeric: "auto" });
+  if (minutes < 2) return relative.format(0, "minute");
+  if (minutes < 60) return relative.format(-minutes, "minute");
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${formatIRR(hours)} ساعت قبل`;
-  return `${formatIRR(Math.round(hours / 24))} روز قبل`;
+  if (hours < 24) return relative.format(-hours, "hour");
+  return relative.format(-Math.round(hours / 24), "day");
 }
 
 function marketTimeLabels(item, retrievedFallback = null) {
@@ -952,26 +1261,26 @@ function renderDashboardPerformance() {
   container.innerHTML = lineChartMarkup({
     series: [
       {
-        name: "سرمایه خالص",
+        name: text("dashboard.investedSeries", "سرمایه خالص"),
         color: "#8997a0",
         points: points.map((point) => ({ value: point.invested, label: point.label })),
       },
       {
-        name: "ارزش اسمی",
+        name: text("dashboard.nominalSeries", "ارزش اسمی"),
         color: "#126b62",
         points: points.map((point) => ({ value: point.value, label: point.label })),
       },
       {
-        name: "ارزش پس از تورم",
+        name: text("dashboard.realSeries", "ارزش پس از تورم"),
         color: "#c18a2c",
         points: points.map((point) => ({ value: point.realValue, label: point.label })),
       },
     ],
-    ariaLabel: "روند ارزش پرتفوی و سرمایه خالص",
+    ariaLabel: text("dashboard.performanceChart", "روند ارزش پرتفوی و سرمایه خالص"),
     emptyLabel: result.transactions.length
       ? "تاریخچه قیمت کافی برای رسم این روند نیست."
       : "با ثبت دارایی و دریافت قیمت تاریخی، روند اینجا نمایش داده می‌شود.",
-    valueLabel: dashboardCurrency,
+    valueLabel: formatToman,
     height: 280,
   });
 }
@@ -1011,6 +1320,39 @@ function renderDashboardAllocation(result, plan, portfolio) {
         : "هنوز تخصیصی برای نمایش نیست.",
   });
   const target = plan?.recommendation?.weights || {};
+  const planToPortfolioAsset = {
+    fixed: "fixed",
+    gold: "gold",
+    currency: "currency",
+    silver: "silver",
+    bitcoin: "bitcoin",
+    ethereum: "ethereum",
+    platinum: "platinum",
+    palladium: "palladium",
+    copper: "copper",
+  };
+  const allocationBars = [...new Set([...Object.keys(target), ...PLAN_ASSET_KEYS])]
+    .filter((planAssetId) => Object.hasOwn(planToPortfolioAsset, planAssetId))
+    .map((planAssetId) => {
+      const assetId = planToPortfolioAsset[planAssetId];
+      return {
+        label: portfolioAssetMeta(assetId, portfolio).title,
+        actual: complete ? Number(result.allocation[assetId]) || 0 : null,
+        target: Number.isFinite(Number(target[planAssetId])) ? Number(target[planAssetId]) : null,
+        color: getAssetColor(assetId),
+      };
+    })
+    .filter((item) => item.actual !== null || item.target !== null);
+  const allocationBarsContainer = $("#dashboard-allocation-bars");
+  if (allocationBarsContainer)
+    allocationBarsContainer.innerHTML = allocationBarChartMarkup({
+      items: allocationBars,
+      ariaLabel: text("dashboard.allocationChart", "تخصیص فعلی و هدف برحسب درصد"),
+      emptyLabel: text("dashboard.allocationChartEmpty", "داده تخصیص برای نمودار موجود نیست."),
+      actualLabel: text("allocation.current", "فعلی"),
+      targetLabel: text("allocation.target", "هدف"),
+      valueLabel: (value) => formatPercent(value),
+    });
   const rowAssetIds = [...new Set([...PLAN_ASSET_KEYS, ...actual.map((item) => item.assetId)])];
   const rows = rowAssetIds
     .filter((assetId) => actual.some((item) => item.assetId === assetId) || Number(target[assetId]) > 0)
@@ -1056,19 +1398,23 @@ function renderDashboardHealth(result, plan) {
         : emergency === "partial"
           ? ["نسبی", "صندوق اضطراری کامل اعلام نشده است.", "health-warning"]
           : ["در دسترس نیست", "این گزینه در پروفایل برنامه ثبت نشده.", "health-neutral"];
-  const maxAllocation = Math.max(
-    0,
-    ...held.map(
-      (item) => Number(result.allocation[Object.keys(result.values).find((key) => result.values[key] === item)]) || 0,
-    ),
-  );
-  const concentration = !held.length
-    ? ["در دسترس نیست", "برای سنجش تمرکز، ارزش‌گذاری کامل لازم است.", "health-neutral"]
-    : maxAllocation > 75
-      ? ["بالا", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"]
-      : maxAllocation > 55
-        ? ["متوسط", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"]
-        : ["قابل قبول", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-good"];
+  const maxAllocation = result.missingPrices.length
+    ? null
+    : Math.max(
+        0,
+        ...held.map(
+          (item) =>
+            Number(result.allocation[Object.keys(result.values).find((key) => result.values[key] === item)]) || 0,
+        ),
+      );
+  const concentration =
+    !held.length || maxAllocation === null
+      ? ["در دسترس نیست", "برای سنجش تمرکز، ارزش‌گذاری کامل لازم است.", "health-neutral"]
+      : maxAllocation > 75
+        ? ["بالا", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"]
+        : maxAllocation > 55
+          ? ["متوسط", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-warning"]
+          : ["قابل قبول", `بیشترین وزن تقریبا ${formatPercent(maxAllocation)} است.`, "health-good"];
   const tracking = !transactions.length
     ? ["در دسترس نیست", "برای سنجش کامل بودن ردیابی، حداقل یک رویداد و قیمت معتبر لازم است.", "health-neutral"]
     : result.missingPrices.length
@@ -1465,16 +1811,191 @@ function renderLineChart(container, points, valueKey = "nominal", label = "") {
 
 function formatPortfolioQuantity(assetId, quantity) {
   if (["gold", "silver", "platinum", "palladium", "copper"].includes(assetId))
-    return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 3 }).format(Number(quantity) || 0);
+    return new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: 3 }).format(
+      Number(quantity) || 0,
+    );
   if (["bitcoin", "ethereum", "tether"].includes(assetId))
-    return new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 8 }).format(Number(quantity) || 0);
+    return new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: 8 }).format(
+      Number(quantity) || 0,
+    );
   return formatIRR(quantity);
+}
+
+function targetWeightForHolding(assetId, definition, plan) {
+  const weights = plan?.recommendation?.weights || {};
+  const direct = {
+    fixed: "fixed",
+    gold: "gold",
+    currency: "currency",
+    silver: "silver",
+    bitcoin: "bitcoin",
+    ethereum: "ethereum",
+    tether: "tether",
+    platinum: "platinum",
+    palladium: "palladium",
+    copper: "copper",
+  }[assetId];
+  if (direct && Number.isFinite(Number(weights[direct]))) return Number(weights[direct]);
+  const sleeveKeys =
+    {
+      fixedIncome: ["fixed"],
+      gold: ["gold"],
+      fx: ["currency"],
+      commodities: ["silver", "platinum", "palladium", "copper"],
+      crypto: ["bitcoin", "ethereum", "tether"],
+    }[definition?.sleeveId] || [];
+  const targets = sleeveKeys.map((key) => Number(weights[key])).filter(Number.isFinite);
+  return targets.length ? targets.reduce((total, value) => total + value, 0) : null;
+}
+
+function renderPortfolioHoldings(portfolio, result, plan, asOf) {
+  const body = $("#portfolio-holdings-body");
+  const count = $("#portfolio-holdings-count");
+  if (!body) return;
+  const basisByAsset = portfolioCostBasis(result.transactions, asOf);
+  const holdings = assetIds(portfolio)
+    .map((assetId) => {
+      const definition = portfolio.assets?.[assetId] || PORTFOLIO_ASSETS[assetId];
+      const item = result.values[assetId];
+      if (!item || Math.abs(item.quantity) <= 1e-7) return null;
+      const quote = definition?.marketKey ? liveMarket?.assets?.[definition.marketKey] : null;
+      const basis = basisByAsset[assetId]?.basis ?? null;
+      const disputed = !item.manualPrice && quote?.status === "conflicted";
+      return {
+        assetId,
+        definition,
+        asset: portfolioAssetMeta(assetId, portfolio).title,
+        item,
+        quote,
+        quantity: item.quantity,
+        value: item.value,
+        allocation: result.missingPrices.length ? null : Number(result.allocation[assetId]) || 0,
+        basis,
+        profitLoss: item.value === null || basis === null ? null : item.value - basis,
+        target: targetWeightForHolding(assetId, definition, plan),
+        disputed,
+      };
+    })
+    .filter(Boolean)
+    .filter((row) => {
+      if (holdingsFilter === "priced" && (row.item.value === null || row.disputed)) return false;
+      if (holdingsFilter === "missing" && row.item.value !== null && !row.disputed) return false;
+      if (!holdingsSearch) return true;
+      const name = portfolioAssetMeta(row.assetId, portfolio).title.toLocaleLowerCase(currentLocale().numberLocale);
+      return name.includes(holdingsSearch.toLocaleLowerCase(currentLocale().numberLocale));
+    });
+  holdings.sort((left, right) => {
+    const leftValue =
+      left[holdingsSort.key] ??
+      (holdingsSort.key === "asset" ? portfolioAssetMeta(left.assetId, portfolio).title : null);
+    const rightValue =
+      right[holdingsSort.key] ??
+      (holdingsSort.key === "asset" ? portfolioAssetMeta(right.assetId, portfolio).title : null);
+    const comparison =
+      typeof leftValue === "string" && typeof rightValue === "string"
+        ? leftValue.localeCompare(rightValue, currentLocale().numberLocale)
+        : (Number(leftValue) || Number.NEGATIVE_INFINITY) - (Number(rightValue) || Number.NEGATIVE_INFINITY);
+    return comparison * (holdingsSort.direction === "asc" ? 1 : -1);
+  });
+  if (count) count.textContent = `${formatIRR(holdings.length)} ${text("portfolio.holdingCount", "دارایی")}`;
+  $$("[data-holdings-sort]").forEach((button) => {
+    const active = button.dataset.holdingsSort === holdingsSort.key;
+    button
+      .closest("th")
+      ?.setAttribute("aria-sort", active ? (holdingsSort.direction === "asc" ? "ascending" : "descending") : "none");
+  });
+  body.innerHTML = holdings.length
+    ? holdings
+        .map((row) => {
+          const meta = portfolioAssetMeta(row.assetId, portfolio);
+          const quantity = `${formatPortfolioQuantity(row.assetId, row.item.quantity)} ${portfolioUnitLabel(row.assetId, row.item.unit)}`;
+          const marketConflict = row.disputed;
+          const missing = row.item.value === null;
+          const quoteState = marketConflict
+            ? text("portfolio.disputedPrice", "تعارض قیمت")
+            : missing
+              ? text("portfolio.missingPrice", "قیمت موجود نیست")
+              : row.item.manualPrice
+                ? text("portfolio.manualPrice", "قیمت دستی")
+                : row.item.priceSource || row.quote?.source || text("market.observationUnknown");
+          const quoteDate = row.item.priceObservedAt || row.quote?.observedAt || row.quote?.asOf;
+          const quoteTime = quoteDate
+            ? `${formatDateTime(quoteDate)} · ${freshnessLabel(quoteDate)}`
+            : text("market.observationUnknown");
+          const statusClass = marketConflict || missing ? "holdings-quote-warning" : "";
+          const actualWeight = result.missingPrices.length ? null : Number(result.allocation[row.assetId]) || 0;
+          const targetWeight = row.target;
+          const pnlClass = row.profitLoss === null ? "muted" : row.profitLoss >= 0 ? "positive" : "negative";
+          const pnl = row.profitLoss === null ? text("portfolio.unavailable", "—") : formatDisplayMoney(row.profitLoss);
+          return (
+            '<tr><th scope="row"><span class="holdings-asset-name"><span class="asset-dot ' +
+            escapeHTML(meta.dotClass) +
+            '"></span>' +
+            escapeHTML(meta.title) +
+            "</span></th><td>" +
+            escapeHTML(quantity) +
+            "</td><td>" +
+            (missing
+              ? '<span class="holdings-quote-warning">' + escapeHTML(quoteState) + "</span>"
+              : escapeHTML(formatDisplayMoney(row.item.value))) +
+            "</td><td>" +
+            (row.basis === null ? "—" : escapeHTML(formatDisplayMoney(row.basis))) +
+            '</td><td class="' +
+            pnlClass +
+            '">' +
+            escapeHTML(pnl) +
+            (row.profitLoss !== null && row.basis > 0
+              ? "<small>" + escapeHTML(formatPercent((row.profitLoss / row.basis) * 100)) + "</small>"
+              : "") +
+            "</td><td>" +
+            (actualWeight === null ? "—" : escapeHTML(formatPercent(actualWeight))) +
+            "</td><td>" +
+            (targetWeight === null
+              ? escapeHTML(text("portfolio.noTarget", "هدف ثبت نشده"))
+              : escapeHTML(formatPercent(targetWeight))) +
+            '</td><td class="' +
+            statusClass +
+            '"><strong>' +
+            escapeHTML(quoteState) +
+            "</strong><small>" +
+            escapeHTML(quoteTime) +
+            "</small></td></tr>"
+          );
+        })
+        .join("")
+    : `<tr><td colspan="8" class="holdings-empty">${escapeHTML(text("portfolio.noMatchingHoldings", "دارایی مطابق این فیلتر نیست."))}</td></tr>`;
+  const note = $("#portfolio-currency-note");
+  if (note) {
+    const currency = preferredCurrency(uiPreferences);
+    const activeQuote = activeFxQuotes()[currency];
+    if (currency === "TOMAN")
+      note.textContent = text("portfolio.tomanBasisNote", "مقادیر و بازده تاریخی بر پایه تومان محاسبه می‌شوند.");
+    else if (activeQuote?.status === "unavailable")
+      note.textContent = text(
+        "portfolio.fxUnavailableNote",
+        "نرخ تبدیل در دسترس نیست؛ مقادیر به تومان نمایش داده می‌شوند. دفتر و بازده تاریخی بر پایه تومان می‌مانند.",
+      );
+    else {
+      const stale = activeQuote?.status === "stale";
+      const freshness = activeQuote?.observedAt
+        ? " · " + text("portfolio.fxAsOf", "نرخ مرجع") + ": " + formatDate(activeQuote.observedAt)
+        : "";
+      const staleLabel = stale ? " · " + text("portfolio.fxStaleNote", "نرخ تبدیل کهنه است.") : "";
+      note.textContent =
+        text(
+          "portfolio.displayCurrencyNote",
+          "مقادیر با نرخ مرجع روز به ارز نمایشی تبدیل شده‌اند؛ بازده تاریخی بر پایه تومان است.",
+        ) +
+        freshness +
+        staleLabel;
+    }
+  }
 }
 
 function portfolioValueLabel(value) {
   return value === null || value === undefined
     ? text("portfolio.unavailable", "Unavailable")
-    : `${formatIRR(value)} ${text("currencyUnit")}`;
+    : formatDisplayMoney(value);
 }
 
 function renderPortfolioChart(series, portfolio, inflationRate) {
@@ -1513,7 +2034,7 @@ function renderPortfolioChart(series, portfolio, inflationRate) {
     ],
     ariaLabel: text("portfolio.chart"),
     emptyLabel: text("portfolio.missingPrices"),
-    valueLabel: portfolioValueLabel,
+    valueLabel: formatToman,
     height: 260,
   });
 }
@@ -2004,7 +2525,7 @@ function renderPortfolio() {
       const quoteNote = item.priceObservedAt
         ? `${item.manualPrice ? "قیمت دستی" : "منبع بازار"} · ${formatDateTime(item.priceObservedAt)} · ${freshnessLabel(item.priceObservedAt)}`
         : item.priceSource || "زمان مشاهده نامشخص";
-      return `<button type="button" class="allocation-row allocation-row-button" data-portfolio-asset="${escapeHTML(assetId)}"><span class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><span><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))} · ${escapeHTML(quoteNote)}</small></span></span><span class="allocation-numbers"><strong>${item.value === null ? escapeHTML(text("portfolio.unavailable")) : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></span></button>`;
+      return `<button type="button" class="allocation-row allocation-row-button" data-portfolio-asset="${escapeHTML(assetId)}"><span class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><span><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))} · ${escapeHTML(quoteNote)}</small></span></span><span class="allocation-numbers"><strong>${item.value === null || result.missingPrices.length ? "—" : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></span></button>`;
     })
     .join("");
   portfolioAllocationEl.innerHTML =
@@ -2013,9 +2534,9 @@ function renderPortfolio() {
     portfolioDonutEl.innerHTML = donutChartMarkup({
       segments: heldAssetIds.map((assetId) => ({
         name: portfolioAssetMeta(assetId, portfolio).title,
-        value: Number(result.values[assetId].value) || 0,
+        value: result.missingPrices.length ? 0 : Number(result.values[assetId].value) || 0,
         color: getAssetColor(assetId),
-        percentLabel: formatPercent(result.allocation[assetId] || 0),
+        percentLabel: result.missingPrices.length ? "—" : formatPercent(result.allocation[assetId] || 0),
       })),
       centerLabel: "ارزش فعلی",
       centerValue: result.missingPrices.length ? "—" : portfolioValueLabel(result.currentValue),
@@ -2039,6 +2560,23 @@ function renderPortfolio() {
     ? portfolioSeries(portfolio, liveMarket || {}, result.trackingStart, asOf, inflationRate)
     : [];
   renderPortfolioChart(series, portfolio, inflationRate);
+  const contributionChart = $("#portfolio-contribution-chart");
+  if (contributionChart) {
+    const monthlyContributions = portfolioContributionSeries(result.transactions, asOf, 12).map((point) => ({
+      date: point.date,
+      label: new Intl.DateTimeFormat(currentLocale().numberLocale, { month: "short", year: "2-digit" }).format(
+        new Date(point.date),
+      ),
+      value: point.value,
+    }));
+    contributionChart.innerHTML = barChartMarkup({
+      items: monthlyContributions,
+      ariaLabel: text("portfolio.contributionChart", "واریزهای ثبت‌شده به تفکیک ماه، بر پایه تومان"),
+      emptyLabel: text("portfolio.noContributionHistory", "داده ثبت‌شده‌ای برای نمایش واریز ماهانه نیست."),
+      valueLabel: (value) => formatToman(value),
+    });
+  }
+  renderPortfolioHoldings(portfolio, result, latestPlanSnapshot(), asOf);
   if (
     hasTransactions &&
     result.trackingStart &&
@@ -2139,7 +2677,7 @@ function openAssetDrawer(assetId) {
     (transaction) => transaction.assetId === assetId || transaction.targetAssetId === assetId,
   ).length;
   const price = item.price === null ? "—" : portfolioValueLabel(item.price);
-  content.innerHTML = `<div class="asset-detail-summary"><div><span>مقدار</span><strong>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</strong></div><div><span>قیمت مبنا/بازار</span><strong>${escapeHTML(price)}</strong></div><div><span>ارزش فعلی</span><strong>${escapeHTML(portfolioValueLabel(item.value))}</strong></div><div><span>سهم از سبد</span><strong>${item.value === null ? "—" : escapeHTML(formatPercent(result.allocation[assetId] || 0))}</strong></div></div><div class="data-note ${item.value === null ? "data-note-warning" : ""}">${item.value === null ? "برای این دارایی قیمت معتبر در داده بازار وجود ندارد؛ ارزش ریالی را حدس نمی‌زنیم." : `در دفتر فعال ${formatIRR(transactions)} رویداد مرتبط ثبت شده است.`}</div><button type="button" class="secondary-button" data-go-view="portfolio">ویرایش موجودی و تراکنش‌ها</button>`;
+  content.innerHTML = `<div class="asset-detail-summary"><div><span>مقدار</span><strong>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</strong></div><div><span>قیمت مبنا/بازار</span><strong>${escapeHTML(price)}</strong></div><div><span>ارزش فعلی</span><strong>${escapeHTML(portfolioValueLabel(item.value))}</strong></div><div><span>سهم از سبد</span><strong>${item.value === null || result.missingPrices.length ? "—" : escapeHTML(formatPercent(result.allocation[assetId] || 0))}</strong></div></div><div class="data-note ${item.value === null ? "data-note-warning" : ""}">${item.value === null ? "برای این دارایی قیمت معتبر در داده بازار وجود ندارد؛ ارزش ریالی را حدس نمی‌زنیم." : `در دفتر فعال ${formatIRR(transactions)} رویداد مرتبط ثبت شده است.`}</div><button type="button" class="secondary-button" data-go-view="portfolio">ویرایش موجودی و تراکنش‌ها</button>`;
   if (typeof drawer.showModal === "function") drawer.showModal();
   else drawer.setAttribute("open", "");
 }
@@ -2741,8 +3279,10 @@ function nearestChartPoint(chart, clientX) {
 }
 
 function chartPointsInDateOrder(chart) {
-  return [...chart.querySelectorAll(".chart-dot")].sort((left, right) => {
-    const byDate = Number(left.dataset.timestamp) - Number(right.dataset.timestamp);
+  return [...chart.querySelectorAll(".chart-dot, .chart-bar")].sort((left, right) => {
+    const leftTime = Number(left.dataset.timestamp);
+    const rightTime = Number(right.dataset.timestamp);
+    const byDate = Number.isFinite(leftTime) && Number.isFinite(rightTime) ? leftTime - rightTime : 0;
     return byDate || Number(left.dataset.sequence) - Number(right.dataset.sequence);
   });
 }
@@ -2751,11 +3291,12 @@ function bindChartTooltips() {
   document.addEventListener("pointermove", (event) => {
     const chart = event.target.closest?.(".line-chart");
     if (!chart || event.pointerType === "touch" || chart.dataset.tooltipPinned === "true") return;
+    if (event.target.closest?.(".chart-bar")) return;
     const point = nearestChartPoint(chart, event.clientX);
     if (point) showChartTooltip(point);
   });
   document.addEventListener("pointerover", (event) => {
-    const point = event.target.closest?.(".chart-dot");
+    const point = event.target.closest?.(".chart-dot, .chart-bar");
     if (point) showChartTooltip(point);
   });
   document.addEventListener("focusin", (event) => {
@@ -2764,7 +3305,7 @@ function bindChartTooltips() {
     if (event.target.matches("svg")) {
       const first = chartPointsInDateOrder(chart)[0];
       first?.focus();
-    } else if (event.target.matches(".chart-dot")) showChartTooltip(event.target);
+    } else if (event.target.matches(".chart-dot, .chart-bar")) showChartTooltip(event.target);
   });
   document.addEventListener("pointerout", (event) => {
     const chart = event.target.closest?.(".line-chart");
@@ -2778,13 +3319,13 @@ function bindChartTooltips() {
     hideChartTooltip(chart);
   });
   document.addEventListener("click", (event) => {
-    const point = event.target.closest?.(".chart-dot");
+    const point = event.target.closest?.(".chart-dot, .chart-bar");
     if (!point) return;
     event.preventDefault();
     showChartTooltip(point, true);
   });
   document.addEventListener("pointerdown", (event) => {
-    const point = event.target.closest?.(".chart-dot");
+    const point = event.target.closest?.(".chart-dot, .chart-bar");
     if (point) {
       showChartTooltip(point, true);
       return;
@@ -2798,7 +3339,7 @@ function bindChartTooltips() {
     $$(".line-chart").forEach(hideChartTooltip);
   });
   document.addEventListener("keydown", (event) => {
-    const point = event.target.closest?.(".chart-dot");
+    const point = event.target.closest?.(".chart-dot, .chart-bar");
     if (!point || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     const chart = point.closest(".line-chart");
     const points = chartPointsInDateOrder(chart);
@@ -3534,6 +4075,7 @@ async function loadMarket(force = false) {
     renderHistory();
     renderPortfolio();
     renderDashboard();
+    void loadFx();
     setStatus("از داده‌ی تازه‌ی ذخیره‌شده استفاده شد", "success");
     return;
   }
@@ -3567,6 +4109,7 @@ async function loadMarket(force = false) {
     renderHistory();
     renderPortfolio();
     renderDashboard();
+    void loadFx();
     setStatus(text("status.connected", fallbackCopy.status.connected), "success");
   } catch {
     const cacheDisabledNow = appStore.getState().marketCacheDisabled;
@@ -3587,6 +4130,7 @@ async function loadMarket(force = false) {
     renderHistory();
     renderPortfolio();
     renderDashboard();
+    void loadFx();
     setStatus(
       liveMarket
         ? text("status.cached", fallbackCopy.status.cached)
@@ -3610,15 +4154,56 @@ function marketRequestAssets() {
 
 async function loadCopy() {
   try {
-    const response = await fetch("content/fa.json", { cache: "no-store" });
-    if (!response.ok) throw new Error("Copy request failed");
-    copy = await response.json();
+    const [baseResponse, localeResponse] = await Promise.all([
+      fetch("content/fa.json", { cache: "no-store" }),
+      uiPreferences.locale === "fa"
+        ? fetch("content/fa.json", { cache: "no-store" })
+        : fetch("content/" + uiPreferences.locale + ".json", { cache: "no-store" }),
+    ]);
+    if (!baseResponse.ok || !localeResponse.ok) throw new Error("Copy request failed");
+    const baseCopy = await baseResponse.json();
+    const localizedCopy = await localeResponse.json();
+    copy = createLocalizedCatalog(baseCopy, localizedCopy);
   } catch {
     copy = fallbackCopy;
   }
+  if (copy?.pageTitle) document.title = copy.pageTitle;
+  translateVisibleCopy();
 }
 
 function bindEvents() {
+  syncUiPreferenceControls();
+  $("#settings-locale")?.addEventListener("change", (event) => void changeLocale(event.currentTarget.value));
+  $("#settings-display-currency")?.addEventListener("change", (event) => {
+    const currency = event.currentTarget.value;
+    setUiPreferences({ ...uiPreferences, currency: currency === "auto" ? null : currency });
+    rerenderLocalizedViews();
+  });
+  $("#settings-theme")?.addEventListener("change", (event) => {
+    setUiPreferences({ ...uiPreferences, theme: event.currentTarget.value });
+  });
+  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    if (uiPreferences.theme === "system") applyUiPreferences(uiPreferences);
+  });
+  $("#portfolio-holdings-search")?.addEventListener("input", (event) => {
+    holdingsSearch = event.currentTarget.value.trim();
+    renderPortfolio();
+  });
+  $("#portfolio-holdings-filter")?.addEventListener("change", (event) => {
+    holdingsFilter = event.currentTarget.value;
+    renderPortfolio();
+  });
+  $$("[data-holdings-sort]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const key = button.dataset.holdingsSort;
+      if (!key) return;
+      holdingsSort = {
+        key,
+        direction: holdingsSort.key === key && holdingsSort.direction === "asc" ? "desc" : "asc",
+      };
+      renderPortfolio();
+    }),
+  );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     renderPlan();
@@ -3834,6 +4419,7 @@ function bindEvents() {
 
 async function init() {
   await loadCopy();
+  syncUiPreferenceControls();
   migrateStoredCurrencyToToman();
   modelSettings = loadModelSettings();
   restoreProviderApiKey();
