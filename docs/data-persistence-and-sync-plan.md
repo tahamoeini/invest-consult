@@ -18,11 +18,11 @@ This is the lowest-friction option that fits the existing Cloudflare deployment 
 
 ### Recommended storage choices shown to users
 
-| Choice | What it means | Initial availability |
-| --- | --- | --- |
-| This device only | Personal data stays in this browser profile. It works offline; users export a backup themselves. | Default; no account required |
-| Sync with Synthora | Local copy syncs to Synthora's authenticated Cloudflare service and can be restored on another device. | First cloud feature |
-| Back up to my cloud drive | A user-visible backup file is written to the user's Google Drive or OneDrive account. | Later, optional provider integration |
+| Choice                    | What it means                                                                                          | Initial availability                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| This device only          | Personal data stays in this browser profile. It works offline; users export a backup themselves.       | Default; no account required         |
+| Sync with Synthora        | Local copy syncs to Synthora's authenticated Cloudflare service and can be restored on another device. | First cloud feature                  |
+| Back up to my cloud drive | A user-visible backup file is written to the user's Google Drive or OneDrive account.                  | Later, optional provider integration |
 
 Do not make cloud sync opt-out by default. Ask before the first upload, state which fields sync, and provide pause, export, delete, and sign-out controls.
 
@@ -30,11 +30,11 @@ Do not make cloud sync opt-out by default. Ask before the first upload, state wh
 
 Repository review and current documentation show:
 
-- Profile, recommendation history, portfolio ledger, model settings, and browser preferences are stored in `localStorage` in [`app.js`](../app.js). These survive a normal reload but do not follow the user to another browser profile or device.
-- Market quotes are saved locally and reused for up to 90 seconds. Historical comparison responses are saved locally for one hour and the browser keeps only a small number of recent query combinations. These are temporary client caches, not durable platform history.
-- `/api/market`, `/api/history`, and `/api/inflation` fetch or serve data through Cloudflare Pages Functions. The market and history APIs do not currently persist a common, durable dataset for all users.
-- The D1 migration in [`functions/api/migrations/0001_api_quotas.sql`](../functions/api/migrations/0001_api_quotas.sql) creates session and API usage tables. The signed cookie in [`functions/api/_security.js`](../functions/api/_security.js) is a browser-session quota identity, not a Synthora account.
-- The README describes versioned JSON export/import for recommendation history and the personal portfolio ledger. Keep this escape hatch and expand it into a full personal-data backup.
+- Profile, salary, recommendation history, portfolio ledger, and model settings are stored in browser `localStorage` from [`app.js`](../app.js); locale/display preferences and navigation/cache preferences are handled by [`src/ui/preferences.js`](../src/ui/preferences.js) and [`src/ui/state.js`](../src/ui/state.js). These survive a normal reload but do not follow the user to another browser profile or device.
+- The browser reuses its market response cache for up to 90 seconds and historical comparison responses for up to one hour, retaining only a small number of recent query combinations. These client caches are not durable market history. The user can disable browser market-cache fallback.
+- `/api/market`, `/api/history`, `/api/inflation`, and `/api/fx` run through Cloudflare Pages Functions. Migration 0002 adds a D1 cache of selected public provider responses and shared provider cooldown state. This is operational request coordination, not a canonical normalized history store. `/api/history` still fetches and normalizes source history per request; there is no shared, durable validated price-history dataset. The inflation route uses Cloudflare's upstream fetch cache, not a versioned CPI archive.
+- Migrations [`0001_api_quotas.sql`](../functions/api/migrations/0001_api_quotas.sql) and [`0002_provider_coordination.sql`](../functions/api/migrations/0002_provider_coordination.sql) create API-session, route-usage, monthly provider-budget, cooldown, and provider-response cache state. The signed cookie in [`functions/api/_security.js`](../functions/api/_security.js) identifies a browser session for quotas; it is not a Synthora account.
+- The current versioned JSON transfer covers saved recommendation history and the personal portfolio ledger. It does not include profile/salary, model settings, interface preferences, transient caches, or API keys, so it is not a full personal-data backup.
 - The recommendation and portfolio model already distinguishes observed source history from assumptions and missing data. Persistence work must preserve those distinctions and must never fabricate missing market observations.
 
 Clearing browser data needs precise product wording. A browser's “clear cookies” action can be separate from “clear site data”; the latter can remove local storage and other origin data. IndexedDB and the Storage API can improve local storage behavior but cannot guarantee recovery after a user explicitly deletes site data. See [MDN's storage and eviction guidance](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
@@ -78,7 +78,7 @@ flowchart LR
 
 Use separate logical ownership and preferably separate bindings:
 
-- `API_USAGE_DB`: existing signed API sessions, rate counters, and provider-key budgets.
+- `API_USAGE_DB`: current signed API sessions, route counters, monthly provider-key budgets, cooldowns, and selected public provider-response cache entries.
 - `USER_DATA_DB`: accounts, preferences, recommendation snapshots, portfolio transactions, sync revisions, and deletion state.
 - `MARKET_DATA_DB`: shared observed quotes, historical observations, inflation observations, provider status, and refresh metadata.
 
@@ -88,14 +88,14 @@ R2 is optional for the first sync release. Add it for durable database snapshots
 
 ## 5. Data classification and persistence rules
 
-| Data | Examples | Local storage | Cloud storage | Rules |
-| --- | --- | --- | --- | --- |
-| Personal profile | Age, horizon, salary, contribution rate, goals, risk inputs | IndexedDB | `USER_DATA_DB` only after sync opt-in | Treat as sensitive; validate and minimize fields |
-| Saved user records | Recommendation snapshots, portfolio versions, transactions, corrections, manual prices | IndexedDB | `USER_DATA_DB` for signed-in users | Stable record IDs; preserve audit references and deletion tombstones |
-| App preferences | UI preferences, model settings | IndexedDB | Sync only settings needed across devices | Version the schema; exclude device-specific settings where appropriate |
-| Provider credentials | CoinGecko user key, OAuth tokens, session cookies | Existing per-device/session storage or secure server-side credential store if ever required | Never include in ordinary sync payloads or user JSON exports | Secrets must not be logged or exposed in URLs |
-| Shared public observations | Quotes, observed price history, annual CPI | Read-through local cache | `MARKET_DATA_DB` once for all users | Preserve source, observed time, fetch time, unit, quality, and policy version |
-| Derived calculations | Current plan preview, charts, simulation outputs not explicitly saved | Recompute locally | Do not sync by default | Save only when the user explicitly creates a history snapshot |
+| Data                       | Examples                                                                               | Local storage                                                                               | Cloud storage                                                | Rules                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Personal profile           | Age, horizon, salary, contribution rate, goals, risk inputs                            | IndexedDB                                                                                   | `USER_DATA_DB` only after sync opt-in                        | Treat as sensitive; validate and minimize fields                              |
+| Saved user records         | Recommendation snapshots, portfolio versions, transactions, corrections, manual prices | IndexedDB                                                                                   | `USER_DATA_DB` for signed-in users                           | Stable record IDs; preserve audit references and deletion tombstones          |
+| App preferences            | UI preferences, model settings                                                         | IndexedDB                                                                                   | Sync only settings needed across devices                     | Version the schema; exclude device-specific settings where appropriate        |
+| Provider credentials       | CoinGecko user key, OAuth tokens, session cookies                                      | Existing per-device/session storage or secure server-side credential store if ever required | Never include in ordinary sync payloads or user JSON exports | Secrets must not be logged or exposed in URLs                                 |
+| Shared public observations | Quotes, observed price history, annual CPI                                             | Read-through local cache                                                                    | `MARKET_DATA_DB` once for all users                          | Preserve source, observed time, fetch time, unit, quality, and policy version |
+| Derived calculations       | Current plan preview, charts, simulation outputs not explicitly saved                  | Recompute locally                                                                           | Do not sync by default                                       | Save only when the user explicitly creates a history snapshot                 |
 
 The full export should include all personal data needed to reconstruct the user's workspace, including profile and settings if the user chooses them. It should include `schemaVersion`, `exportedAt`, record IDs, currency/unit declarations, portfolio versions, and data provenance. Exclude provider API keys, login tokens, cookies, transient caches, and any server secrets.
 
@@ -187,14 +187,14 @@ D1 encrypts data at rest and uses TLS in transit, with encryption keys managed b
 
 Current published limits checked on 2026-09-26:
 
-| Service | Current free allowance relevant to Synthora | Design implication |
-| --- | --- | --- |
-| Cloudflare Pages/Workers | 100,000 dynamic Worker/Pages Function requests per day; 10 ms CPU per request on Workers Free. Static asset requests are free and unlimited. | Keep API work small, batch sync calls, measure CPU, and allow local-only use when functions are unavailable. |
-| Cloudflare D1 | 5 million rows read/day, 100,000 rows written/day, 5 GB total account storage, 500 MB max per Free database, seven-day Time Travel. Exceeding daily limits causes D1 queries to fail until reset. | Use indexed user/asset keys, debounce writes, cap history retention intentionally, and surface degraded sync without losing local changes. |
-| Cloudflare R2 Standard | 10 GB-month storage, 1 million Class A and 10 million Class B operations/month; no egress charge. | Suitable for small scheduled exports if measured snapshots and retention stay within the cap. |
-| Firebase Firestore | 1 GiB stored data; 50,000 reads/day; 20,000 writes/day and deletes/day; 10 GiB/month transfer. Backups and point-in-time recovery require billing. | Credible alternate managed database, but it adds a second provider and backup features are not free. |
-| Supabase Free | 500 MB database and 5 GB egress in current billing docs. Low-activity Free projects may be paused after seven days. | Strong Postgres/auth option, but idleness is a real fit risk for a small, intermittent audience. |
-| Google Drive / OneDrive app folder | File data consumes the user's own provider storage quota; APIs have OAuth, consent, rate limits, and user deletion/revocation behavior. | Reduces Synthora-hosted file storage, but transfers provider setup, account dependency, and some support burden to users. |
+| Service                            | Current free allowance relevant to Synthora                                                                                                                                                       | Design implication                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cloudflare Pages/Workers           | 100,000 dynamic Worker/Pages Function requests per day; 10 ms CPU per request on Workers Free. Static asset requests are free and unlimited.                                                      | Keep API work small, batch sync calls, measure CPU, and allow local-only use when functions are unavailable.                               |
+| Cloudflare D1                      | 5 million rows read/day, 100,000 rows written/day, 5 GB total account storage, 500 MB max per Free database, seven-day Time Travel. Exceeding daily limits causes D1 queries to fail until reset. | Use indexed user/asset keys, debounce writes, cap history retention intentionally, and surface degraded sync without losing local changes. |
+| Cloudflare R2 Standard             | 10 GB-month storage, 1 million Class A and 10 million Class B operations/month; no egress charge.                                                                                                 | Suitable for small scheduled exports if measured snapshots and retention stay within the cap.                                              |
+| Firebase Firestore                 | 1 GiB stored data; 50,000 reads/day; 20,000 writes/day and deletes/day; 10 GiB/month transfer. Backups and point-in-time recovery require billing.                                                | Credible alternate managed database, but it adds a second provider and backup features are not free.                                       |
+| Supabase Free                      | 500 MB database and 5 GB egress in current billing docs. Low-activity Free projects may be paused after seven days.                                                                               | Strong Postgres/auth option, but idleness is a real fit risk for a small, intermittent audience.                                           |
+| Google Drive / OneDrive app folder | File data consumes the user's own provider storage quota; APIs have OAuth, consent, rate limits, and user deletion/revocation behavior.                                                           | Reduces Synthora-hosted file storage, but transfers provider setup, account dependency, and some support burden to users.                  |
 
 Sources: [Pages Functions pricing](https://developers.cloudflare.com/pages/functions/pricing/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), [R2 pricing](https://developers.cloudflare.com/r2/pricing/), [Firestore quotas](https://firebase.google.com/docs/firestore/quotas), [Supabase billing](https://supabase.com/docs/guides/platform/billing-on-supabase), and [Supabase inactivity pause policy](https://supabase.com/docs/guides/platform/free-project-pausing).
 
@@ -286,16 +286,16 @@ Before enabling cloud sync for all users, verify these scenarios in automated an
 
 ## 13. Risk register
 
-| Risk | Mitigation |
-| --- | --- |
-| User clears site data before enabling sync/export | Promote export, explain device-only storage, and make opt-in sync easy to find. |
-| A sync conflict silently loses a transaction or correction | Stable IDs, append-only ledger events, server revisions, tombstones, and explicit conflict recovery. |
-| Shared caching violates a provider's terms | Review redistribution, retention, attribution, and rate limits before central persistence; use an approved source where necessary. |
+| Risk                                                         | Mitigation                                                                                                                           |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| User clears site data before enabling sync/export            | Promote export, explain device-only storage, and make opt-in sync easy to find.                                                      |
+| A sync conflict silently loses a transaction or correction   | Stable IDs, append-only ledger events, server revisions, tombstones, and explicit conflict recovery.                                 |
+| Shared caching violates a provider's terms                   | Review redistribution, retention, attribution, and rate limits before central persistence; use an approved source where necessary.   |
 | Free-tier quota exhaustion interrupts sync or market refresh | Preserve local data, queue writes, reuse shared data, alert before caps, and document paid/migration options without requiring them. |
-| Cloud account or OAuth provider is unavailable/revoked | Maintain local mode and versioned JSON exports; show reconnection state; never delete the local copy on sign-out. |
-| D1 location/privacy expectations do not fit target users | Decide placement before creating production databases and disclose what is stored where. |
-| E2E encryption key is lost | Do not promise E2E until recovery is designed; if introduced, explain that loss of the recovery secret may make data unrecoverable. |
-| Backup exists but cannot be restored | Test restores on a schedule and preserve migration compatibility for backup schema versions. |
+| Cloud account or OAuth provider is unavailable/revoked       | Maintain local mode and versioned JSON exports; show reconnection state; never delete the local copy on sign-out.                    |
+| D1 location/privacy expectations do not fit target users     | Decide placement before creating production databases and disclose what is stored where.                                             |
+| E2E encryption key is lost                                   | Do not promise E2E until recovery is designed; if introduced, explain that loss of the recovery secret may make data unrecoverable.  |
+| Backup exists but cannot be restored                         | Test restores on a schedule and preserve migration compatibility for backup schema versions.                                         |
 
 ## 14. Reusable implementation prompts
 
@@ -306,7 +306,7 @@ Use one prompt at a time. The shared preamble applies to every phase prompt belo
 ```text
 You are the senior engineer implementing one phase of the Synthora data persistence and sync plan. Read README.md, docs/data-persistence-and-sync-plan.md, and the existing documentation/code directly relevant to this phase before editing.
 
-Synthora is a browser-first Persian RTL investment-planning app deployed with Cloudflare Pages Functions. Personal profile/history/portfolio data currently uses localStorage; D1 currently stores API-session and quota tables; public market/history endpoints call external providers. The financial model must preserve observed-data provenance, missing history gaps, and auditability.
+Synthora is a browser-first, Persian-first investment-planning app deployed with Cloudflare Pages Functions. Personal profile/history/portfolio data currently uses localStorage; D1 stores API-session and quota tables plus shared provider cooldown and response-cache state; public market/history endpoints call external providers. The response cache is not a canonical market-history store. The financial model must preserve observed-data provenance, missing history gaps, and auditability.
 
 Keep the work within the named phase. Do not add paid services or new public market providers. Do not sync API keys, OAuth credentials, cookies, or server secrets. Do not silently overwrite user data, invent market observations, or change financial formulas. Keep technical docs in English and user-facing strings Persian/RTL. Before implementation, summarize the relevant current behavior and a small change plan. Then implement only this phase, add focused coverage, run the relevant checks, and report changed files, migration/rollback steps, results, and known risks. Stop before beginning the next phase.
 ```
@@ -316,7 +316,7 @@ Keep the work within the named phase. Do not add paid services or new public mar
 ```text
 Phase 0: Complete the decision and data-inventory work in docs/data-persistence-and-sync-plan.md. Do not edit application code.
 
-Inspect every localStorage/sessionStorage key, user-data import/export path, portfolio version/correction model, API session and quota table, market/inflation cache, and market/history endpoint. Produce a field-level table classifying each item as personal, shared public observation, derived/transient, device-only credential, or server secret. Identify migration risks and provider terms/redistribution checks required before shared market persistence.
+Inspect every localStorage/sessionStorage key, user-data import/export path, portfolio version/correction model, API session/quota/cooldown/cache table, browser and upstream market/inflation cache, and market/history/FX endpoint. Produce a field-level table classifying each item as personal, shared public observation, derived/transient, device-only credential, or server secret. Identify migration risks and provider terms/redistribution checks required before canonical shared market persistence.
 
 Write a short ADR that recommends one initial sign-in method, local-only default, D1 sync scope, user-data retention/deletion behavior, database placement questions, and proposed recovery targets. Mark any decision that needs product-owner input instead of silently choosing it. Link the ADR from the main plan or add it under docs/.
 ```
@@ -344,7 +344,7 @@ Keep missing history missing. Never turn a stale quote into a current valuation.
 ### Prompt 3 — Identity and private D1 schema
 
 ```text
-Phase 3: Add the selected account identity method from the approved ADR and create private user-data storage. Keep API_USAGE_DB for existing session/quota behavior and use the planned USER_DATA_DB binding for personal records.
+Phase 3: Add the selected account identity method from the approved ADR and create private user-data storage. Keep API_USAGE_DB for existing API-session, route-quota, provider-budget, cooldown, and response-cache behavior; use the planned USER_DATA_DB binding for personal records.
 
 Validate identity tokens on the server and derive user_id only from the authenticated session. Create versioned tables for account mapping, profile/preferences, recommendation snapshots, portfolio transactions/versions, sync revisions, deletion state, and any approved backup metadata. Use parameterized queries, same-origin/CSRF defenses, secure HttpOnly cookies, payload limits, per-account limits, and structured errors. Do not log personal payloads.
 

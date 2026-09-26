@@ -2,6 +2,8 @@
 
 Branch: `feat/dashboard-trust-hardening`
 
+> Historical audit snapshot. This records findings and browser evidence from the named branch and review context. It does not certify the current checkout, release, or deployment; verify current behavior in source and tests.
+
 ## Audit scope
 
 - Application shell, navigation, responsive behavior, and accessibility
@@ -11,7 +13,7 @@ Branch: `feat/dashboard-trust-hardening`
 - Planning, simulation, Monte Carlo, backtesting, and historical comparison
 - Charts, empty/loading/error states, and misleading financial representations
 
-## Resolved checklist
+## Items marked complete during that review
 
 - [x] Dashboard is a command center rather than a landing-only page.
 - [x] Summary cards distinguish no portfolio, incomplete valuation, and usable valuation.
@@ -46,7 +48,7 @@ Branch: `feat/dashboard-trust-hardening`
 - [x] Malformed or structurally invalid local JSON is surfaced as a visible safe-mode warning.
 - [x] UI input bounds and engine-facing clamps now agree for the planning controls.
 
-## Important product decisions
+## Product decisions recorded during that review
 
 1. A portfolio value or profit/loss is shown as unavailable when any held asset lacks a valid price. Showing a partial total as a complete total would be misleading.
 2. A historical comparison is an indexed performance comparison with the first observed value set to 100. It is not presented as a currency-value comparison when cash-flow alignment is unavailable.
@@ -54,7 +56,7 @@ Branch: `feat/dashboard-trust-hardening`
 4. Contribution consistency is described as evidence of recorded deposits/opening/buy events. The app does not claim to observe contributions that were never entered into the local ledger.
 5. The market cache preference is local-only. When disabled, a failed request results in unavailable data instead of silently using stale browser data.
 
-## Remaining limitations
+## Limitations recorded during that review
 
 - The market API remains dependent on public upstream sources and network availability.
 - Fixed-income historical comparison remains unavailable until the market API supplies a historical series.

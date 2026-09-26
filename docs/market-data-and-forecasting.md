@@ -7,8 +7,8 @@ This application separates market observation from portfolio valuation and plann
 The Cloudflare market function reads configured public sources and returns normalized quotes:
 
 - Domestic dollar, gold, and silver: TGJU, Bonbast, and the Navasan public data mirror.
-- Global crypto reference prices: CoinGecko USD prices can be converted through the aggregated domestic dollar quote. Binance BTCUSDT/ETHUSDT quotes are recorded as USDT-denominated provider results but excluded from Toman aggregation until a verified USDT/TOMAN rate is available; USDT is not assumed to equal USD cash.
-- Global metals: Metals.live plus Yahoo Finance futures charts for platinum, palladium, and copper; ChartGoldPrice is a cold standby for gold and silver when primary coverage is degraded or conflicted.
+- Global crypto reference prices: CoinGecko and CoinMarketCap USD quotes can be converted through the aggregated domestic dollar quote. CoinMarketCap is an optional, server-keyed source with a 15-minute cache and 15,000-request monthly ceiling. Binance BTCUSDT/ETHUSDT quotes are recorded as USDT-denominated provider results but excluded from Toman aggregation until a verified USDT/TOMAN rate is available; USDT is not assumed to equal USD cash.
+- Global metals: Metals.live plus ChartGoldPrice as a cold standby for gold and silver when primary coverage is degraded or conflicted. Bank of Russia daily precious-metal reference prices are shown separately in RUB per gram. Yahoo Finance market and history requests stay disabled unless an operator explicitly confirms the applicable license.
 - Tehran market reference: the public TSETMC index endpoint, exposed as an index-point reference rather than a tradeable portfolio holding.
 - Fixed income: the configured fund-provider page.
 
@@ -20,7 +20,7 @@ Independent provider calls run concurrently with bounded timeouts. Domestic fall
 
 Quote quality is conservative. A single source is visible with low confidence. Two sources are accepted only when they agree under a calibrated class-specific policy. Three or more sources use the median and median absolute deviation (MAD) to reject outliers. Agreement thresholds have not yet been calibrated against a representative sample, so the current policy treats any remaining disagreement as a conflict. Conflicted prices have no value and are excluded from portfolio valuation. The policy version and calibration state travel with the quote.
 
-No new provider has been added in this implementation. Before enabling one, review its current API terms, display and redistribution rights, quotas, and freshness expectations. Global equities, Iran ticker search, automatic inflation, and BYOK remain out of scope until their data and key-handling contracts are verified.
+The app also exposes `/api/fx?quotes=USD,RUB,CNY` for dated conversion references. USD/Toman is derived from the accepted Iran-market dollar quote; RUB uses the Bank of Russia daily rate, and CNY uses the CFETS observation through Frankfurter. These rates and the Bank of Russia metals series are daily references, not Iranian live retail quotes. Selected provider responses use a shared D1 cache and request coordinator: ordinary sources have a minimum 60-second interval, CoinGecko uses a six-minute cache, CoinMarketCap uses a 15-minute cache, and daily FX sources use a 24-hour cache. Provider `Retry-After` values extend cooldowns. Stale cache entries are marked; stale quote inputs are excluded from current quote aggregation. This cache is operational coordination, not a canonical durable market-history dataset. No new crawling or scraping source was added. Review terms, display and redistribution rights, quotas, attribution, and freshness before enabling another source. Global equities and Iran ticker search remain out of scope until their data contracts are verified. CoinGecko user-key support is available as described in the [Cloudflare API guide](cloudflare-market-api.md); other user-supplied provider keys are not supported. `/api/inflation` supplies an annual World Bank CPI reference, which remains distinct from an investor-selected scenario assumption.
 
 ## Portfolio behavior
 
@@ -32,23 +32,10 @@ Simulation accepts all catalog planning assets plus Tether, with newly added ass
 
 Backtests use observed monthly price history only. Modeled fallback returns are never presented as historical data. A selected asset with missing or discontinuous observations makes the requested backtest unavailable, and the UI identifies the missing coverage rather than filling it with assumptions. Long crypto backtests may therefore be unavailable when the provider does not offer enough historical data.
 
-## Forecasting and Hugging Face
+## Hosted models and prediction boundary
 
-Hugging Face models and datasets can support research and an explicitly labeled forecasting experiment, but they are not authoritative quote sources. Forecast output must never replace a current market quote, a transaction price, or the portfolio valuation used for profit/loss.
+The production app does not call Hugging Face or another hosted model to predict asset prices. It does not require a hosted-model token or present model output as a price prediction. The versioned return and risk assumptions in `src/engine.js`, observed historical inputs, Monte Carlo paths, and goal projections are planning scenarios; their outputs must not replace a current market quote, transaction price, or portfolio valuation. A hosted forecasting feature would change the product's stated boundary and needs a separate product and model review before it is proposed as user-facing behavior.
 
-The current production path does not call a hosted model, require a hidden token, or present model output as a prediction. Return and risk fallback assumptions carry the `ir-planning-v2` version and can be overridden per run without changing the saved defaults. Historical covariance uses only overlapping observed monthly returns; short paired samples shrink correlations toward zero, and imputed returns never enter covariance.
+The existing Gaussian Monte Carlo baseline remains available. Additional versioned methods include 12-month-half-life EWMA volatility (`mc-ewma-v1`) and a three-month moving-block bootstrap (`mc-block-bootstrap-v1`). Walk-forward comparisons use a 24-month training window and require at least 24 out-of-sample forecasts before enabling either method. Otherwise, the baseline stays active. These are method-selection gates, not a claim that the models predict future returns.
 
-The existing Gaussian Monte Carlo baseline remains available. Additional versioned methods include 12-month-half-life EWMA volatility (`mc-ewma-v1`) and a three-month moving-block bootstrap (`mc-block-bootstrap-v1`). Walk-forward comparisons use a 24-month training window and require at least 24 out-of-sample forecasts before enabling either method. Otherwise, the baseline stays active. These are implementation gates, not a claim that the models predict future returns.
-
-Simulation and backtest run only after the analysis view is opened and execute in a browser Web Worker. Navigation and changed planning inputs cancel stale work. Goal planning uses the same simulation model for success probability, P10/P50/P90, inflation-adjusted target, and a binary search for required monthly contributions. Goal projections use planning assets; unsupported personal holdings are shown as excluded.
-
-A future Hugging Face integration should be optional, server-side, rate-limited, and return:
-
-- model and revision;
-- input history window and timestamp;
-- forecast horizon;
-- point estimate and uncertainty interval;
-- backtest error metrics;
-- a clear “scenario, not a guarantee” label.
-
-The browser should use such output only in a separate analysis panel. It must not write forecasts into the immutable portfolio ledger or use them as current prices.
+Simulation and backtest run only after the analysis view is opened and execute in a browser Web Worker. Navigation and changed planning inputs cancel stale work. Goal planning uses the same simulation model for success probability, P10/P50/P90, an inflation-adjusted target, and a binary search for required monthly contributions. Goal projections use planning assets; unsupported personal holdings are shown as excluded.

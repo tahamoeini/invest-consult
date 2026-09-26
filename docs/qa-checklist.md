@@ -1,6 +1,8 @@
 # Synthora — final QA checklist
 
-## Automated checks
+> Historical QA snapshot. The results below describe the earlier dashboard-hardening review and its Cloudflare preview; they are not current test or deployment status. Use the commands in `package.json` and repeat the relevant browser checks for the current release.
+
+## Automated checks recorded at that review
 
 - `npm run check` — passed
 - `npm test` — passed
@@ -8,7 +10,7 @@
 - Direct browser smoke test on the corrected Cloudflare preview — passed for all seven view transitions, plan generation, Monte Carlo output, backtest output, history comparison, portfolio registration, stock entry, allocation drawer open/close, and market snapshot rendering.
 - Settings transfer status is rendered in the Settings view, so export/import results are visible without navigating to History.
 
-## Scenario matrix
+## Scenario matrix recorded at that review
 
 | Scenario                | Expected behavior                                                                                       | Coverage                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
@@ -23,7 +25,7 @@
 | Broken API response     | Cache fallback or unavailable state is used; no synthetic quote is created.                             | `loadMarket()` + existing API behavior                  |
 | Large portfolio dataset | Rendering is bounded to visible ledger/audit rows; series is monthly rather than transaction-per-pixel. | Existing rendering limits + monthly `portfolioSeries()` |
 
-## Manual preview checks before merge
+## Preview checklist recorded for that review
 
 1. Open the PR preview with an empty browser profile.
 2. Build a plan, reload, and verify the dashboard still shows the saved plan amount.
@@ -34,6 +36,6 @@
 7. Test desktop, tablet, and mobile widths; verify no horizontal scroll is introduced.
 8. Verify keyboard focus can reach navigation, range buttons, forms, disclosure panels, and drawer close.
 
-## Regression note
+## Regression note from that review
 
 The original PR preview had a missing closing `</section>` after the Plan workspace. That nested Simulation, History, Portfolio, Assets, and Settings inside the hidden Plan view. The corrected branch closes the Plan view before its sibling sections; the new Cloudflare deployment was verified directly in the browser. The desktop shell also explicitly keeps the sidebar aligned and scrollable during long views. The older immutable preview URL may continue to show the broken commit.

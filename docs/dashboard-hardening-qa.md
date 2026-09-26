@@ -2,7 +2,9 @@
 
 Branch: `feat/dashboard-trust-hardening`
 
-## Completed local checks
+> Historical QA snapshot. The checks and preview statuses below describe review work on the named branch, not the current `main` branch or current deployment. Re-run the applicable checks for a new release; see [the documentation index](README.md).
+
+## Checks recorded at that review
 
 - [x] `npm run check` — passed.
 - [x] `npm test` — 29/29 passed.
@@ -25,7 +27,7 @@ Branch: `feat/dashboard-trust-hardening`
 | API failure            | Cache policy or unavailable state is explicit; no synthetic market quote is created.                        | Existing `loadMarket()` path and diagnostics review          | Rerun on preview      |
 | Navigation             | Dashboard, plan, simulation, history, portfolio, assets, and settings remain sibling views.                 | Dashboard contract test                                      | Rerun on preview      |
 
-## Manual preview gate before merge
+## Preview checklist recorded for that review
 
 1. Open the PR preview with an empty browser profile and visit every view.
 2. Build a plan, edit salary/contribution/risk inputs, and confirm the result updates without adding a history row until the plan is saved.
@@ -44,7 +46,6 @@ Branch: `feat/dashboard-trust-hardening`
 - [x] Large ledger/audit lists remain bounded to the existing visible-row limits.
 - [ ] Capture browser profiler and mobile paint/scroll evidence on the deployed PR preview before merge.
 
-## Current limitation
+## Limitation recorded at that review
 
-The browser-control session used for this branch repeatedly timed out before opening a tab, so new screenshots and live interaction evidence could not be captured in this work session. The branch is intentionally not marked merge-ready until the manual preview gate above is run against the deployed PR preview.
-{��뗸��ۍ���zw�u�m:�]<m�|}�
+The browser-control session for this review repeatedly timed out before opening a tab, so new screenshots and live interaction evidence could not be captured in that session. The preview status above is historical. Later review notes are recorded separately in [the fintech dashboard audit](fintech-dashboard-audit.md) and [the QA checklist](qa-checklist.md); neither should be read as current deployment status.

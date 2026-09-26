@@ -4,14 +4,16 @@
 
 It is a mathematical decision-support engine. It does not use an AI model to predict markets, make promises, or generate opaque recommendations.
 
+For the maintained documentation map and the status of historical reviews and proposals, see the [documentation index](docs/README.md). Project attribution is in [CREATOR.md](CREATOR.md).
+
 ## Product behavior
 
-- Persian right-to-left interface using Vazirmatn.
+- Persian is the default and base interface, using Vazirmatn. Settings also offer English, Russian, and Chinese, but those catalogs are incomplete; untranslated entries fall back to the Persian base. Do not treat the alternate locales as full localization. The locale affects translated text, page direction, number formatting, and default display currency. Stored values and model calculations remain in toman.
 - English source code, comments, README, and technical documentation.
 - A catalog separates priceable instruments from eight decision sleeves: liquidity, fixed income, gold, FX, Iran equity, global equity, crypto, and commodities. Recommendations still use the established fixed-income, gold, currency, and silver categories until other sleeves have adequate data or explicit versioned assumptions.
-- All Iranian currency inputs, market values, calculations, and exports use تومان. Legacy browser data and legacy exports are converted once on import; gold and silver quantities remain grams.
-- Salary, profile inputs, recommendation snapshots, and history remain in the browser's local storage.
-- History and the personal portfolio ledger can be exported as a versioned JSON file. Imported recommendation records merge by timestamp; an imported portfolio ledger replaces the current one only after confirmation.
+- All Iranian currency inputs, market values, calculations, and exports use تومان. Display-currency conversion changes rendered values only. Legacy browser data and legacy exports are converted once on import; gold and silver quantities remain grams.
+- Salary, profile inputs, recommendation snapshots, model assumptions, portfolio records, and interface preferences remain in browser storage. They are not sent to market or reference-data APIs.
+- The current versioned JSON transfer covers saved recommendation history and the personal portfolio ledger; it is not a full backup of profile inputs, model settings, interface preferences, caches, or credentials. Imported recommendation records merge by timestamp; an imported portfolio ledger replaces the current one only after confirmation.
 - A personal portfolio tracker has one primary dated transaction-entry form and a separate advanced ledger for transfers, corrections, and cash flows. Manual prices are price history only; they never create transactions.
 - Portfolio values are calculated from holdings at a selected date and the best available immutable market-history point. Missing history remains missing rather than being backfilled.
 - Corrections and tracking restarts are versioned and audited. The interface confirms before a change can affect historical portfolio calculations.
@@ -40,13 +42,18 @@ src/portfolio.js           Portfolio ledger, versioning, valuation, and performa
 src/history.js             Versioned recommendation and portfolio export/import validation
 functions/api/market.js    Cloudflare Pages Function for selected-asset quotes and quality aggregation
 functions/api/history.js   Cloudflare Pages Function for observed historical data
+functions/api/fx.js        Cloudflare Pages Function for dated FX and metal references
 functions/api/session.js   Signed, HttpOnly browser-session bootstrap
-functions/api/inflation.js World Bank annual CPI inflation fallback
-functions/api/migrations/ D1 session quota and platform-key usage tables
-content/fa.json            Persian UI copy
-tests/engine.test.js       Core model and portfolio tests
+functions/api/inflation.js World Bank annual CPI reference
+functions/api/migrations/ D1 sessions, quotas, cooldowns, and provider-response cache
+src/ui/preferences.js     Local locale, display-currency, and theme preferences
+src/ui/localization.js    Locale catalog merge and Persian fallback
+content/*.json            Persian base copy and partial en/ru/zh catalogs
+tests/engine.test.js      Core model and portfolio tests
 tests/financial-model.test.js Seeded quantitative regression tests
-tests/history-api.test.js  History API and dated copper conversion tests
+tests/history-api.test.js History API and dated copper conversion tests
+tests/market-expansion.test.js Market and provider expansion coverage
+tests/localization.test.js Locale catalog merge and Persian fallback coverage
 ```
 
 The calculation engine is isolated from the DOM and network layer. This keeps the model testable and makes it possible to replace the UI or data providers without changing the formulas.
@@ -65,18 +72,13 @@ The tracker reports current value, net invested amount, profit/loss, cash-flow-a
 
 ## Market data design
 
-The Pages Functions use independent public providers:
+The same-origin `/api/market`, `/api/history`, `/api/fx`, and `/api/inflation` routes use public sources for current quotes and dated reference data. The [market-data guide](docs/market-data-and-forecasting.md) is the maintained provider list and describes source units, conversions, observation times, response caches, and quality rules.
 
-- Provider A: TGJU profile pages.
-- Provider B: Bonbast public data request.
-- Provider C: the public Navasan data mirror.
-- Auxiliary metal source: global gold and silver reference prices converted to تومان with the aggregated dollar quote.
-
-Each quote distinguishes direct from derived price, upstream observation time from retrieval time, and source provenance. Retrieval time is never presented as the market observation time. Binance BTCUSDT/ETHUSDT values are not converted as USD; they stay out of Toman aggregation until a verified USDT/TOMAN rate is available. Requests can select allow-listed assets, and conversion dependencies are fetched server-side. Providers run concurrently with bounded timeouts and fallback sources are called only when needed. The endpoint returns partial data when some sources fail.
+Each quote distinguishes a direct from a derived price, upstream observation time from retrieval time, and source provenance. Retrieval time is never presented as the market observation time. Binance BTCUSDT/ETHUSDT values are not converted as USD; they stay out of Toman aggregation until a verified USDT/TOMAN rate is available. Requests can select allow-listed assets, and conversion dependencies are fetched server-side. Providers run concurrently with bounded timeouts and fallback sources are called only when needed. The endpoint returns partial data when some sources fail.
 
 A single source is shown with low confidence. Quotes are grouped by observation time before comparison; simultaneous values use median/MAD outlier screening and class-specific agreement thresholds. Conflicted prices are excluded from portfolio valuation. The response includes policy version, source counts, values, and response-time diagnostics; its initial interactive budget is 3.5 seconds.
 
-The application does not replace a failed source with a stale cached quote or a fabricated value. The browser may display the last complete response as a clearly labelled cache fallback when the endpoint itself is unavailable.
+The server's D1 provider-response cache coordinates selected upstream requests; it is not a canonical historical-observation store. Stale provider responses are marked and excluded from current quote aggregation. The browser may show a prior market value separately as a last-known value with its observation time and age. That browser fallback can be disabled in Settings; when disabled, an API failure leaves current market data unavailable.
 
 Free public sources can be rate-limited, delayed, blocked, or change their response shape. The endpoint is therefore deliberately defensive and treats source coverage as part of the result.
 
@@ -106,15 +108,14 @@ The default assumptions are intentionally visible in `src/engine.js` and are not
 
 ## Local development
 
-The static page can be opened directly, but `/api/market` requires the Pages Functions runtime.
+Serve the static app over HTTP; opening `index.html` with `file://` does not support its module and copy-catalog requests. Live `/api/*` requests require the Pages Functions runtime and a local D1 binding plus a local-only session signing secret. The [Cloudflare setup guide](docs/cloudflare-market-api.md#local-pages-preview) describes that setup. Without those bindings, security-protected API routes return `api-security-not-configured`.
 
 ```bash
 npm install
-npm run fix
 npm run format:check
 npm run lint
 npm run check
-npx wrangler pages dev . --compatibility-date=2026-09-18
+npx wrangler pages dev . --compatibility-date=2026-09-18 --d1 API_USAGE_DB=<database-id>
 ```
 
 Open the local URL printed by Wrangler.
@@ -125,7 +126,7 @@ Cloudflare Pages Functions run server-side code at the edge, so the static page 
 
 1. Open **Workers & Pages** in Cloudflare.
 2. Choose **Create application** and select **Pages**.
-3. Connect `tahamoeini/invest-consult`.
+3. Connect `tahamoeini/synthora`.
 4. Set the production branch to `main`.
 5. Use these build settings:
    - Framework preset: `None`
@@ -139,9 +140,9 @@ Cloudflare Pages Functions run server-side code at the edge, so the static page 
 https://YOUR-PAGES-DOMAIN.pages.dev/api/market
 ```
 
-The response should contain `updatedAt`, `assets`, `funds`, `history`, `diagnostics`, and `sources`. First visit must obtain a signed `/api/session` cookie. If the D1 binding or signing secret is missing, the API returns a configuration error instead of serving unmetered provider calls.
+The response should contain `updatedAt`, `assets`, `funds`, `history`, `catalog`, `diagnostics`, and `sources`. First visit must obtain a signed `/api/session` cookie. If the D1 binding or signing secret is missing, the API returns a configuration error instead of serving unmetered provider calls.
 
-If the dashboard requires a non-empty build command, use `npm run format:check && npm run lint && npm test && npm run check`. Do not put `wrangler pages deploy` inside the Pages build command.
+Do not put `wrangler pages deploy` inside the Pages build command. `npm run fix` rewrites formatting across the repository and runs automatic lint fixes; use it only when you intend a repository-wide rewrite.
 
 ## Verification checklist
 

@@ -1,6 +1,6 @@
 # Cloudflare market API setup
 
-The market, history, inflation, and FX endpoints require a Cloudflare Pages Functions deployment. API requests are session-limited; the browser portfolio, recommendation history, and user API key are not stored in D1.
+The market, history, inflation, and FX endpoints require a Cloudflare Pages Functions deployment. API requests are session-limited; the browser portfolio, recommendation history, and user API key are not stored in D1. D1 also holds shared provider cooldown state and selected public provider-response cache entries; those caches are not user records or canonical historical price storage.
 
 ## 1. Create and bind the D1 database
 
@@ -25,10 +25,10 @@ Do not place these values in `app.js`, HTML, source control, build variables exp
 
 Optional, under **Variables** (not Secrets):
 
-| Variable                           | Default | Allowed behavior                                                                                                                   |
-| ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `COINGECKO_PLATFORM_MONTHLY_LIMIT` | `8000`  | Monthly request ceiling for the platform key. Values are clamped to 1–9,500 to leave headroom under the published Demo plan limit. |
-| `YAHOO_METALS_LICENSE_CONFIRMED`   | unset   | Set to the exact string `true` only after confirming that the intended Yahoo metals data use is permitted.                         |
+| Variable                           | Default | Allowed behavior                                                                                                                                                                            |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `COINGECKO_PLATFORM_MONTHLY_LIMIT` | `8000`  | Application-level monthly request ceiling for the platform key. Values are clamped to 1–9,500 to leave headroom under CoinGecko's published 10,000-call Demo plan cap (checked 2026-09-26). |
+| `YAHOO_METALS_LICENSE_CONFIRMED`   | unset   | Set to the exact string `true` only after confirming that the intended Yahoo metals data use is permitted.                                                                                  |
 
 The platform key is used only when no valid user key is supplied. Once its D1 counter reaches the configured ceiling, requests stop using it until the next month.
 
@@ -42,7 +42,7 @@ Current server-side limits are:
 - `/api/history`: 24 requests per hour per signed session.
 - `/api/inflation`: 6 requests per day per signed session.
 - `/api/fx`: 60 requests per hour per signed session.
-- Platform CoinMarketCap key: 15,000 requests per month maximum.
+- Platform CoinMarketCap key: 15,000 requests per month maximum, enforced by this application.
 - Platform CoinGecko key: 8,000 requests per month by default, capped at 9,500 by the application.
 
 The browser also reuses market responses for 90 seconds and history responses for one hour. Clearing cookies creates a new browser session, so per-session quotas are not an identity system; the shared monthly provider ceiling protects the platform key from aggregate overuse.
@@ -52,6 +52,16 @@ The browser also reuses market responses for 90 seconds and history responses fo
 Users can add a [CoinGecko Demo key](https://support.coingecko.com/hc/en-us/articles/21880397454233-User-Guide-How-to-sign-up-for-CoinGecko-Demo-API-and-generate-an-API-key) under **Settings → Market sources**. The app sends it to the Pages Function in the `X-CoinGecko-API-Key` header; the function forwards it to CoinGecko in its required header and never places it in the URL or API response. User keys are not written to D1 or included in exported portfolio data.
 
 The user chooses whether the key stays only in the open page, in session storage until the browser session ends, or in local storage on that device. The default is session storage. A key saved on the device is readable by JavaScript running on that same origin, so users should only choose that option on a device and browser profile they control.
+
+## Local Pages preview
+
+This repository does not commit account-specific Wrangler configuration. For a local preview with working API routes:
+
+1. Create a local `.dev.vars` file containing an `API_SESSION_SIGNING_SECRET` with at least 32 random characters. Use a local-only value; never copy the production secret. Keep `.dev.vars` out of source control.
+2. Bind a local D1 database as `API_USAGE_DB`, then apply `0001_api_quotas.sql` and `0002_provider_coordination.sql` in numeric order. For Wrangler's migration command, the local Wrangler config must map that binding and set `migrations_dir` to `functions/api/migrations`; run `npx wrangler d1 migrations apply API_USAGE_DB --local` against that local configuration.
+3. Start the Pages preview with `npx wrangler pages dev . --compatibility-date=2026-09-18 --d1 API_USAGE_DB=<local-database-id>`. Use the same local database ID mapped in the Wrangler config; Wrangler uses local persistence by default. Do not add `--remote` or use a local preview command to apply migrations to production.
+
+If the D1 binding, local schema, or signing secret is absent, security-protected API routes return `api-security-not-configured` or a database error. The static interface can still be inspected, but market and reference-data requests will not work. See Cloudflare's [Pages binding guide](https://developers.cloudflare.com/pages/functions/bindings/), [local secrets guide](https://developers.cloudflare.com/workers/local-development/environment-variables/), and [D1 Wrangler commands](https://developers.cloudflare.com/d1/wrangler-commands/) for current CLI details.
 
 ## 5. Verify configuration
 
@@ -63,7 +73,7 @@ After deployment, load the app and check these same-origin endpoints:
 - `GET /api/history?assets=gold,dollar&range=1y` should return observed points and coverage details.
 - `GET /api/fx?quotes=USD,RUB,CNY&include=metals` should return source quote records and daily precious-metal references when available. For RUB/CNY rates in Toman, also pass usdToman with the current Toman-per-USD quote from /api/market; otherwise those converted rates stay unavailable.
 
-A `503` response with `api-security-not-configured` means the D1 binding or signing secret is missing. `429` means a session or provider quota was reached. Do not disable the checks to work around either response.
+A `503` response with `api-security-not-configured` means the D1 binding or signing secret is missing or invalid. `429` means a session or provider quota was reached. Do not disable the checks to work around either response.
 
 ## Operational security
 

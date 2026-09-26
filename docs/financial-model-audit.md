@@ -4,6 +4,8 @@
 
 This note records the implemented calculation path, assumptions, and known limits for Synthora's planning model. Outputs describe conditional scenarios from supplied assumptions and observed price history. They are not price targets, forecasts, or investment advice.
 
+`src/engine.js`, `src/analysis.js`, and the current tests are the implementation authority; treat this note as an explanatory guide and verify it against those files before changing model behavior. The numeric comparison near the end is a historical local-run snapshot, not a current release result or expected return.
+
 The browser UI, Worker, and tests share the pure calculation code in `src/engine.js`. `src/analysis.js` selects the simulation method and supplies observed market data. `functions/api/history.js` obtains and normalizes historical prices. The UI in `app.js` displays provenance, assumptions, and unavailable states.
 
 ## Calculation path
@@ -100,7 +102,9 @@ The required reference portfolio is:
 
 The fixture test uses 60 synthetic dated monthly observations for repeatability. It verifies the end-to-end calculation path and is not a substitute for running the same form against current production data sources. Production inputs can differ because of history availability, current fixed-income yield, source coverage, and model method selection.
 
-### Manual interface check and reconstructed before/after
+### Historical UI fallback run and reconstructed comparison
+
+> Historical snapshot: the viewport check and values below describe an earlier local fallback run with no observed joint market history. They document that review only; they are not current release evidence, a controlled one-variable comparison, or an expected outcome.
 
 The Persian RTL interface was manually exercised at a 390-pixel viewport with the reference inputs, nominal/real tabs, model disclosure, cost/turnover rows, and conservative recommendation preview. The local Pages preview's history request failed in this restricted environment, so the run correctly reported Low data quality, zero joint observed months, and configured-return fallbacks. It used the 25% effective fixed-income assumption, quarterly rebalancing, 0.5% buy/sell fees for gold, silver, and copper, and seed 42. These values verify the UI/formula path only; they are not a production-data result or forecast.
 

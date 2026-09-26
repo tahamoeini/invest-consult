@@ -14,24 +14,24 @@ flowchart LR
   Browser --> Worker["Browser Web Worker"]
   Worker --> Domain["Calculation and portfolio modules"]
   Browser -->|same-origin JSON| Routes["Cloudflare Pages Functions"]
-  Routes --> D1["D1 API_USAGE_DB"]
+  Routes --> D1["D1 API_USAGE_DB: sessions, quotas, provider cooldowns and response cache"]
   Routes --> Providers["Market and reference providers"]
 ```
 
 | Layer                                                                | Current responsibility                                                                                |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| index.html, app.js, styles.css                                       | Static Persian RTL interface, browser workflows, local persistence, and API calls                     |
+| index.html, app.js, styles.css                                       | Static Persian-first interface, browser workflows, local persistence, and API calls                   |
 | src/engine.js                                                        | Dependency-free planning, simulation, return-model, and backtest calculations                         |
 | src/analysis.js, src/analysis.worker.js                              | Analysis task selection and background execution in the browser                                       |
 | src/portfolio.js, src/history.js                                     | Versioned ledger, valuation, validation, and portable JSON export/import                              |
 | src/market/                                                          | Shared instrument catalog, observed-history processing, cache age, and quote reconciliation           |
-| src/ui/                                                              | Small UI state, navigation, component, preference, and chart helpers                                  |
+| src/ui/                                                              | UI state, navigation, components, localization, locale/display preferences, and chart helpers         |
 | functions/api/market.js, history.js, inflation.js, fx.js, session.js | Server-side provider access and same-origin JSON routes                                               |
 | functions/api/_security.js                                           | Signed browser-session handling, route quotas, provider request limits, and cached provider responses |
 | functions/api/migrations/                                            | D1 schema migrations; apply in numeric order                                                          |
 | tests/                                                               | Node tests for calculations, data contracts, API routes, portfolio records, and UI helpers            |
 
-The browser keeps personal data in local storage. The D1 binding named API_USAGE_DB stores hashed API-session identifiers, request counters, provider request coordination, and provider response cache entries. It is not the portfolio database. CoinGecko user keys are sent in a request header and may be held in page, session, or device storage according to the user's setting; server provider keys belong in Cloudflare secrets.
+The browser keeps personal data in local storage. The D1 binding named `API_USAGE_DB` stores hashed API-session identifiers, request counters, provider cooldown state, and selected shared provider-response cache entries. That response cache is not a canonical normalized price-history store and is not the portfolio database. CoinGecko user keys are sent in a request header and may be held in page, session, or device storage according to the user's setting; server provider keys belong in Cloudflare secrets.
 
 The API routes are file-based Pages Function handlers. They use standard Request, Response, fetch, and Web Crypto APIs in many places, but they also consume the Cloudflare context.env binding, D1's prepared-statement interface, and Cloudflare-specific cf fetch options. The current server layer is therefore Cloudflare-compatible, but not yet runtime-neutral.
 
@@ -67,8 +67,10 @@ There is no CI/CD workflow in the repository. Keep development and deployment in
 
 ## Documentation authority
 
+See the [documentation index](README.md) for the current owner and status of each project document.
+
 - README.md describes product behavior, model concepts, local commands, and the initial Cloudflare deployment.
 - docs/market-data-and-forecasting.md and docs/financial-model-audit.md hold market-data and calculation invariants.
 - docs/cloudflare-market-api.md describes the current Pages Functions setup.
 - docs/data-persistence-and-sync-plan.md is a research-backed proposal. It does not mean accounts, sync, remote user records, or scheduled market ingestion exist or are approved for implementation.
-- Audit and QA documents record particular reviews. Verify current behavior in source and tests when they disagree with the implementation.
+- Audit and QA documents are historical records of particular reviews, not current release status. Verify behavior in source and tests when they disagree with the implementation.

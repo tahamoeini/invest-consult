@@ -9,6 +9,7 @@ The current product boundary is a static browser app with same-origin market and
 ## Start with the current tree
 
 - Read [README.md](README.md) and [the architecture and portability guide](docs/architecture-and-portability.md) before changing system boundaries.
+- Use [the documentation index](docs/README.md) to distinguish current behavior, implementation guidance, proposals, and historical audit records.
 - For model, market, ledger, API-security, or persistence work, read [the Synthora engineering skill](.agents/skills/synthora-engineering/SKILL.md) and the linked domain documents relevant to that change.
 - Check the working tree before editing. Preserve existing modified and untracked files, including user-authored drafts. Do not reset, clean, or overwrite work outside the requested scope.
 - Audit records in docs may describe a past branch or deployment. Confirm behavior in current source and tests before treating an audit note as current state.
@@ -22,8 +23,8 @@ The current product boundary is a static browser app with same-origin market and
 | Portfolio and saved history | src/portfolio.js, src/history.js                       | Versioned transaction ledger, valuation, validation, and JSON import/export                                     |
 | Market and UI modules       | src/market/, src/ui/                                   | Instrument catalog, observed-history preparation, quote helpers, navigation, state, and SVG charts              |
 | Server routes               | functions/api/                                         | Cloudflare Pages Functions for session security, market data, history, inflation, FX, and provider coordination |
-| D1 schema                   | functions/api/migrations/                              | Ordered SQL migrations for API sessions, quotas, and provider-response coordination                             |
-| Copy and checks             | content/fa.json, tests/, package.json                  | Persian interface copy, Node tests, formatting, lint, and syntax-check scripts                                  |
+| D1 schema                   | functions/api/migrations/                              | Ordered SQL migrations for API sessions, quotas, provider cooldowns, and shared response-cache coordination     |
+| Copy and checks             | content/*.json, tests/, package.json                   | Persian base copy, partial alternate locale catalogs, Node tests, formatting, lint, and syntax-check scripts    |
 
 src/engine.before-audit.mjs is a historical snapshot, not the runtime calculation module.
 
@@ -36,7 +37,7 @@ src/engine.before-audit.mjs is a historical snapshot, not the runtime calculatio
 - Missing or conflicted prices remain unavailable for valuation. Do not silently substitute stale cache values, assumed returns, partial holdings, or synthetic history for observed data.
 - Backtests use observed, continuous history only. Scenario assumptions belong to simulations and must remain labeled as assumptions. Material changes to model assumptions or interpretation require an explicit rationale and appropriate versioning.
 - Keep src/engine.js, portfolio calculations, and shared normalization logic independent of the DOM, network providers, Cloudflare bindings, and storage APIs.
-- Keep user-facing behavior Persian and RTL unless a complete localization change is in scope. content/fa.json is the base copy catalog; other locale files may exist, so verify which catalogs are actually loaded and whether translation coverage is complete before treating a language selector as full localization.
+- Keep Persian as the default and base copy. The application loads partial English, Russian, and Chinese catalogs and falls back to Persian for untranslated entries; preserve this behavior and do not describe the alternate locales as complete localization until coverage is complete.
 - Preserve accessible labels, keyboard interaction, narrow-screen layouts, and explicit empty, loading, error, and unavailable states.
 
 ## Hosting and portability
