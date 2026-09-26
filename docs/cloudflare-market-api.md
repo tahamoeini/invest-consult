@@ -1,15 +1,15 @@
 # Cloudflare market API setup
 
-The market, history, and inflation endpoints require a Cloudflare Pages Functions deployment. Market data requests are session-limited; the browser portfolio, recommendation history, and user API key are not stored in D1.
+The market, history, inflation, and FX endpoints require a Cloudflare Pages Functions deployment. API requests are session-limited; the browser portfolio, recommendation history, and user API key are not stored in D1.
 
 ## 1. Create and bind the D1 database
 
 1. In Cloudflare, open **Workers & Pages**, select the Pages project, then open **Settings → Functions → D1 database bindings**.
 2. Create a D1 database for this project, then add a binding with the exact variable name `API_USAGE_DB`.
-3. Apply [`functions/api/migrations/0001_api_quotas.sql`](../functions/api/migrations/0001_api_quotas.sql) to that database using the D1 console or your normal migration workflow.
+3. Apply every SQL migration in [functions/api/migrations/](../functions/api/migrations/) once, in numeric order. For the current schema, apply 0001_api_quotas.sql first, then 0002_provider_coordination.sql. The first creates session and route-quota tables; the second adds provider cooldown state and the shared provider-response cache.
 4. Add the binding for production and preview environments. Deploy again after changing bindings.
 
-The migration stores a SHA-256 session identifier, expiry, and request counters. It does not contain portfolio data or provider API keys.
+The migrations store hashed API-session identifiers, request counters, provider coordination, and provider-response cache entries. D1 does not contain personal portfolio data or raw provider API keys.
 
 ## 2. Add encrypted secrets
 
@@ -19,14 +19,16 @@ In the Pages project, open **Settings → Variables and Secrets** and add these 
 | ---------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `API_SESSION_SIGNING_SECRET` | Yes      | HMAC signing key for the HttpOnly session cookie. Use a password manager or secure random generator to create at least 32 random characters. |
 | `COINGECKO_DEMO_API_KEY`     | Optional | Platform CoinGecko Demo key. A valid user key takes precedence when the request includes one.                                                |
+| `COINMARKETCAP_API_KEY`      | Optional | Platform CoinMarketCap key used for an additional crypto quote source.                                                                       |
 
-Do not place either value in `app.js`, HTML, source control, build variables exposed to the browser, a URL, or a support screenshot. Pages Functions read the secrets from the server-side environment. Redeploy after adding or rotating a secret.
+Do not place these values in `app.js`, HTML, source control, build variables exposed to the browser, a URL, or a support screenshot. Pages Functions read the secrets from the server-side environment. Redeploy after adding or rotating a secret.
 
 Optional, under **Variables** (not Secrets):
 
 | Variable                           | Default | Allowed behavior                                                                                                                   |
 | ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `COINGECKO_PLATFORM_MONTHLY_LIMIT` | `8000`  | Monthly request ceiling for the platform key. Values are clamped to 1–9,500 to leave headroom under the published Demo plan limit. |
+| `YAHOO_METALS_LICENSE_CONFIRMED`   | unset   | Set to the exact string `true` only after confirming that the intended Yahoo metals data use is permitted.                         |
 
 The platform key is used only when no valid user key is supplied. Once its D1 counter reaches the configured ceiling, requests stop using it until the next month.
 
@@ -39,6 +41,8 @@ Current server-side limits are:
 - `/api/market`: 120 requests per hour per signed session.
 - `/api/history`: 24 requests per hour per signed session.
 - `/api/inflation`: 6 requests per day per signed session.
+- `/api/fx`: 60 requests per hour per signed session.
+- Platform CoinMarketCap key: 15,000 requests per month maximum.
 - Platform CoinGecko key: 8,000 requests per month by default, capped at 9,500 by the application.
 
 The browser also reuses market responses for 90 seconds and history responses for one hour. Clearing cookies creates a new browser session, so per-session quotas are not an identity system; the shared monthly provider ceiling protects the platform key from aggregate overuse.
@@ -57,6 +61,7 @@ After deployment, load the app and check these same-origin endpoints:
 - `GET /api/market` should return market data or a partial-data response.
 - `GET /api/inflation` should return a World Bank annual CPI observation and its year.
 - `GET /api/history?assets=gold,dollar&range=1y` should return observed points and coverage details.
+- `GET /api/fx?quotes=USD,RUB,CNY&include=metals` should return source quote records and daily precious-metal references when available. For RUB/CNY rates in Toman, also pass usdToman with the current Toman-per-USD quote from /api/market; otherwise those converted rates stay unavailable.
 
 A `503` response with `api-security-not-configured` means the D1 binding or signing secret is missing. `429` means a session or provider quota was reached. Do not disable the checks to work around either response.
 
