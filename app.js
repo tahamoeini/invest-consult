@@ -161,6 +161,7 @@ function text(key, fallback = "") {
 const originalTextByNode = new WeakMap();
 const originalAttributesByElement = new WeakMap();
 let localeMutationObserver = null;
+let copyRequestId = 0;
 
 function translateInline(value) {
   return translateCopy(value, copy?.phrases || {});
@@ -224,7 +225,7 @@ function activeFxQuotes() {
     ["USD", "RUB", "CNY"].map((currency) => {
       const quote = quotes[currency];
       const quotePerUsd = Number(quote?.quotePerUsd);
-      const providerStatus = quote?.status || (currency === "USD" && usdToman ? "available" : "unavailable");
+      const providerStatus = currency === "USD" && usdToman ? "available" : quote?.status || "unavailable";
       const status =
         !usdToman || providerStatus === "unavailable"
           ? "unavailable"
@@ -241,7 +242,7 @@ function activeFxQuotes() {
           rate:
             usdToman && currency === "USD" ? 1 / usdToman : usdToman && quotePerUsd > 0 ? quotePerUsd / usdToman : null,
           status,
-          reason: !usdToman ? "usd-toman-reference-unavailable" : quote?.reason || null,
+          reason: !usdToman ? "usd-toman-reference-unavailable" : quotePerUsd > 0 ? null : quote?.reason || null,
         },
       ];
     }),
@@ -313,13 +314,26 @@ function renderGlobalReferences() {
     })
     .join("");
   const metals = fxData.preciousMetals;
+  const rubPerToman = Number(activeFxQuotes().RUB?.rate);
   const metalRows = (metals?.references || [])
     .map((item) => {
       const title = text("assets." + item.asset + ".title", item.asset);
       const amount = new Intl.NumberFormat(currentLocale().numberLocale, { maximumFractionDigits: 2 }).format(
         Number(item.referenceRubPerGram),
       );
-      return "<li><span>" + escapeHTML(title) + "</span><strong>" + escapeHTML(amount) + " RUB/g</strong></li>";
+      const converted =
+        rubPerToman > 0 && preferredCurrency(uiPreferences) !== "RUB"
+          ? `<small>≈ ${escapeHTML(formatDisplayMoney(Number(item.referenceRubPerGram) / rubPerToman))}/g</small>`
+          : "";
+      return (
+        "<li><span>" +
+        escapeHTML(title) +
+        "</span><strong>" +
+        escapeHTML(amount) +
+        " RUB/g</strong>" +
+        converted +
+        "</li>"
+      );
     })
     .join("");
   const metalCard = metals
@@ -354,13 +368,7 @@ async function loadFx() {
   if (fxLoadPromise) return fxLoadPromise;
   const lastUpdated = Date.parse(fxData?.updatedAt || "");
   if (Number.isFinite(lastUpdated) && Date.now() - lastUpdated < 60_000) return;
-  const dollar = liveMarket?.assets?.dollar;
-  const validDollar = dollar && dollar.status !== "conflicted" && Number(dollar.price) > 0;
   const params = new URLSearchParams({ quotes: "USD,RUB,CNY", include: "metals" });
-  if (validDollar) {
-    params.set("usdToman", String(dollar.price));
-    if (dollar.observedAt || dollar.asOf) params.set("usdObservedAt", dollar.observedAt || dollar.asOf);
-  }
   fxLoadPromise = (async () => {
     try {
       await ensureApiSession();
@@ -476,7 +484,8 @@ function groupedNumber(value) {
     useGrouping: true,
     maximumFractionDigits: 0,
   }).format(Number(integer));
-  return `${negative ? "-" : ""}${formattedInteger}${hasDecimal ? `٫${fraction}` : ""}`;
+  const decimalSeparator = uiPreferences.locale === "fa" ? "٫" : ".";
+  return `${negative ? "-" : ""}${formattedInteger}${hasDecimal ? `${decimalSeparator}${fraction}` : ""}`;
 }
 
 function formatNumberInput(event) {
@@ -1005,11 +1014,24 @@ function marketSnapshot(market) {
   return Object.keys(snapshot.assets).length || Object.keys(snapshot.funds).length ? snapshot : null;
 }
 
-function marketValueUnit(item) {
+function marketValueUnit(item, currency = "TOMAN") {
   if (item?.unit === "point") return "نقطه";
-  if (item?.unit === "gram") return `${text("currencyUnit")}/گرم`;
-  if (item?.unit === "coin") return `${text("currencyUnit")}/واحد`;
-  return text("currencyUnit");
+  if (item?.unit === "gram") return `${currencyName(currency)}/گرم`;
+  if (item?.unit === "coin") return `${currencyName(currency)}/واحد`;
+  return currencyName(currency);
+}
+
+function formatMarketPrice(price, item) {
+  if (item?.unit === "point") return `${formatIRR(price)} ${marketValueUnit(item)}`;
+  const currency = preferredCurrency(uiPreferences);
+  const converted = displayCurrencyValue(price, currency, activeFxQuotes());
+  const displayCurrency = converted ? currency : "TOMAN";
+  const amount = converted
+    ? new Intl.NumberFormat(currentLocale().numberLocale, {
+        maximumFractionDigits: displayCurrency === "TOMAN" ? 0 : converted.amount < 100 ? 2 : 0,
+      }).format(converted.amount)
+    : formatIRR(price);
+  return `${amount} ${marketValueUnit(item, displayCurrency)}`;
 }
 
 function marketUnavailableMessage(item, diagnostics) {
@@ -1022,17 +1044,15 @@ function marketUnavailableMessage(item, diagnostics) {
 function lastKnownPriceMarkup(assetId, data, cachedMarket, currentItem) {
   const quote = lastKnownMarketQuote(assetId, data, cachedMarket);
   if (!quote) return "";
-  const unit = marketValueUnit({ unit: quote.unit || currentItem?.unit || INSTRUMENT_REGISTRY[assetId]?.unit });
-  return `<small class="market-last-known"><strong>${escapeHTML(text("market.lastKnown", "آخرین مقدار ثبت‌شده"))}:</strong> ${formatIRR(quote.price)} ${escapeHTML(unit)} · ${escapeHTML(text("market.lastKnownObserved", "مشاهده"))} ${escapeHTML(formatDateTime(quote.observedAt))} · ${escapeHTML(freshnessLabel(quote.observedAt))}</small>`;
+  return `<small class="market-last-known"><strong>${escapeHTML(text("market.lastKnown", "آخرین مقدار ثبت‌شده"))}:</strong> ${escapeHTML(formatMarketPrice(quote.price, { unit: quote.unit || currentItem?.unit || INSTRUMENT_REGISTRY[assetId]?.unit }))} · ${escapeHTML(text("market.lastKnownObserved", "مشاهده"))} ${escapeHTML(formatDateTime(quote.observedAt))} · ${escapeHTML(freshnessLabel(quote.observedAt))}</small>`;
 }
 
 function marketConflictSourcesMarkup(item) {
   if (item?.status !== "conflicted" || !Array.isArray(item.sourceValues) || !item.sourceValues.length) return "";
-  const unit = marketValueUnit(item);
   const values = item.sourceValues
     .map((source) => {
       const observed = source.observedAt ? formatDateTime(source.observedAt) : "زمان مشاهده نامشخص";
-      return `<div class="market-conflict-source"><strong>${escapeHTML(source.source || "منبع بازار")}</strong><b>${formatIRR(source.price)} ${escapeHTML(unit)}</b><small>زمان مشاهده: ${escapeHTML(observed)}</small></div>`;
+      return `<div class="market-conflict-source"><strong>${escapeHTML(source.source || "منبع بازار")}</strong><b>${escapeHTML(formatMarketPrice(source.price, item))}</b><small>زمان مشاهده: ${escapeHTML(observed)}</small></div>`;
     })
     .join("");
   return `<div class="market-conflict-values" aria-label="مقادیر منابع متعارض">${values}</div>`;
@@ -1070,7 +1090,7 @@ function renderMarket(data, cachedMarket = lastKnownMarket) {
         ? "اختلاف منابع؛ عدد میانه با اطمینان پایین"
         : text(`market.quality.${item.status || "healthy"}`);
       const basis = text(`market.quoteType.${item.quoteType || "direct"}`);
-      return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)} · ${escapeHTML(basis)}</small></div><div class="market-value"><strong>${formatIRR(item.price)} <small>${escapeHTML(marketValueUnit(item))}</small></strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(quality)} · ${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(timeLabels)}</small>${marketConsensusNote(item)}${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</div></div>`;
+      return `<div class="market-row"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label.title)}</strong><small>${escapeHTML(label.detail)} · ${escapeHTML(basis)}</small></div><div class="market-value"><strong>${escapeHTML(formatMarketPrice(item.price, item))}</strong><span class="${changeClass}">${changeLabel}</span><small>${escapeHTML(quality)} · ${escapeHTML(String(item.sourceCount || 0))} ${escapeHTML(text("market.sources", "منبع"))}</small><small>${escapeHTML(timeLabels)}</small>${marketConsensusNote(item)}${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</div></div>`;
     })
     .join("");
   const fixed = currentMarket.funds && currentMarket.funds.fixedIncome;
@@ -1186,7 +1206,7 @@ function marketSourceValuesMarkup(item) {
         item?.status === "conflicted" ||
         source.accepted === false ||
         (accepted.size > 0 && !accepted.has(source.source));
-      const quote = `${formatIRR(source.price)} · ${source.source}`;
+      const quote = `${formatMarketPrice(source.price, item)} · ${source.source}`;
       const observed = source.observedAt ? ` · ${formatDateTime(source.observedAt)}` : "";
       const exclusion =
         source.accepted === false
@@ -1196,7 +1216,7 @@ function marketSourceValuesMarkup(item) {
               ? " · پرت؛ در برآورد لحاظ نشد"
               : " · در برآورد لحاظ نشد"
           : "";
-      return `<span class="${conflict ? "is-outlier" : ""}" title="${escapeHTML(quote + observed + exclusion)}">${escapeHTML(formatIRR(source.price))} · ${escapeHTML(source.source)}${escapeHTML(exclusion)}</span>`;
+      return `<span class="${conflict ? "is-outlier" : ""}" title="${escapeHTML(quote + observed + exclusion)}">${escapeHTML(formatMarketPrice(source.price, item))} · ${escapeHTML(source.source)}${escapeHTML(exclusion)}</span>`;
     })
     .join("")}</div>`;
 }
@@ -1500,7 +1520,7 @@ function renderMarketSnapshot(data, cachedMarket = lastKnownMarket) {
     const changeLabel = Number.isFinite(change)
       ? `${change > 0 ? "+" : ""}${formatPercent(change)}`
       : text("market.noChange");
-    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${formatIRR(item.price)} ${escapeHTML(marketValueUnit(item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, currentMarket.updatedAt))}</small>${marketConsensusNote(item)}${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</article>`;
+    return `<article class="market-snapshot-item"><div><span class="asset-dot asset-${key === "dollar" ? "currency" : key}"></span><strong>${escapeHTML(label)}</strong></div><b>${escapeHTML(formatMarketPrice(item.price, item))}</b><span class="${changeClass}">${escapeHTML(changeLabel)}</span><small>${escapeHTML(confidenceLabel(item).label)}</small><small>${escapeHTML(marketTimeLabels(item, currentMarket.updatedAt))}</small>${marketConsensusNote(item)}${item.reconciliationNote ? `<small class="data-note-warning">${escapeHTML(item.reconciliationNote)}</small>` : ""}${marketSourceValuesMarkup(item)}</article>`;
   });
   const fixed = currentMarket.funds?.fixedIncome;
   items.push(
@@ -1641,6 +1661,16 @@ function renderDashboard() {
   const pnlPercentEl = $("#dashboard-profit-loss-percent");
   if (pnlPercentEl && profitLossPercent !== null)
     pnlPercentEl.classList.add(profitLossPercent >= 0 ? "positive" : "negative");
+  const currencyNote = $("#dashboard-currency-note");
+  if (currencyNote) {
+    const currency = preferredCurrency(uiPreferences);
+    const fxQuote = activeFxQuotes()[currency];
+    currencyNote.hidden = currency === "TOMAN" || fxQuote?.status === "available";
+    currencyNote.textContent =
+      fxQuote?.status === "stale"
+        ? text("portfolio.fxStaleNote", "نرخ تبدیل کهنه است.")
+        : text("portfolio.fxUnavailableNote", "نرخ تبدیل در دسترس نیست؛ مقادیر به تومان نمایش داده می‌شوند.");
+  }
   const monthly = Number(plan?.inputs?.monthlyContribution);
   setDashboardMetric(
     "dashboard-monthly-contribution",
@@ -1697,7 +1727,7 @@ function renderDashboard() {
       actionAllocation.innerHTML = allocationItems
         .map(
           ([assetId, amount]) =>
-            `<span><i class="asset-dot ${escapeHTML(assetMeta(assetId).dotClass)}"></i>${escapeHTML(assetMeta(assetId).title)} ${formatIRR(amount)} ${escapeHTML(text("currencyUnit"))}</span>`,
+            `<span><i class="asset-dot ${escapeHTML(assetMeta(assetId).dotClass)}"></i>${escapeHTML(assetMeta(assetId).title)} ${escapeHTML(formatDisplayMoney(amount))}</span>`,
         )
         .join("");
     actionReason.textContent =
@@ -1744,7 +1774,7 @@ function allocationRows(allocation, amounts = null, assetIds = CORE_PLAN_ASSET_K
       const weightControl = editable
         ? `<label class="allocation-weight-input"><input type="number" min="0" max="100" step="0.1" data-plan-weight="${escapeHTML(key)}" aria-label="وزن پیشنهادی ${escapeHTML(meta.title)}" value="${weight}"><span>٪</span></label>`
         : "";
-      return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(meta.description)}</small></div></div>${weightControl}<div class="allocation-numbers"><strong>${formatPercent(weight)}</strong><small>${formatIRR(amount)} ${escapeHTML(text("currencyUnit"))}</small></div></div>`;
+      return `<div class="allocation-row"><div class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><div><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(meta.description)}</small></div></div>${weightControl}<div class="allocation-numbers"><strong>${formatPercent(weight)}</strong><small>${escapeHTML(formatDisplayMoney(amount))}</small></div></div>`;
     })
     .join("");
 }
@@ -1770,13 +1800,13 @@ function renderContributionPlan(plan, assetIds = CORE_PLAN_ASSET_KEYS) {
       const meta = assetMeta(key);
       const drift = Number(plan.drift?.[key]) || 0;
       const driftLabel = `${drift > 0 ? "+" : ""}${formatPercent(drift)} ${text("allocation.percentagePoints")}`;
-      return `<div class="contribution-row"><span><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span>${escapeHTML(meta.title)}<small>${escapeHTML(text("allocation.current"))} ${formatPercent(plan.currentWeights?.[key] || 0)} · ${escapeHTML(text("allocation.target"))} ${formatPercent(plan.weights[key])} · ${escapeHTML(text("allocation.drift"))} ${escapeHTML(driftLabel)}</small></span><strong>${formatIRR(plan.amounts[key])} ${escapeHTML(text("currencyUnit"))}</strong></div>`;
+      return `<div class="contribution-row"><span><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span>${escapeHTML(meta.title)}<small>${escapeHTML(text("allocation.current"))} ${formatPercent(plan.currentWeights?.[key] || 0)} · ${escapeHTML(text("allocation.target"))} ${formatPercent(plan.weights[key])} · ${escapeHTML(text("allocation.drift"))} ${escapeHTML(driftLabel)}</small></span><strong>${escapeHTML(formatDisplayMoney(plan.amounts[key]))}</strong></div>`;
     })
     .join("");
   const excluded = Number(plan.excludedInvestableTotal) || 0;
   const note =
     excluded > 0
-      ? `<p class="data-note">${escapeHTML(text("allocation.excludedHoldings"))} ${formatIRR(excluded)} ${escapeHTML(text("currencyUnit"))}</p>`
+      ? `<p class="data-note">${escapeHTML(text("allocation.excludedHoldings"))} ${escapeHTML(formatDisplayMoney(excluded))}</p>`
       : "";
   const missingCount = Number(plan.excludedMissingCount) || 0;
   const missingNote =
@@ -1801,7 +1831,7 @@ function renderLineChart(container, points, valueKey = "nominal", label = "") {
     ],
     ariaLabel: label || text("analysis.chart", "روند ارزش"),
     emptyLabel: text("analysis.chartEmpty", "داده کافی برای رسم نمودار وجود ندارد."),
-    valueLabel: (value) => `${formatIRR(value)} ${text("currencyUnit")}`,
+    valueLabel: (value) => formatDisplayMoney(value),
   });
 }
 
@@ -1815,6 +1845,11 @@ function formatPortfolioQuantity(assetId, quantity) {
       Number(quantity) || 0,
     );
   return formatIRR(quantity);
+}
+
+function formatHoldingQuantity(assetId, quantity, unit) {
+  if (unit === "TOMAN" || unit === "IRR") return formatDisplayMoney(quantity);
+  return `${formatPortfolioQuantity(assetId, quantity)} ${portfolioUnitLabel(assetId, unit)}`;
 }
 
 function targetWeightForHolding(assetId, definition, plan) {
@@ -1904,7 +1939,7 @@ function renderPortfolioHoldings(portfolio, result, plan, asOf) {
     ? holdings
         .map((row) => {
           const meta = portfolioAssetMeta(row.assetId, portfolio);
-          const quantity = `${formatPortfolioQuantity(row.assetId, row.item.quantity)} ${portfolioUnitLabel(row.assetId, row.item.unit)}`;
+          const quantity = formatHoldingQuantity(row.assetId, row.item.quantity, row.item.unit);
           const marketConflict = row.disputed;
           const missing = row.item.value === null;
           const quoteState = marketConflict
@@ -2521,7 +2556,7 @@ function renderPortfolio() {
       const quoteNote = item.priceObservedAt
         ? `${item.manualPrice ? "قیمت دستی" : "منبع بازار"} · ${formatDateTime(item.priceObservedAt)} · ${freshnessLabel(item.priceObservedAt)}`
         : item.priceSource || "زمان مشاهده نامشخص";
-      return `<button type="button" class="allocation-row allocation-row-button" data-portfolio-asset="${escapeHTML(assetId)}"><span class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><span><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))} · ${escapeHTML(quoteNote)}</small></span></span><span class="allocation-numbers"><strong>${item.value === null || result.missingPrices.length ? "—" : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></span></button>`;
+      return `<button type="button" class="allocation-row allocation-row-button" data-portfolio-asset="${escapeHTML(assetId)}"><span class="allocation-name"><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><span><strong>${escapeHTML(meta.title)}</strong><small>${escapeHTML(formatHoldingQuantity(assetId, item.quantity, item.unit))} · ${escapeHTML(quoteNote)}</small></span></span><span class="allocation-numbers"><strong>${item.value === null || result.missingPrices.length ? "—" : formatPercent(result.allocation[assetId])}</strong><small>${escapeHTML(portfolioValueLabel(item.value))}</small></span></button>`;
     })
     .join("");
   portfolioAllocationEl.innerHTML =
@@ -2592,15 +2627,15 @@ function renderPortfolio() {
           const type = text(`portfolio.transactionTypes.${transaction.type}`, transaction.type);
           const meta = portfolioAssetMeta(transaction.assetId, portfolio);
           const quantity = transaction.quantity === undefined ? transaction.amount : transaction.quantity;
-          const unit =
-            transaction.quantity === undefined
-              ? text("currencyUnit")
-              : portfolioUnitLabel(transaction.assetId, meta.unit);
           const target =
             transaction.type === "TRANSFER"
               ? ` ${text("portfolio.to")} ${escapeHTML(portfolioAssetMeta(transaction.targetAssetId, portfolio).title)}`
               : "";
-          return `<div class="ledger-row"><div><strong>${escapeHTML(type)}</strong><small>${escapeHTML(formatDateTime(transaction.date))} ${escapeHTML(text("history.separator"))} ${escapeHTML(meta.title)}${target}</small></div><div><strong>${escapeHTML(formatPortfolioQuantity(transaction.assetId, quantity))}</strong><small>${escapeHTML(unit)}</small></div></div>`;
+          const displayedAmount =
+            transaction.quantity === undefined
+              ? formatDisplayMoney(transaction.amount)
+              : formatHoldingQuantity(transaction.assetId, quantity, meta.unit);
+          return `<div class="ledger-row"><div><strong>${escapeHTML(type)}</strong><small>${escapeHTML(formatDateTime(transaction.date))} ${escapeHTML(text("history.separator"))} ${escapeHTML(meta.title)}${target}</small></div><div><strong>${escapeHTML(displayedAmount)}</strong></div></div>`;
         })
         .join("")
     : `<div class="empty-state">${escapeHTML(text("portfolio.noLedger"))}</div>`;
@@ -2620,7 +2655,7 @@ function renderPortfolio() {
                 `market.labels.${quote.assetId}.title`,
                 text(`assets.${quote.assetId}.title`, portfolioAssetMeta(quote.assetId, portfolio).title),
               );
-            return `<div class="history-item"><div><strong>${escapeHTML(quoteName)}</strong><small>قیمت دستی · مشاهده ${escapeHTML(formatDateTime(quote.observedAt))} · ${escapeHTML(freshnessLabel(quote.observedAt))}</small></div><div><strong>${formatIRR(quote.price)} ${escapeHTML(text("currencyUnit"))}</strong><small>برای ارزش‌گذاری؛ بدون تراکنش</small></div></div>`;
+            return `<div class="history-item"><div><strong>${escapeHTML(quoteName)}</strong><small>قیمت دستی · مشاهده ${escapeHTML(formatDateTime(quote.observedAt))} · ${escapeHTML(freshnessLabel(quote.observedAt))}</small></div><div><strong>${escapeHTML(formatDisplayMoney(quote.price))}</strong><small>برای ارزش‌گذاری؛ بدون تراکنش</small></div></div>`;
           })
           .join("")
       : `<div class="empty-state">هنوز قیمت دستی ثبت نشده.</div>`;
@@ -2673,15 +2708,14 @@ function openAssetDrawer(assetId) {
     (transaction) => transaction.assetId === assetId || transaction.targetAssetId === assetId,
   ).length;
   const price = item.price === null ? "—" : portfolioValueLabel(item.price);
-  content.innerHTML = `<div class="asset-detail-summary"><div><span>مقدار</span><strong>${escapeHTML(formatPortfolioQuantity(assetId, item.quantity))} ${escapeHTML(portfolioUnitLabel(assetId, item.unit))}</strong></div><div><span>قیمت مبنا/بازار</span><strong>${escapeHTML(price)}</strong></div><div><span>ارزش فعلی</span><strong>${escapeHTML(portfolioValueLabel(item.value))}</strong></div><div><span>سهم از سبد</span><strong>${item.value === null || result.missingPrices.length ? "—" : escapeHTML(formatPercent(result.allocation[assetId] || 0))}</strong></div></div><div class="data-note ${item.value === null ? "data-note-warning" : ""}">${item.value === null ? "برای این دارایی قیمت معتبر در داده بازار وجود ندارد؛ ارزش ریالی را حدس نمی‌زنیم." : `در دفتر فعال ${formatIRR(transactions)} رویداد مرتبط ثبت شده است.`}</div><button type="button" class="secondary-button" data-go-view="portfolio">ویرایش موجودی و تراکنش‌ها</button>`;
+  content.innerHTML = `<div class="asset-detail-summary"><div><span>مقدار</span><strong>${escapeHTML(formatHoldingQuantity(assetId, item.quantity, item.unit))}</strong></div><div><span>قیمت مبنا/بازار</span><strong>${escapeHTML(price)}</strong></div><div><span>ارزش فعلی</span><strong>${escapeHTML(portfolioValueLabel(item.value))}</strong></div><div><span>سهم از سبد</span><strong>${item.value === null || result.missingPrices.length ? "—" : escapeHTML(formatPercent(result.allocation[assetId] || 0))}</strong></div></div><div class="data-note ${item.value === null ? "data-note-warning" : ""}">${item.value === null ? "برای این دارایی قیمت معتبر در داده بازار وجود ندارد؛ ارزش ریالی را حدس نمی‌زنیم." : `در دفتر فعال ${formatIRR(transactions)} رویداد مرتبط ثبت شده است.`}</div><button type="button" class="secondary-button" data-go-view="portfolio">ویرایش موجودی و تراکنش‌ها</button>`;
   if (typeof drawer.showModal === "function") drawer.showModal();
   else drawer.setAttribute("open", "");
 }
 
 function renderSimulation(simulation, monteCarlo, validation = null, methodComparison = null) {
   const available = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
-  const money = (value) =>
-    available(value) ? `${formatIRR(Number(value))} ${text("currencyUnit")}` : text("analysis.unavailable");
+  const money = (value) => (available(value) ? formatDisplayMoney(Number(value)) : text("analysis.unavailable"));
   const percent = (value) => (available(value) ? formatPercent(Number(value) * 100) : text("analysis.unavailable"));
   const confidenceLabels = {
     high: text("analysis.confidenceHigh"),
@@ -2922,7 +2956,7 @@ function renderBacktest(result) {
         ? "—"
         : percent
           ? formatPercent(Number(value) * 100)
-          : `${formatIRR(value)} ${text("currencyUnit")}`;
+          : formatDisplayMoney(value);
     return `<div class="metric"><small>${escapeHTML(label)}</small><strong>${escapeHTML(formatted)}</strong></div>`;
   };
   const riskMetrics = `${metric(text("backtest.medianVolatility"), result.median.volatility, true)}${metric(text("backtest.medianSortino"), result.median.sortino, true)}`;
@@ -2941,13 +2975,13 @@ function renderHistory() {
       const meta = assetMeta(key);
       const category = portfolio.categories[key];
       const gain = category.value - category.invested;
-      return `<div class="portfolio-row"><div><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><strong>${escapeHTML(meta.title)}</strong></div><div><strong>${formatIRR(category.value)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("history.current"))}</small></div><div class="${gain >= 0 ? "positive" : "negative"}"><strong>${gain >= 0 ? "+" : ""}${formatIRR(gain)}</strong><small>${escapeHTML(text("history.gain"))}</small></div></div>`;
+      return `<div class="portfolio-row"><div><span class="asset-dot ${escapeHTML(meta.dotClass)}"></span><strong>${escapeHTML(meta.title)}</strong></div><div><strong>${escapeHTML(formatDisplayMoney(category.value))}</strong><small>${escapeHTML(text("history.current"))}</small></div><div class="${gain >= 0 ? "positive" : "negative"}"><strong>${gain >= 0 ? "+" : ""}${escapeHTML(formatDisplayMoney(gain))}</strong><small>${escapeHTML(text("history.gain"))}</small></div></div>`;
     })
     .join("");
   historySummaryEl.innerHTML = [
-    [text("history.invested"), formatIRR(portfolio.totalInvested)],
-    [text("history.value"), formatIRR(portfolio.currentValue)],
-    [text("history.gain"), `${portfolio.gain >= 0 ? "+" : ""}${formatIRR(portfolio.gain)}`],
+    [text("history.invested"), formatDisplayMoney(portfolio.totalInvested)],
+    [text("history.value"), formatDisplayMoney(portfolio.currentValue)],
+    [text("history.gain"), `${portfolio.gain >= 0 ? "+" : ""}${formatDisplayMoney(portfolio.gain)}`],
     [text("history.records"), String(history.length)],
   ]
     .map(
@@ -2968,7 +3002,7 @@ function renderHistory() {
         .slice(0, 15)
         .map(
           (entry) =>
-            `<div class="history-item"><div><strong>${formatDate(entry.createdAt)}</strong><small>${formatPercent(entry.contributionRate)} ${escapeHTML(text("history.separator"))} ${escapeHTML(text("history.monthly"))}</small></div><div><strong>${formatIRR(entry.total)} ${escapeHTML(text("currencyUnit"))}</strong><small>${escapeHTML(text("history.saved"))}</small></div></div>`,
+            `<div class="history-item"><div><strong>${formatDate(entry.createdAt)}</strong><small>${formatPercent(entry.contributionRate)} ${escapeHTML(text("history.separator"))} ${escapeHTML(text("history.monthly"))}</small></div><div><strong>${escapeHTML(formatDisplayMoney(entry.total))}</strong><small>${escapeHTML(text("history.saved"))}</small></div></div>`,
         )
         .join("")
     : `<div class="empty-state">${escapeHTML(text("history.empty"))}</div>`;
@@ -3426,7 +3460,7 @@ function runAnalysisWorker(task) {
 
 function renderPlanOutput(plan) {
   const { inputs, recommendation, contribution, portfolio } = plan;
-  $("#monthly-investment").textContent = formatIRR(inputs.monthlyContribution);
+  $("#monthly-investment").textContent = formatDisplayMoney(inputs.monthlyContribution);
   $("#monthly-rate").textContent = formatPercent(inputs.contributionRate);
   $("#profile-label").textContent = text(
     `profileLabels.${inputs.profile.riskTolerance}`,
@@ -4149,18 +4183,22 @@ function marketRequestAssets() {
 }
 
 async function loadCopy() {
+  const requestId = ++copyRequestId;
+  const locale = uiPreferences.locale;
   try {
     const [baseResponse, localeResponse] = await Promise.all([
       fetch("content/fa.json", { cache: "no-store" }),
-      uiPreferences.locale === "fa"
+      locale === "fa"
         ? fetch("content/fa.json", { cache: "no-store" })
-        : fetch("content/" + uiPreferences.locale + ".json", { cache: "no-store" }),
+        : fetch("content/" + locale + ".json", { cache: "no-store" }),
     ]);
     if (!baseResponse.ok || !localeResponse.ok) throw new Error("Copy request failed");
     const baseCopy = await baseResponse.json();
     const localizedCopy = await localeResponse.json();
+    if (requestId !== copyRequestId) return;
     copy = createLocalizedCatalog(baseCopy, localizedCopy);
   } catch {
+    if (requestId !== copyRequestId) return;
     copy = fallbackCopy;
   }
   if (copy?.pageTitle) document.title = copy.pageTitle;
@@ -4434,7 +4472,7 @@ async function init() {
   $("#manual-quote-date").value = localDateTimeValue();
   updateMarketEntryAvailability();
   updateAdvancedTransactionFields();
-  await loadMarket();
+  void loadMarket();
   applyModelSettingsToSimulation();
   const inflationFetchedAt = modelSettings.inflationFetchedAt ? Date.parse(modelSettings.inflationFetchedAt) : 0;
   if (
@@ -4442,7 +4480,7 @@ async function init() {
     !Number.isFinite(inflationFetchedAt) ||
     Date.now() - inflationFetchedAt > 30 * 24 * 60 * 60 * 1000
   ) {
-    await refreshInflationAssumption();
+    void refreshInflationAssumption();
   }
   showStorageWarning();
 }

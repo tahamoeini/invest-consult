@@ -163,7 +163,8 @@ export async function onRequestGet(context = {}) {
   const requestUrl = context.request?.url || "https://synthora.local/api/fx";
   const requested = validRequestedQuotes(requestUrl);
   const url = new URL(requestUrl);
-  const usdToman = numberFromXml(url.searchParams.get("usdToman"));
+  // The endpoint cannot authenticate a market price supplied in the query string.
+  // The browser combines these public cross rates with its accepted market quote.
   const now = new Date().toISOString();
   const shouldLoadCbr = requested.includes("RUB") || url.searchParams.get("include") === "metals";
   const [frankfurter, cbr, metals] = await Promise.all([
@@ -195,21 +196,18 @@ export async function onRequestGet(context = {}) {
         })
       : Promise.resolve({ payload: null, status: "unavailable" }),
   ]);
-  const usdRate = usdToman ? 1 / usdToman : null;
-  const usdObservedAt = url.searchParams.get("usdObservedAt") || null;
-  const usdStatus = usdRate ? "available" : "unavailable";
   const quotes = {};
   if (requested.includes("USD"))
     quotes.USD = fxQuote({
-      rate: usdRate,
+      rate: null,
       quotePerUsd: 1,
-      source: "Synthora Iran market dollar quote",
+      source: "Iran market quote required for Toman conversion",
       provider: "synthora-iran-dollar",
-      observedAt: usdObservedAt,
-      retrievedAt: now,
-      derivedFrom: ["market.assets.dollar.price (Toman per USD)"],
-      status: usdStatus,
-      reason: usdRate ? null : "usd-toman-reference-unavailable",
+      observedAt: null,
+      retrievedAt: null,
+      derivedFrom: [],
+      status: "unavailable",
+      reason: "usd-toman-reference-unavailable",
     });
   if (requested.includes("RUB")) {
     const rublesPerUsd = Number(cbr.payload?.rate);
@@ -217,15 +215,15 @@ export async function onRequestGet(context = {}) {
     const status =
       cbr.status === "unavailable" ? "unavailable" : sourceAge > 3 * 24 * 60 * 60_000 ? "stale" : cbr.status;
     quotes.RUB = fxQuote({
-      rate: usdToman && rublesPerUsd ? rublesPerUsd / usdToman : null,
+      rate: null,
       quotePerUsd: rublesPerUsd,
       source: "Bank of Russia daily reference rate",
       provider: "cbr-rates",
       observedAt: cbr.payload?.date,
       retrievedAt: cbr.fetchedAt ? new Date(cbr.fetchedAt).toISOString() : null,
-      derivedFrom: ["CBR USD/RUB", "Synthora Iran market USD/Toman"],
-      status: !rublesPerUsd ? "unavailable" : usdToman ? status : "unavailable",
-      reason: !usdToman ? "usd-toman-reference-unavailable" : !rublesPerUsd ? "provider-unavailable" : null,
+      derivedFrom: ["CBR USD/RUB"],
+      status: !rublesPerUsd ? "unavailable" : status,
+      reason: !rublesPerUsd ? "provider-unavailable" : "usd-toman-reference-unavailable",
     });
   }
   if (requested.includes("CNY")) {
@@ -240,15 +238,15 @@ export async function onRequestGet(context = {}) {
           ? "stale"
           : frankfurter.status;
     quotes.CNY = fxQuote({
-      rate: usdToman && yuanPerUsd ? yuanPerUsd / usdToman : null,
+      rate: null,
       quotePerUsd: yuanPerUsd,
       source: "CFETS reference rate via Frankfurter",
       provider: "frankfurter-cfets",
       observedAt: frankfurter.payload?.date,
       retrievedAt: frankfurter.fetchedAt ? new Date(frankfurter.fetchedAt).toISOString() : null,
-      derivedFrom: ["Frankfurter CFETS USD/CNY", "Synthora Iran market USD/Toman"],
-      status: !yuanPerUsd ? "unavailable" : usdToman ? status : "unavailable",
-      reason: !usdToman ? "usd-toman-reference-unavailable" : !yuanPerUsd ? "provider-unavailable" : null,
+      derivedFrom: ["Frankfurter CFETS USD/CNY"],
+      status: !yuanPerUsd ? "unavailable" : status,
+      reason: !yuanPerUsd ? "provider-unavailable" : "usd-toman-reference-unavailable",
     });
   }
   const metalObservedAt = Array.isArray(metals.payload)

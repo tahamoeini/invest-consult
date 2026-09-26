@@ -2,9 +2,9 @@ export const UI_PREFERENCES_KEY = "synthora-ui-preferences-v1";
 
 export const LOCALES = Object.freeze({
   fa: { language: "fa", direction: "rtl", numberLocale: "fa-IR", defaultCurrency: "TOMAN" },
-  en: { language: "en", direction: "ltr", numberLocale: "en-US", defaultCurrency: "USD" },
-  ru: { language: "ru", direction: "ltr", numberLocale: "ru-RU", defaultCurrency: "RUB" },
-  zh: { language: "zh-CN", direction: "ltr", numberLocale: "zh-CN", defaultCurrency: "CNY" },
+  en: { language: "en", direction: "ltr", numberLocale: "en-US", defaultCurrency: "TOMAN" },
+  ru: { language: "ru", direction: "ltr", numberLocale: "ru-RU", defaultCurrency: "TOMAN" },
+  zh: { language: "zh-CN", direction: "ltr", numberLocale: "zh-CN", defaultCurrency: "TOMAN" },
 });
 
 const CURRENCIES = new Set(["TOMAN", "USD", "RUB", "CNY"]);

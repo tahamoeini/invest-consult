@@ -48,7 +48,7 @@ async function request(url, context) {
   return onRequestGet(context || (await createSecureApiContext(url)));
 }
 
-test("FX endpoint returns dated, attributed per-Toman quotes and metal references", async () => {
+test("FX endpoint returns dated, attributed cross rates without trusting caller market prices", async () => {
   const url =
     "https://app.test/api/fx?quotes=USD,RUB,CNY&include=metals&usdToman=100000&usdObservedAt=2026-09-25T12%3A00%3A00Z";
   const context = await createSecureApiContext(url);
@@ -58,13 +58,14 @@ test("FX endpoint returns dated, attributed per-Toman quotes and metal reference
     return await response.json();
   });
   assert.equal(result.base, "TOMAN");
-  assert.ok(Math.abs(result.quotes.USD.rate - 0.00001) < 1e-12);
-  assert.ok(Math.abs(result.quotes.RUB.rate - 0.0008125) < 1e-12);
-  assert.ok(Math.abs(result.quotes.CNY.rate - 0.0000712) < 1e-12);
-  assert.equal(result.quotes.USD.observedAt, "2026-09-25T12:00:00Z");
+  assert.equal(result.quotes.USD.rate, null);
+  assert.equal(result.quotes.RUB.rate, null);
+  assert.equal(result.quotes.CNY.rate, null);
+  assert.equal(result.quotes.USD.observedAt, null);
   assert.equal(result.quotes.RUB.quotePerUsd, 81.25);
   assert.equal(result.quotes.CNY.quotePerUsd, 7.12);
-  for (const code of ["USD", "RUB", "CNY"]) {
+  assert.equal(result.quotes.USD.status, "unavailable");
+  for (const code of ["RUB", "CNY"]) {
     assert.equal(result.quotes[code].status, "available");
     assert.ok(result.quotes[code].source);
     assert.ok(result.quotes[code].retrievedAt);
@@ -84,10 +85,10 @@ test("FX endpoint keeps foreign reference rates but marks Toman conversion unava
   });
   assert.equal(result.quotes.USD.status, "unavailable");
   assert.equal(result.quotes.USD.rate, null);
-  assert.equal(result.quotes.RUB.status, "unavailable");
+  assert.equal(result.quotes.RUB.status, "available");
   assert.equal(result.quotes.RUB.rate, null);
   assert.equal(result.quotes.RUB.quotePerUsd, 81.25);
-  assert.equal(result.quotes.CNY.status, "unavailable");
+  assert.equal(result.quotes.CNY.status, "available");
   assert.equal(result.quotes.CNY.quotePerUsd, 7.12);
 });
 

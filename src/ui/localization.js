@@ -6,6 +6,9 @@ const WORD_CHARACTER = "[\\p{L}\\p{M}\\p{N}\\u200c\\u200d]";
 export function translateCopy(value, phrases = {}) {
   if (typeof value !== "string") return value;
   if (Object.hasOwn(phrases, value)) return phrases[value];
+  const [, leading, body, trailing] = /^(\s*)([\s\S]*?)(\s*)$/u.exec(value);
+  const normalized = body.replace(/\s+/gu, " ");
+  if (Object.hasOwn(phrases, normalized)) return leading + phrases[normalized] + trailing;
   return Object.keys(phrases)
     .filter((phrase) => phrase)
     .sort((left, right) => right.length - left.length)

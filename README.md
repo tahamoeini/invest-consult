@@ -8,7 +8,7 @@ For the maintained documentation map and the status of historical reviews and pr
 
 ## Product behavior
 
-- Persian is the default and base interface, using Vazirmatn. Settings also offer English, Russian, and Chinese, but those catalogs are incomplete; untranslated entries fall back to the Persian base. Do not treat the alternate locales as full localization. The locale affects translated text, page direction, number formatting, and default display currency. Stored values and model calculations remain in toman.
+- Persian is the default and base interface, using Vazirmatn. Settings also offer English, Russian, and Chinese. The locale affects translated text, page direction, and number formatting. Toman remains the default display currency in every language until the user selects another currency. Stored values and model calculations remain in toman.
 - English source code, comments, README, and technical documentation.
 - A catalog separates priceable instruments from eight decision sleeves: liquidity, fixed income, gold, FX, Iran equity, global equity, crypto, and commodities. Recommendations still use the established fixed-income, gold, currency, and silver categories until other sleeves have adequate data or explicit versioned assumptions.
 - All Iranian currency inputs, market values, calculations, and exports use تومان. Display-currency conversion changes rendered values only. Legacy browser data and legacy exports are converted once on import; gold and silver quantities remain grams.
@@ -108,7 +108,7 @@ The default assumptions are intentionally visible in `src/engine.js` and are not
 
 ## Local development
 
-Serve the static app over HTTP; opening `index.html` with `file://` does not support its module and copy-catalog requests. Live `/api/*` requests require the Pages Functions runtime and a local D1 binding plus a local-only session signing secret. The [Cloudflare setup guide](docs/cloudflare-market-api.md#local-pages-preview) describes that setup. Without those bindings, security-protected API routes return `api-security-not-configured`.
+Serve the static app over HTTP; opening `index.html` with `file://` does not support its module and copy-catalog requests. Planning, simulations, manual quotes, and browser-stored records remain available without a provider key or server binding. Live `/api/*` requests require the Pages Functions runtime and a local D1 binding plus a local-only session signing secret. The [Cloudflare setup guide](docs/cloudflare-market-api.md#local-pages-preview) describes that setup. Without those bindings, security-protected API routes return `api-security-not-configured`; the browser displays live market and reference data as unavailable without blocking local workflows.
 
 ```bash
 npm install

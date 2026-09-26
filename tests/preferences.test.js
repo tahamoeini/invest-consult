@@ -33,17 +33,18 @@ test("UI preferences default to Persian, auto currency, and system theme", () =>
   assert.equal(UI_PREFERENCES_KEY, "synthora-ui-preferences-v1");
 });
 
-test("locale defaults select their display currency unless the user overrides it", () => {
+test("Toman remains the default display currency in every locale unless the user overrides it", () => {
   assert.equal(preferredCurrency({ locale: "fa", currency: null }), "TOMAN");
-  assert.equal(preferredCurrency({ locale: "en", currency: null }), "USD");
-  assert.equal(preferredCurrency({ locale: "ru", currency: null }), "RUB");
-  assert.equal(preferredCurrency({ locale: "zh", currency: null }), "CNY");
+  assert.equal(preferredCurrency({ locale: "en", currency: null }), "TOMAN");
+  assert.equal(preferredCurrency({ locale: "ru", currency: null }), "TOMAN");
+  assert.equal(preferredCurrency({ locale: "zh", currency: null }), "TOMAN");
+  assert.equal(preferredCurrency({ locale: "zh", currency: "CNY" }), "CNY");
   assert.equal(preferredCurrency({ locale: "zh", currency: "TOMAN" }), "TOMAN");
   assert.deepEqual(LOCALES, {
     fa: { language: "fa", direction: "rtl", numberLocale: "fa-IR", defaultCurrency: "TOMAN" },
-    en: { language: "en", direction: "ltr", numberLocale: "en-US", defaultCurrency: "USD" },
-    ru: { language: "ru", direction: "ltr", numberLocale: "ru-RU", defaultCurrency: "RUB" },
-    zh: { language: "zh-CN", direction: "ltr", numberLocale: "zh-CN", defaultCurrency: "CNY" },
+    en: { language: "en", direction: "ltr", numberLocale: "en-US", defaultCurrency: "TOMAN" },
+    ru: { language: "ru", direction: "ltr", numberLocale: "ru-RU", defaultCurrency: "TOMAN" },
+    zh: { language: "zh-CN", direction: "ltr", numberLocale: "zh-CN", defaultCurrency: "TOMAN" },
   });
 });
 
