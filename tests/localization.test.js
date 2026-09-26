@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createLocalizedCatalog } from "../src/ui/localization.js";
+import { createLocalizedCatalog, translateCopy } from "../src/ui/localization.js";
 
 function readCatalog(locale) {
   return JSON.parse(readFileSync(new URL("../content/" + locale + ".json", import.meta.url), "utf8"));
@@ -63,4 +63,13 @@ test("portfolio, reference, and appearance controls have reviewed static transla
       assert.ok(catalog.phrases[key], locale + " has no static translation for " + key);
     }
   }
+});
+
+test("phrase translation does not replace short words inside longer Persian words", () => {
+  const phrases = { تا: "to", نسخه: "version", ماه: "month", "تاریخچه برنامه": "Plan history" };
+  assert.equal(translateCopy("تاریخچه", phrases), "تاریخچه");
+  assert.equal(translateCopy("نسخه‌های اخیر", phrases), "نسخه‌های اخیر");
+  assert.equal(translateCopy("۳ ماه", phrases), "۳ month");
+  assert.equal(translateCopy("ماه،", phrases), "month،");
+  assert.equal(translateCopy("تاریخچه برنامه", phrases), "Plan history");
 });

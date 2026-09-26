@@ -54,7 +54,7 @@ import {
   readUiPreferences,
   writeUiPreferences,
 } from "./src/ui/preferences.js";
-import { createLocalizedCatalog } from "./src/ui/localization.js";
+import { createLocalizedCatalog, translateCopy } from "./src/ui/localization.js";
 import { createNavigationController } from "./src/ui/navigation.js";
 import { createAppStore } from "./src/ui/state.js";
 
@@ -163,11 +163,7 @@ const originalAttributesByElement = new WeakMap();
 let localeMutationObserver = null;
 
 function translateInline(value) {
-  const phrases = copy?.phrases;
-  if (!phrases || typeof value !== "string") return value;
-  return Object.keys(phrases)
-    .sort((left, right) => right.length - left.length)
-    .reduce((result, phrase) => result.replaceAll(phrase, phrases[phrase]), value);
+  return translateCopy(value, copy?.phrases || {});
 }
 
 function translateVisibleCopy(root = document.body) {
